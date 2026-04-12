@@ -3,6 +3,9 @@ import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
+import "@/models/Category";
+import "@/models/Department";
+import "@/models/User";
 import { deleteObject } from "@/lib/s3";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

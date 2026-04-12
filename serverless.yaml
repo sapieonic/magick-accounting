@@ -2,7 +2,7 @@ service: magick-accounting-infra
 
 provider:
   name: aws
-  region: ${opt:region, 'us-east-1'}
+  region: ${opt:region, 'ap-south-1'}
   stage: ${opt:stage, 'prod'}
 
 resources:
@@ -17,10 +17,14 @@ resources:
           BlockPublicPolicy: true
           IgnorePublicAcls: true
           RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
         CorsConfiguration:
           CorsRules:
             - AllowedHeaders:
-                - "*"
+                - "Content-Type"
               AllowedMethods:
                 - GET
                 - PUT
@@ -38,21 +42,6 @@ resources:
             Value: magick-accounting
           - Key: Environment
             Value: ${self:provider.stage}
-
-    ReceiptsBucketPolicy:
-      Type: AWS::S3::BucketPolicy
-      Properties:
-        Bucket: !Ref ReceiptsBucket
-        PolicyDocument:
-          Statement:
-            - Sid: DenyUnencryptedObjectUploads
-              Effect: Deny
-              Principal: "*"
-              Action: s3:PutObject
-              Resource: !Sub "${ReceiptsBucket.Arn}/*"
-              Condition:
-                StringNotEquals:
-                  s3:x-amz-server-side-encryption: AES256
 
   Outputs:
     ReceiptsBucketName:

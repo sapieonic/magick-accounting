@@ -16,10 +16,12 @@ export async function getUploadUrl(key: string, contentType: string): Promise<st
     Bucket: BUCKET_NAME,
     Key: key,
     ContentType: contentType,
-    ServerSideEncryption: "AES256",
   });
 
-  return getSignedUrl(s3Client, command, { expiresIn: 300 });
+  return getSignedUrl(s3Client, command, {
+    expiresIn: 300,
+    unhoistableHeaders: new Set(["content-type"]),
+  });
 }
 
 export async function getDownloadUrl(key: string): Promise<string> {

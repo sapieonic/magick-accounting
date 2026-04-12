@@ -116,7 +116,6 @@ export default function EditExpensePage() {
         body: newReceipt.file,
         headers: {
           "Content-Type": newReceipt.file.type,
-          "x-amz-server-side-encryption": "AES256",
         },
       });
 

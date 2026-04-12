@@ -3,6 +3,9 @@ import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
+import "@/models/Category";
+import "@/models/Department";
+import "@/models/User";
 
 export async function GET(req: NextRequest) {
   const authResult = await verifyAuth(req);
