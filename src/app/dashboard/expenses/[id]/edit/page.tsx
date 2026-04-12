@@ -106,20 +106,11 @@ export default function EditExpensePage() {
     if (!newReceipt?.file) return null;
     setUploadingReceipt(true);
     try {
-      const { uploadUrl, key } = await api.post("/api/upload", {
-        filename: newReceipt.file.name,
-        contentType: newReceipt.file.type,
-      });
+      const formData = new FormData();
+      formData.append("file", newReceipt.file);
 
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: newReceipt.file,
-        headers: {
-          "Content-Type": newReceipt.file.type,
-        },
-      });
-
-      return { key, filename: newReceipt.file.name };
+      const result = await api.postFormData("/api/upload", formData);
+      return { key: result.key, filename: result.filename };
     } catch {
       toast("Failed to upload receipt", "error");
       return null;

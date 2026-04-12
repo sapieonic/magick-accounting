@@ -16,6 +16,12 @@ async function handleResponse(res: Response) {
   return data;
 }
 
+async function getAuthToken(): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not authenticated");
+  return user.getIdToken();
+}
+
 export const api = {
   get: async (url: string) => {
     const headers = await getAuthHeaders();
@@ -26,6 +32,16 @@ export const api = {
   post: async (url: string, body?: unknown) => {
     const headers = await getAuthHeaders();
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    return handleResponse(res);
+  },
+
+  postFormData: async (url: string, formData: FormData) => {
+    const token = await getAuthToken();
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
     return handleResponse(res);
   },
 

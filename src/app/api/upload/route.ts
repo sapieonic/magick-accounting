@@ -1,39 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
-import { getUploadUrl, getDownloadUrl } from "@/lib/s3";
+import { uploadObject, getDownloadUrl } from "@/lib/s3";
+
 function generateId(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
 export async function POST(req: NextRequest) {
   const authResult = await verifyAuth(req);
   if (authResult instanceof NextResponse) return authResult;
 
   try {
-    const { filename, contentType } = await req.json();
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
 
-    if (!filename || !contentType) {
-      return NextResponse.json({ error: "filename and contentType are required" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json({ error: "File too large. Maximum size is 10MB." }, { status: 400 });
     }
 
     const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-    if (!allowedTypes.includes(contentType)) {
+    if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
         { error: "File type not allowed. Accepted: JPEG, PNG, WebP, PDF" },
         { status: 400 }
       );
     }
 
-    const ext = filename.split(".").pop();
+    const ext = file.name.split(".").pop();
     const key = `receipts/${authResult._id}/${generateId()}.${ext}`;
 
-    const uploadUrl = await getUploadUrl(key, contentType);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await uploadObject(key, buffer, file.type);
 
-    return NextResponse.json({ uploadUrl, key });
-  } catch {
-    return NextResponse.json({ error: "Failed to generate upload URL" }, { status: 500 });
+    return NextResponse.json({ key, filename: file.name }, { status: 201 });
+  } catch (err) {
+    console.error("Upload error:", err);
+    const message = err instanceof Error ? err.message : "Failed to upload file";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
