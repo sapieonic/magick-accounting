@@ -11,7 +11,9 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: magick-accounting-receipts-${self:provider.stage}
-        AccessControl: Private
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerEnforced
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
           BlockPublicPolicy: true
