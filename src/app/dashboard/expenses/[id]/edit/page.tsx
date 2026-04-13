@@ -13,6 +13,7 @@ import Link from "next/link";
 interface Department {
   _id: string;
   name: string;
+  isDefault?: boolean;
 }
 
 interface Category {
@@ -56,11 +57,9 @@ export default function EditExpensePage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [expData, deptData, catData, currData] = await Promise.all([
+        const [expData, lookupData] = await Promise.all([
           api.get(`/api/expenses/${params.id}`),
-          api.get("/api/departments"),
-          api.get("/api/categories"),
-          api.get("/api/currencies"),
+          api.get("/api/lookups?include=departments,categories,currencies"),
         ]);
 
         const exp = expData.expense;
@@ -78,9 +77,9 @@ export default function EditExpensePage() {
           setExistingReceipt({ key: exp.receiptKey, filename: exp.receiptFilename || "Receipt" });
         }
 
-        setDepartments(deptData.departments);
-        setCategories(catData.categories);
-        setCurrencies(currData.currencies);
+        setDepartments(lookupData.departments);
+        setCategories(lookupData.categories);
+        setCurrencies(lookupData.currencies);
       } catch {
         toast("Failed to load expense", "error");
         router.push("/dashboard/expenses");

@@ -13,6 +13,7 @@ import Link from "next/link";
 interface Department {
   _id: string;
   name: string;
+  isDefault?: boolean;
 }
 
 interface Category {
@@ -58,17 +59,13 @@ export default function NewExpensePage() {
   useEffect(() => {
     async function loadOptions() {
       try {
-        const [deptData, catData, currData] = await Promise.all([
-          api.get("/api/departments"),
-          api.get("/api/categories"),
-          api.get("/api/currencies"),
-        ]);
-        setDepartments(deptData.departments);
-        setCategories(catData.categories);
-        setCurrencies(currData.currencies);
+        const data = await api.get("/api/lookups?include=departments,categories,currencies");
+        setDepartments(data.departments);
+        setCategories(data.categories);
+        setCurrencies(data.currencies);
 
-        const defaultDept = deptData.departments.find((d: Department & { isDefault?: boolean }) => d.isDefault);
-        const baseCurrency = currData.currencies.find((c: CurrencyOption) => c.isBase);
+        const defaultDept = data.departments.find((d: Department) => d.isDefault);
+        const baseCurrency = data.currencies.find((c: CurrencyOption) => c.isBase);
         setForm((prev) => ({
           ...prev,
           department: defaultDept ? defaultDept._id : prev.department,
