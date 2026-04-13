@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
@@ -14,7 +14,7 @@ import {
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
   Calendar, TrendingUp,
 } from "lucide-react";
-import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
+import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
 
 interface Expense {
@@ -34,6 +34,10 @@ interface Expense {
 
 interface Department { _id: string; name: string }
 interface Category { _id: string; name: string }
+interface ExpenseSummary {
+  totalAmount: number;
+  totalExpenses: number;
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Office Supplies": "bg-sky-100 text-sky-700 border-sky-200",
@@ -90,33 +94,106 @@ export default function ExpensesPage() {
   const [filterDept, setFilterDept] = useState("");
   const [filterCat, setFilterCat] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
+  const [loadingLookups, setLoadingLookups] = useState(true);
+  const [loadingExpenses, setLoadingExpenses] = useState(true);
+  const [refreshingExpenses, setRefreshingExpenses] = useState(false);
+  const hasLoadedExpenses = useRef(false);
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
-  const loadData = useCallback(async () => {
-    try {
-      let url = "/api/expenses?limit=100";
-      if (filterDept) url += `&department=${filterDept}`;
-      if (filterCat) url += `&category=${filterCat}`;
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 250);
 
-      const [expData, deptData, catData] = await Promise.all([
-        api.get(url),
-        api.get("/api/departments"),
-        api.get("/api/categories"),
-      ]);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
 
-      setExpenses(expData.expenses);
-      setDepartments(deptData.departments);
-      setCategories(catData.categories);
-    } catch {
-      toast("Failed to load expenses", "error");
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    let active = true;
+
+    async function loadLookups() {
+      try {
+        const data = await api.get("/api/lookups?include=departments,categories");
+        if (!active) return;
+
+        setDepartments(data.departments);
+        setCategories(data.categories);
+      } catch {
+        if (active) {
+          toast("Failed to load filters", "error");
+        }
+      } finally {
+        if (active) {
+          setLoadingLookups(false);
+        }
+      }
     }
-  }, [filterDept, filterCat, toast]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+    loadLookups();
+    return () => {
+      active = false;
+    };
+  }, [toast]);
+
+  useEffect(() => {
+    let active = true;
+    const initialLoad = !hasLoadedExpenses.current;
+
+    async function loadExpenses() {
+      if (initialLoad) {
+        setLoadingExpenses(true);
+      } else {
+        setRefreshingExpenses(true);
+      }
+
+      try {
+        const params = new URLSearchParams({
+          limit: "100",
+          includeSummary: "true",
+        });
+
+        if (filterDept) params.set("department", filterDept);
+        if (filterCat) params.set("category", filterCat);
+        if (search) params.set("search", search);
+
+        if (filterMonth) {
+          const [year, month] = filterMonth.split("-").map(Number);
+          const monthStart = new Date(year, month - 1, 1);
+          params.set("from", format(monthStart, "yyyy-MM-dd"));
+          params.set("to", format(endOfMonth(monthStart), "yyyy-MM-dd"));
+        }
+
+        const data = await api.get(`/api/expenses?${params.toString()}`);
+        if (!active) return;
+
+        setExpenses(data.expenses);
+        setSummary(data.summary || { totalAmount: 0, totalExpenses: 0 });
+      } catch {
+        if (active) {
+          toast("Failed to load expenses", "error");
+        }
+      } finally {
+        if (!active) return;
+
+        if (initialLoad) {
+          setLoadingExpenses(false);
+          hasLoadedExpenses.current = true;
+          setLoading(false);
+        } else {
+          setRefreshingExpenses(false);
+        }
+      }
+    }
+
+    loadExpenses();
+    return () => {
+      active = false;
+    };
+  }, [filterCat, filterDept, filterMonth, search, toast]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -155,24 +232,7 @@ export default function ExpensesPage() {
 
   const handleDownload = (url: string) => { window.open(url, "_blank"); };
 
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((e) => {
-      if (search && !e.title.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterMonth) {
-        const [y, m] = filterMonth.split("-").map(Number);
-        const monthStart = startOfMonth(new Date(y, m - 1));
-        const monthEnd = endOfMonth(new Date(y, m - 1));
-        if (!isWithinInterval(parseISO(e.date), { start: monthStart, end: monthEnd })) return false;
-      }
-      return true;
-    });
-  }, [expenses, search, filterMonth]);
-
-  const monthTotal = useMemo(() => {
-    return filteredExpenses.reduce((sum, e) => sum + (e.amountInBaseCurrency ?? e.amount), 0);
-  }, [filteredExpenses]);
-
-  if (loading) return <PageLoader />;
+  if (loading || loadingLookups || loadingExpenses) return <PageLoader />;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -198,12 +258,13 @@ export default function ExpensesPage() {
               {filterMonth ? monthOptions.find((o) => o.value === filterMonth)?.label : "All Time"} Total
             </p>
             <p className="text-lg font-bold tabular-nums text-emerald-900">
-              {formatBaseCurrency(monthTotal)}
+              {formatBaseCurrency(summary.totalAmount)}
             </p>
           </div>
           <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-            {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? "s" : ""}
+            {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
           </span>
+          {refreshingExpenses && <Spinner size="sm" />}
         </div>
       </div>
 
@@ -215,8 +276,8 @@ export default function ExpensesPage() {
             <input
               type="text"
               placeholder="Search expenses..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="input-field pl-10"
             />
           </div>
@@ -293,10 +354,10 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      {filteredExpenses.length === 0 ? (
+      {expenses.length === 0 ? (
         <EmptyState
           icon={<Receipt className="h-8 w-8" />}
-          title="No expenses found"
+          title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
           description={search || filterDept || filterCat || filterMonth ? "Try adjusting your filters." : "Create your first expense to get started."}
           action={
             !search && !filterDept && !filterCat && !filterMonth ? (
@@ -309,7 +370,7 @@ export default function ExpensesPage() {
         />
       ) : (
         <div className="space-y-2.5">
-          {filteredExpenses.map((expense) => {
+          {expenses.map((expense) => {
             const isExpanded = expandedId === expense._id;
             const receiptUrl = receiptUrls[expense._id];
             const isImage = isImageFile(expense.receiptFilename);

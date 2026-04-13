@@ -56,26 +56,8 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const [expensesData, deptData, catData] = await Promise.all([
-          api.get("/api/expenses?limit=5"),
-          api.get("/api/departments"),
-          api.get("/api/categories"),
-        ]);
-
-        const allExpenses = await api.get("/api/expenses?limit=1000");
-        const totalAmount = allExpenses.expenses.reduce(
-          (sum: number, e: { amountInBaseCurrency?: number; amount: number }) =>
-            sum + (e.amountInBaseCurrency ?? e.amount),
-          0
-        );
-
-        setStats({
-          totalExpenses: allExpenses.pagination.total,
-          totalAmount,
-          departmentCount: deptData.departments.length,
-          categoryCount: catData.categories.length,
-          recentExpenses: expensesData.expenses,
-        });
+        const data = await api.get("/api/dashboard/stats");
+        setStats(data);
       } catch {
         // Stats loading is best-effort
       } finally {

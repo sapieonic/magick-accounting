@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
+import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
 import "@/models/Category";
@@ -13,20 +14,12 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const { searchParams } = new URL(req.url);
-  const department = searchParams.get("department");
-  const category = searchParams.get("category");
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "20");
+  const includeSummary = searchParams.get("includeSummary") === "true";
+  const filter = buildExpenseFilter(searchParams, authResult);
 
-  const filter: Record<string, unknown> = {};
-
-  if (authResult.role === "user") {
-    filter.createdBy = authResult._id;
-  }
-  if (department) filter.department = department;
-  if (category) filter.category = category;
-
-  const [expenses, total] = await Promise.all([
+  const [expenses, total, summary] = await Promise.all([
     Expense.find(filter)
       .populate("category", "name")
       .populate("department", "name")
@@ -37,11 +30,13 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .lean(),
     Expense.countDocuments(filter),
+    includeSummary ? getExpenseSummary(filter) : Promise.resolve(null),
   ]);
 
   return NextResponse.json({
     expenses,
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    ...(summary ? { summary } : {}),
   });
 }
 

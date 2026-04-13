@@ -33,9 +33,10 @@ const ExpenseSchema = new Schema<IExpense>(
   { timestamps: true }
 );
 
+ExpenseSchema.index({ date: -1 });
 ExpenseSchema.index({ department: 1, date: -1 });
 ExpenseSchema.index({ createdBy: 1, date: -1 });
-ExpenseSchema.index({ category: 1 });
+ExpenseSchema.index({ category: 1, date: -1 });
 ExpenseSchema.index({ currency: 1 });
 
 export default mongoose.models.Expense || mongoose.model<IExpense>("Expense", ExpenseSchema);
