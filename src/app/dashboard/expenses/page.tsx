@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
@@ -264,7 +264,7 @@ export default function ExpensesPage() {
           <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
             {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
           </span>
-          {refreshingExpenses && <Spinner size="sm" />}
+          {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700" />}
         </div>
       </div>
 

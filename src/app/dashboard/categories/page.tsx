@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
@@ -28,8 +28,10 @@ export default function CategoriesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [newName, setNewName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadCategories = useCallback(async () => {
+  const loadCategories = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
     try {
       const data = await api.get("/api/categories");
       setCategories(data.categories);
@@ -37,6 +39,7 @@ export default function CategoriesPage() {
       toast("Failed to load categories", "error");
     } finally {
       setLoading(false);
+      if (showRefreshing) setRefreshing(false);
     }
   }, [toast]);
 
@@ -53,7 +56,7 @@ export default function CategoriesPage() {
       toast("Category created");
       setNewName("");
       setShowForm(false);
-      loadCategories();
+      await loadCategories(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to create category", "error");
     } finally {
@@ -68,7 +71,7 @@ export default function CategoriesPage() {
       await api.delete(`/api/categories/${deleteTarget._id}`);
       toast("Category deleted");
       setDeleteTarget(null);
-      loadCategories();
+      await loadCategories(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to delete", "error");
     } finally {
@@ -84,9 +87,12 @@ export default function CategoriesPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
+          <div>
           <h1 className="text-2xl font-bold text-gray-900">Categories</h1>
           <p className="text-sm text-gray-500">Expense categories for classification.</p>
+          </div>
+          {refreshing && <InlineLoader label="Refreshing..." />}
         </div>
         <button onClick={() => { setNewName(""); setShowForm(true); }} className="btn-primary">
           <Plus className="h-4 w-4" />
@@ -185,7 +191,7 @@ export default function CategoriesPage() {
             Cancel
           </button>
           <button onClick={handleDelete} className="btn-danger" disabled={submitting}>
-            {submitting ? "Deleting..." : "Delete"}
+            {submitting ? <Spinner size="sm" /> : "Delete"}
           </button>
         </div>
       </Modal>

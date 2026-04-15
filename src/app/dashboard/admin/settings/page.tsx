@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import Modal from "@/components/ui/Modal";
 import { Globe, Plus, Trash2, Shield, Coins, Pencil } from "lucide-react";
@@ -51,12 +51,14 @@ export default function AdminSettingsPage() {
   // Shared state
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) router.replace("/dashboard");
   }, [isAdmin, router]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
     try {
       const [domainData, currencyData] = await Promise.all([
         api.get("/api/domains"),
@@ -68,6 +70,7 @@ export default function AdminSettingsPage() {
       toast("Failed to load settings", "error");
     } finally {
       setLoading(false);
+      if (showRefreshing) setRefreshing(false);
     }
   }, [toast]);
 
@@ -85,7 +88,7 @@ export default function AdminSettingsPage() {
       toast("Domain added");
       setNewDomain("");
       setShowDomainForm(false);
-      loadData();
+      await loadData(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to add domain", "error");
     } finally {
@@ -100,7 +103,7 @@ export default function AdminSettingsPage() {
       await api.delete(`/api/domains/${deleteDomainTarget._id}`);
       toast("Domain removed");
       setDeleteDomainTarget(null);
-      loadData();
+      await loadData(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to remove", "error");
     } finally {
@@ -123,7 +126,7 @@ export default function AdminSettingsPage() {
       toast("Currency added");
       setCurrencyForm({ code: "", name: "", symbol: "", rateToBase: "" });
       setShowCurrencyForm(false);
-      loadData();
+      await loadData(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to add currency", "error");
     } finally {
@@ -141,7 +144,7 @@ export default function AdminSettingsPage() {
       });
       toast("Exchange rate updated");
       setEditRateTarget(null);
-      loadData();
+      await loadData(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to update rate", "error");
     } finally {
@@ -156,7 +159,7 @@ export default function AdminSettingsPage() {
       await api.delete(`/api/currencies/${deleteCurrencyTarget._id}`);
       toast("Currency deleted");
       setDeleteCurrencyTarget(null);
-      loadData();
+      await loadData(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to delete", "error");
     } finally {
@@ -168,9 +171,12 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500">Manage application access, security, and currencies.</p>
+      <div className="flex items-center gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500">Manage application access, security, and currencies.</p>
+        </div>
+        {refreshing && <InlineLoader label="Refreshing..." />}
       </div>
 
       {/* Domain Whitelist Section */}

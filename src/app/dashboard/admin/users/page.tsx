@@ -6,7 +6,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
+import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import { Users, Shield, ShieldCheck, User as UserIcon } from "lucide-react";
 
@@ -27,6 +28,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -34,7 +36,8 @@ export default function AdminUsersPage() {
     }
   }, [isAdmin, router]);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
     try {
       const data = await api.get("/api/users");
       setUsers(data.users);
@@ -42,6 +45,7 @@ export default function AdminUsersPage() {
       toast("Failed to load users", "error");
     } finally {
       setLoading(false);
+      if (showRefreshing) setRefreshing(false);
     }
   }, [toast]);
 
@@ -56,7 +60,7 @@ export default function AdminUsersPage() {
     try {
       await api.patch(`/api/users/${user._id}/role`, { role: newRole });
       toast(`${user.name} is now ${newRole === "admin" ? "an admin" : "a member"}`);
-      loadUsers();
+      await loadUsers(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to update role", "error");
     } finally {
@@ -74,11 +78,14 @@ export default function AdminUsersPage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-        <p className="text-sm text-gray-500">
-          Manage user roles. {isMasterAdmin ? "Click a user's role badge to change it." : "Only the master admin can change roles."}
-        </p>
+      <div className="flex items-center gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+          <p className="text-sm text-gray-500">
+            Manage user roles. {isMasterAdmin ? "Click a user's role badge to change it." : "Only the master admin can change roles."}
+          </p>
+        </div>
+        {refreshing && <InlineLoader label="Refreshing..." />}
       </div>
 
       {users.length === 0 ? (
@@ -127,7 +134,7 @@ export default function AdminUsersPage() {
                     aria-label={`Change role for ${user.name}`}
                   >
                     <config.icon className="h-3.5 w-3.5" />
-                    {updatingId === user._id ? "Updating..." : config.label}
+                    {updatingId === user._id ? <Spinner size="sm" className="border-current border-t-transparent" /> : config.label}
                   </button>
                 </div>
               );

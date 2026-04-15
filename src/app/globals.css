@@ -57,6 +57,18 @@
   .animate-slide-in-right {
     animation: slideInRight 0.3s ease-out;
   }
+
+  .animate-loader-orbit {
+    animation: loaderOrbit 1.1s linear infinite;
+  }
+
+  .animate-loader-pulse {
+    animation: loaderPulse 1.6s ease-in-out infinite;
+  }
+
+  .animate-loader-breathe {
+    animation: loaderBreathe 1.2s ease-in-out infinite;
+  }
 }
 
 @keyframes fadeIn {
@@ -87,5 +99,38 @@
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@keyframes loaderOrbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loaderPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes loaderBreathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
   }
 }

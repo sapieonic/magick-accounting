@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
@@ -31,8 +31,10 @@ export default function DepartmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Department | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadDepartments = useCallback(async () => {
+  const loadDepartments = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
     try {
       const data = await api.get("/api/departments");
       setDepartments(data.departments);
@@ -40,6 +42,7 @@ export default function DepartmentsPage() {
       toast("Failed to load departments", "error");
     } finally {
       setLoading(false);
+      if (showRefreshing) setRefreshing(false);
     }
   }, [toast]);
 
@@ -73,7 +76,7 @@ export default function DepartmentsPage() {
         toast("Department created");
       }
       setShowForm(false);
-      loadDepartments();
+      await loadDepartments(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Operation failed", "error");
     } finally {
@@ -88,7 +91,7 @@ export default function DepartmentsPage() {
       await api.delete(`/api/departments/${deleteTarget._id}`);
       toast("Department deleted");
       setDeleteTarget(null);
-      loadDepartments();
+      await loadDepartments(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to delete", "error");
     } finally {
@@ -101,9 +104,12 @@ export default function DepartmentsPage() {
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
+          <div>
           <h1 className="text-2xl font-bold text-gray-900">Departments</h1>
           <p className="text-sm text-gray-500">Organize expenses by department.</p>
+          </div>
+          {refreshing && <InlineLoader label="Refreshing..." />}
         </div>
         <button onClick={openCreateForm} className="btn-primary">
           <Plus className="h-4 w-4" />
@@ -221,7 +227,7 @@ export default function DepartmentsPage() {
             Cancel
           </button>
           <button onClick={handleDelete} className="btn-danger" disabled={submitting}>
-            {submitting ? "Deleting..." : "Delete"}
+            {submitting ? <Spinner size="sm" /> : "Delete"}
           </button>
         </div>
       </Modal>
