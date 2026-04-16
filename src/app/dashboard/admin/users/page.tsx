@@ -99,6 +99,10 @@ export default function AdminUsersPage() {
           <div className="divide-y divide-gray-50">
             {users.map((user) => {
               const config = roleConfig[user.role];
+              const canManageRole = isMasterAdmin && user.role !== "master_admin";
+              const nextRole = user.role === "admin" ? "user" : "admin";
+              const actionLabel = user.role === "admin" ? "Remove Admin" : "Make Admin";
+              const ActionIcon = user.role === "admin" ? UserIcon : Shield;
               return (
                 <div
                   key={user._id}
@@ -123,19 +127,37 @@ export default function AdminUsersPage() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => toggleRole(user)}
-                    disabled={!isMasterAdmin || user.role === "master_admin" || updatingId === user._id}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all ${config.color} ${
-                      isMasterAdmin && user.role !== "master_admin"
-                        ? "cursor-pointer hover:opacity-80"
-                        : "cursor-default"
-                    } ${updatingId === user._id ? "opacity-50" : ""}`}
-                    aria-label={`Change role for ${user.name}`}
-                  >
-                    <config.icon className="h-3.5 w-3.5" />
-                    {updatingId === user._id ? <Spinner size="sm" className="border-current border-t-transparent" /> : config.label}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${config.color}`}
+                    >
+                      <config.icon className="h-3.5 w-3.5" />
+                      {config.label}
+                    </span>
+
+                    {canManageRole && (
+                      <button
+                        onClick={() => toggleRole(user)}
+                        disabled={updatingId === user._id}
+                        className={`inline-flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                          user.role === "admin"
+                            ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            : "bg-brand-600 text-white hover:bg-brand-700"
+                        } ${updatingId === user._id ? "cursor-wait opacity-70" : ""}`}
+                        aria-label={`${actionLabel} for ${user.name}`}
+                      >
+                        {updatingId === user._id ? (
+                          <Spinner
+                            size="sm"
+                            className={user.role === "admin" ? "border-gray-400 border-t-transparent" : "border-white/40 border-t-white"}
+                          />
+                        ) : (
+                          <ActionIcon className="h-3.5 w-3.5" />
+                        )}
+                        {updatingId === user._id ? `Updating to ${nextRole === "admin" ? "admin" : "member"}...` : actionLabel}
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
