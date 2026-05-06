@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
@@ -12,7 +13,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Plus, Receipt, Trash2, Pencil, Paperclip, Download,
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
-  Calendar, TrendingUp,
+  Calendar, TrendingUp, User as UserIcon, Tag,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
@@ -34,6 +35,7 @@ interface Expense {
 
 interface Department { _id: string; name: string }
 interface Category { _id: string; name: string }
+interface UserOption { _id: string; name: string; email: string }
 interface ExpenseSummary {
   totalAmount: number;
   totalExpenses: number;
@@ -77,12 +79,19 @@ function getMonthOptions(): { value: string; label: string }[] {
   return options;
 }
 
+function readInitialFilter(name: string): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) ?? "";
+}
+
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -91,9 +100,10 @@ export default function ExpensesPage() {
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
   const [loadingReceipt, setLoadingReceipt] = useState<string | null>(null);
 
-  const [filterDept, setFilterDept] = useState("");
-  const [filterCat, setFilterCat] = useState("");
+  const [filterDept, setFilterDept] = useState(() => readInitialFilter("department"));
+  const [filterCat, setFilterCat] = useState(() => readInitialFilter("category"));
   const [filterMonth, setFilterMonth] = useState("");
+  const [filterUser, setFilterUser] = useState(() => readInitialFilter("createdBy"));
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
@@ -140,6 +150,26 @@ export default function ExpensesPage() {
   }, [toast]);
 
   useEffect(() => {
+    if (!isAdmin) return;
+    let active = true;
+
+    async function loadUsers() {
+      try {
+        const data = await api.get("/api/users");
+        if (!active) return;
+        setUsers(data.users);
+      } catch {
+        // Non-critical: filter just won't be populated
+      }
+    }
+
+    loadUsers();
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
     let active = true;
     const initialLoad = !hasLoadedExpenses.current;
 
@@ -158,6 +188,7 @@ export default function ExpensesPage() {
 
         if (filterDept) params.set("department", filterDept);
         if (filterCat) params.set("category", filterCat);
+        if (filterUser) params.set("createdBy", filterUser);
         if (search) params.set("search", search);
 
         if (filterMonth) {
@@ -193,7 +224,7 @@ export default function ExpensesPage() {
     return () => {
       active = false;
     };
-  }, [filterCat, filterDept, filterMonth, search, toast]);
+  }, [filterCat, filterDept, filterMonth, filterUser, search, toast]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -270,8 +301,8 @@ export default function ExpensesPage() {
 
       {/* Filters */}
       <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
+        <div className="space-y-3">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -281,13 +312,14 @@ export default function ExpensesPage() {
               className="input-field pl-10"
             />
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className={`grid gap-2 sm:grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-400" />
+              <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-400" />
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
               <select
                 value={filterMonth}
                 onChange={(e) => setFilterMonth(e.target.value)}
-                className="input-field appearance-none pl-10 pr-8 text-sm"
+                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
                 aria-label="Filter by month"
               >
                 {monthOptions.map((opt) => (
@@ -296,11 +328,12 @@ export default function ExpensesPage() {
               </select>
             </div>
             <div className="relative">
-              <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-400" />
+              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-400" />
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
               <select
                 value={filterDept}
                 onChange={(e) => setFilterDept(e.target.value)}
-                className="input-field appearance-none pl-10 pr-8 text-sm"
+                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
                 aria-label="Filter by department"
               >
                 <option value="">All Departments</option>
@@ -309,21 +342,42 @@ export default function ExpensesPage() {
                 ))}
               </select>
             </div>
-            <select
-              value={filterCat}
-              onChange={(e) => setFilterCat(e.target.value)}
-              className="input-field appearance-none text-sm"
-              aria-label="Filter by category"
-            >
-              <option value="">All Categories</option>
-              {categories.map((c) => (
-                <option key={c._id} value={c._id}>{c.name}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <Tag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+              <select
+                value={filterCat}
+                onChange={(e) => setFilterCat(e.target.value)}
+                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
+                aria-label="Filter by category"
+              >
+                <option value="">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c._id} value={c._id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            {isAdmin && (
+              <div className="relative">
+                <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-400" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                <select
+                  value={filterUser}
+                  onChange={(e) => setFilterUser(e.target.value)}
+                  className="input-field w-full appearance-none pl-10 pr-9 text-sm"
+                  aria-label="Filter by user"
+                >
+                  <option value="">All Users</option>
+                  {users.map((u) => (
+                    <option key={u._id} value={u._id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
         {/* Active filter pills */}
-        {(filterMonth || filterDept || filterCat) && (
+        {(filterMonth || filterDept || filterCat || filterUser) && (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-50 pt-3">
             <span className="text-xs text-gray-400">Filters:</span>
             {filterMonth && (
@@ -350,6 +404,14 @@ export default function ExpensesPage() {
                 {categories.find((c) => c._id === filterCat)?.name} &times;
               </button>
             )}
+            {filterUser && (
+              <button
+                onClick={() => setFilterUser("")}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+              >
+                {users.find((u) => u._id === filterUser)?.name} &times;
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -358,9 +420,9 @@ export default function ExpensesPage() {
         <EmptyState
           icon={<Receipt className="h-8 w-8" />}
           title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
-          description={search || filterDept || filterCat || filterMonth ? "Try adjusting your filters." : "Create your first expense to get started."}
+          description={search || filterDept || filterCat || filterMonth || filterUser ? "Try adjusting your filters." : "Create your first expense to get started."}
           action={
-            !search && !filterDept && !filterCat && !filterMonth ? (
+            !search && !filterDept && !filterCat && !filterMonth && !filterUser ? (
               <Link href="/dashboard/expenses/new" className="btn-primary">
                 <Plus className="h-4 w-4" />
                 Add Expense

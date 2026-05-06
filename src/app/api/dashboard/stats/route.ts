@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
@@ -14,12 +15,16 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const filter = buildExpenseFilter(new URL(req.url).searchParams, authResult);
+  const recentFilter = {
+    ...filter,
+    createdBy: new mongoose.Types.ObjectId(authResult._id),
+  };
 
   const [summary, departmentCount, categoryCount, recentExpenses] = await Promise.all([
     getExpenseSummary(filter),
     Department.countDocuments(),
     Category.countDocuments(),
-    Expense.find(filter)
+    Expense.find(recentFilter)
       .populate("category", "name")
       .populate("department", "name")
       .populate("currency", "code name symbol rateToBase isBase")
