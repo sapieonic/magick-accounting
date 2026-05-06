@@ -79,11 +79,6 @@ function getMonthOptions(): { value: string; label: string }[] {
   return options;
 }
 
-function readInitialFilter(name: string): string {
-  if (typeof window === "undefined") return "";
-  return new URLSearchParams(window.location.search).get(name) ?? "";
-}
-
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
@@ -100,10 +95,11 @@ export default function ExpensesPage() {
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
   const [loadingReceipt, setLoadingReceipt] = useState<string | null>(null);
 
-  const [filterDept, setFilterDept] = useState(() => readInitialFilter("department"));
-  const [filterCat, setFilterCat] = useState(() => readInitialFilter("category"));
+  const [filterDept, setFilterDept] = useState("");
+  const [filterCat, setFilterCat] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
-  const [filterUser, setFilterUser] = useState(() => readInitialFilter("createdBy"));
+  const [filterUser, setFilterUser] = useState("");
+  const [urlSynced, setUrlSynced] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
@@ -113,6 +109,18 @@ export default function ExpensesPage() {
   const hasLoadedExpenses = useRef(false);
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setUrlSynced(true);
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    setFilterDept(params.get("department") ?? "");
+    setFilterCat(params.get("category") ?? "");
+    setFilterUser(params.get("createdBy") ?? "");
+    setUrlSynced(true);
+  }, []);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -170,6 +178,7 @@ export default function ExpensesPage() {
   }, [isAdmin]);
 
   useEffect(() => {
+    if (!urlSynced) return;
     let active = true;
     const initialLoad = !hasLoadedExpenses.current;
 
@@ -224,7 +233,7 @@ export default function ExpensesPage() {
     return () => {
       active = false;
     };
-  }, [filterCat, filterDept, filterMonth, filterUser, search, toast]);
+  }, [filterCat, filterDept, filterMonth, filterUser, search, toast, urlSynced]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
