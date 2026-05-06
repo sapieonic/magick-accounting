@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -9,7 +10,7 @@ import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
-import { Plus, Tag, Trash2 } from "lucide-react";
+import { Plus, Tag, Trash2, ArrowUpRight } from "lucide-react";
 
 interface Category {
   _id: string;
@@ -113,12 +114,15 @@ export default function CategoriesPage() {
               <h2 className="mb-3 text-sm font-semibold text-gray-500">Default Categories</h2>
               <div className="flex flex-wrap gap-2">
                 {defaultCats.map((cat) => (
-                  <span
+                  <Link
                     key={cat._id}
-                    className="inline-flex items-center rounded-full bg-gray-100 px-3.5 py-1.5 text-sm font-medium text-gray-700"
+                    href={`/dashboard/expenses?category=${cat._id}`}
+                    className="group inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3.5 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200"
+                    aria-label={`View expenses in ${cat.name}`}
                   >
                     {cat.name}
-                  </span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-gray-400 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-gray-600" />
+                  </Link>
                 ))}
               </div>
             </div>
@@ -129,21 +133,25 @@ export default function CategoriesPage() {
               <h2 className="mb-3 text-sm font-semibold text-gray-500">Custom Categories</h2>
               <div className="flex flex-wrap gap-2">
                 {customCats.map((cat) => (
-                  <span
+                  <Link
                     key={cat._id}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3.5 py-1.5 text-sm font-medium text-brand-700"
+                    href={`/dashboard/expenses?category=${cat._id}`}
+                    className="group inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3.5 py-1.5 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-100"
+                    aria-label={`View expenses in ${cat.name}`}
                   >
                     {cat.name}
+                    <ArrowUpRight className="h-3.5 w-3.5 text-brand-400 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand-600" />
                     {isAdmin && (
                       <button
-                        onClick={() => setDeleteTarget(cat)}
-                        className="cursor-pointer rounded-full p-0.5 transition-colors hover:bg-brand-100"
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(cat); }}
+                        className="cursor-pointer rounded-full p-0.5 transition-colors hover:bg-brand-200"
                         aria-label={`Delete ${cat.name}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     )}
-                  </span>
+                  </Link>
                 ))}
               </div>
             </div>

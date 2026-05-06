@@ -5,10 +5,22 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
 import { PageLoader } from "@/components/ui/Spinner";
-import { Receipt, Building2, Tag, TrendingUp, ArrowUpRight, Sparkles } from "lucide-react";
+import { Receipt, Building2, Tag, TrendingUp, ArrowUpRight, Sparkles, BarChart3, PieChart as PieChartIcon } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 interface Stats {
   totalExpenses: number;
@@ -26,6 +38,20 @@ interface Stats {
     department: { name: string };
   }>;
 }
+
+interface ChartData {
+  monthlyTrend: Array<{ month: string; key: string; total: number; count: number }>;
+  topCategories: Array<{ name: string; total: number; count: number }>;
+}
+
+const PIE_COLORS = [
+  "#6366f1", // indigo
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#a855f7", // purple
+];
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Office Supplies": "bg-sky-100 text-sky-700",
@@ -51,23 +77,32 @@ export default function DashboardPage() {
   const { user } = useAuth();
   useTitle("Dashboard");
   const [stats, setStats] = useState<Stats | null>(null);
+  const [charts, setCharts] = useState<ChartData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadStats() {
+    async function load() {
       try {
-        const data = await api.get("/api/dashboard/stats");
-        setStats(data);
+        const [statsData, chartData] = await Promise.all([
+          api.get("/api/dashboard/stats"),
+          api.get("/api/dashboard/charts"),
+        ]);
+        setStats(statsData);
+        setCharts(chartData);
       } catch {
-        // Stats loading is best-effort
+        // Best-effort
       } finally {
         setLoading(false);
       }
     }
-    loadStats();
+    load();
   }, []);
 
   if (loading) return <PageLoader />;
+
+  const hasTrendData = (charts?.monthlyTrend ?? []).some((m) => m.total > 0);
+  const hasCategoryData = (charts?.topCategories ?? []).length > 0;
+  const categoryTotal = (charts?.topCategories ?? []).reduce((sum, c) => sum + c.total, 0);
 
   const statCards = [
     {
@@ -145,6 +180,167 @@ export default function DashboardPage() {
             </div>
           </Link>
         ))}
+      </div>
+
+      {/* Trend charts */}
+      <div className="grid gap-4 lg:grid-cols-5">
+        {/* Monthly trend */}
+        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm lg:col-span-3">
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 p-1.5 text-white">
+                <BarChart3 className="h-4 w-4" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Monthly Trend</h2>
+            </div>
+            <p className="text-xs text-gray-400">Last 6 months</p>
+          </div>
+          <div className="px-2 pb-4 pt-4 sm:px-4">
+            {hasTrendData ? (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={charts?.monthlyTrend ?? []} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.32} />
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      stroke="#94a3b8"
+                      tick={{ fontSize: 12 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#94a3b8"
+                      tick={{ fontSize: 12 }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) =>
+                        v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
+                      }
+                      width={48}
+                    />
+                    <Tooltip
+                      cursor={{ stroke: "#cbd5e1", strokeWidth: 1, strokeDasharray: "3 3" }}
+                      contentStyle={{
+                        borderRadius: 12,
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
+                        fontSize: 12,
+                      }}
+                      formatter={((value: unknown, _name: unknown, item: { payload?: { count?: number } }) => {
+                        const numericValue = typeof value === "number" ? value : Number(value);
+                        const count = item?.payload?.count ?? 0;
+                        return [
+                          formatBaseCurrency(numericValue),
+                          `Total (${count} ${count === 1 ? "expense" : "expenses"})`,
+                        ];
+                      }) as never}
+                      labelStyle={{ fontWeight: 600, color: "#0f172a" }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="total"
+                      stroke="#6366f1"
+                      strokeWidth={2}
+                      fill="url(#trendFill)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100">
+                  <BarChart3 className="h-5 w-5 text-blue-500" />
+                </div>
+                <p className="text-sm font-medium text-gray-600">No trend data yet</p>
+                <p className="mt-1 text-xs text-gray-400">Add expenses to see your monthly trend.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Top categories */}
+        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-gradient-to-br from-amber-500 to-pink-500 p-1.5 text-white">
+                <PieChartIcon className="h-4 w-4" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Top Categories</h2>
+            </div>
+          </div>
+          <div className="p-4">
+            {hasCategoryData ? (
+              <>
+                <div className="h-44 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={charts?.topCategories ?? []}
+                        dataKey="total"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={42}
+                        outerRadius={72}
+                        paddingAngle={2}
+                        stroke="#fff"
+                        strokeWidth={2}
+                      >
+                        {(charts?.topCategories ?? []).map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: 12,
+                          border: "1px solid #e2e8f0",
+                          boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
+                          fontSize: 12,
+                        }}
+                        formatter={((value: unknown) => {
+                          const numericValue = typeof value === "number" ? value : Number(value);
+                          return [formatBaseCurrency(numericValue), "Total"];
+                        }) as never}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {(charts?.topCategories ?? []).map((c, i) => {
+                    const pct = categoryTotal > 0 ? Math.round((c.total / categoryTotal) * 100) : 0;
+                    return (
+                      <div key={c.name} className="flex items-center gap-2 text-xs">
+                        <span
+                          className="h-2.5 w-2.5 flex-shrink-0 rounded-sm"
+                          style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-gray-700">{c.name}</span>
+                        <span className="font-semibold tabular-nums text-gray-900">
+                          {formatBaseCurrency(c.total)}
+                        </span>
+                        <span className="w-9 text-right tabular-nums text-gray-400">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-pink-100">
+                  <PieChartIcon className="h-5 w-5 text-pink-500" />
+                </div>
+                <p className="text-sm font-medium text-gray-600">No category data</p>
+                <p className="mt-1 text-xs text-gray-400">Add expenses to see your top categories.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Recent expenses */}

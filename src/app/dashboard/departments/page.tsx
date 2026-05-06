@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -9,7 +10,7 @@ import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
-import { Plus, Building2, Trash2, Pencil } from "lucide-react";
+import { Plus, Building2, Trash2, Pencil, Receipt, ArrowUpRight } from "lucide-react";
 
 interface Department {
   _id: string;
@@ -131,7 +132,7 @@ export default function DepartmentsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {departments.map((dept) => (
-            <div key={dept._id} className="card p-5 transition-shadow hover:shadow-md">
+            <div key={dept._id} className="card flex flex-col p-5 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="rounded-lg bg-purple-50 p-2.5">
@@ -166,6 +167,16 @@ export default function DepartmentsPage() {
               {dept.description && (
                 <p className="mt-3 text-sm text-gray-500">{dept.description}</p>
               )}
+              <Link
+                href={`/dashboard/expenses?department=${dept._id}`}
+                className="group mt-4 inline-flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Receipt className="h-3.5 w-3.5" />
+                  View Expenses
+                </span>
+                <ArrowUpRight className="h-3.5 w-3.5 text-gray-300 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-purple-500" />
+              </Link>
             </div>
           ))}
         </div>

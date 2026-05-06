@@ -34,6 +34,11 @@ export function buildExpenseFilter(
 
   if (user.role === "user") {
     filter.createdBy = new mongoose.Types.ObjectId(user._id);
+  } else {
+    const requestedCreatedBy = toObjectId(searchParams.get("createdBy"));
+    if (requestedCreatedBy) {
+      filter.createdBy = requestedCreatedBy;
+    }
   }
 
   const department = toObjectId(searchParams.get("department"));
