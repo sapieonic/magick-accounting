@@ -30,7 +30,8 @@ interface CurrencyOption {
   isBase: boolean;
 }
 
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+// File types the AI auto-fill can read (images + PDF).
+const EXTRACTABLE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 export default function NewExpensePage() {
@@ -97,10 +98,9 @@ export default function NewExpensePage() {
 
     setReceipt({ file, filename: file.name });
 
-    if (!IMAGE_TYPES.includes(file.type)) {
-      // PDFs upload fine but can't be auto-read.
+    if (!EXTRACTABLE_TYPES.includes(file.type)) {
       setShowUploadModal(false);
-      toast("Receipt attached. AI auto-fill works with image receipts.", "info");
+      toast("Receipt attached. AI auto-fill supports image and PDF receipts.", "info");
       return;
     }
 

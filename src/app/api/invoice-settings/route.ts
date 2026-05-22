@@ -7,6 +7,7 @@ const FIELDS = [
   "sellerName",
   "sellerAddress",
   "sellerGstin",
+  "hsnSac",
   "bankAccountName",
   "bankAccountNumber",
   "bankAccountType",

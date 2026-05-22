@@ -39,8 +39,7 @@ const HEADER_BG = "#3f444b";
 // Column widths (pt); sum = 525 = A4 width minus horizontal padding.
 const COL = {
   sn: 22,
-  desc: 152,
-  hsn: 58,
+  desc: 210,
   qty: 42,
   rate: 68,
   cgst: 62,
@@ -66,13 +65,21 @@ const styles = StyleSheet.create({
   balanceValue: { fontSize: 13, fontWeight: 700, marginTop: 2 },
 
   seller: { marginTop: 6 },
+  partyLabel: {
+    fontSize: 7.5,
+    fontWeight: 700,
+    color: MUTED,
+    letterSpacing: 1,
+    marginBottom: 3,
+  },
   sellerName: { fontSize: 11, fontWeight: 700 },
   sellerLine: { fontSize: 8.5, color: MUTED, marginTop: 1.5 },
 
   midRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 22 },
   customerName: { fontSize: 10, fontWeight: 700 },
   customerLine: { fontSize: 8.5, color: MUTED, marginTop: 2 },
-  placeOfSupply: { fontSize: 9, marginTop: 14 },
+  supplyBlock: { marginTop: 14 },
+  supplyLine: { fontSize: 9, marginTop: 2 },
 
   metaTable: { width: 235 },
   metaRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2.5 },
@@ -120,6 +127,19 @@ const styles = StyleSheet.create({
   bank: { marginTop: 40 },
   bankTitle: { fontSize: 9 },
   bankLine: { fontSize: 8.5, color: MUTED, marginTop: 2 },
+
+  footer: {
+    position: "absolute",
+    bottom: 20,
+    left: 35,
+    right: 35,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: LINE,
+    textAlign: "center",
+    fontSize: 7.5,
+    color: MUTED,
+  },
 });
 
 function MetaRow({ label, value }: { label: string; value: string }) {
@@ -154,6 +174,7 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
 
         {/* Seller */}
         <View style={styles.seller}>
+          <Text style={styles.partyLabel}>FROM</Text>
           <Text style={styles.sellerName}>{data.seller.name}</Text>
           {addressLines.map((line, i) => (
             <Text key={i} style={styles.sellerLine}>
@@ -169,12 +190,20 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
         {/* Customer + invoice meta */}
         <View style={styles.midRow}>
           <View>
+            <Text style={styles.partyLabel}>BILL TO</Text>
             <Text style={styles.customerName}>{data.customer.name}</Text>
             {data.customer.gstin ? (
               <Text style={styles.customerLine}>GSTIN {data.customer.gstin}</Text>
             ) : null}
-            {data.placeOfSupply ? (
-              <Text style={styles.placeOfSupply}>Place Of Supply: {data.placeOfSupply}</Text>
+            {data.hsnSac || data.placeOfSupply ? (
+              <View style={styles.supplyBlock}>
+                {data.hsnSac ? (
+                  <Text style={styles.supplyLine}>HSN/SAC: {data.hsnSac}</Text>
+                ) : null}
+                {data.placeOfSupply ? (
+                  <Text style={styles.supplyLine}>Place Of Supply: {data.placeOfSupply}</Text>
+                ) : null}
+              </View>
             ) : null}
           </View>
           <View style={styles.metaTable}>
@@ -191,7 +220,6 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
           <View style={styles.tHead}>
             <Text style={[styles.th, { width: COL.sn }]}>#</Text>
             <Text style={[styles.th, { width: COL.desc }]}>Description</Text>
-            <Text style={[styles.th, { width: COL.hsn }]}>HSN/SAC</Text>
             <Text style={[styles.th, { width: COL.qty, textAlign: "right" }]}>Qty</Text>
             <Text style={[styles.th, { width: COL.rate, textAlign: "right" }]}>Rate</Text>
             <Text style={[styles.th, { width: COL.cgst, textAlign: "right" }]}>CGST</Text>
@@ -205,7 +233,6 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
               <View style={styles.tRow} key={i} wrap={false}>
                 <Text style={[styles.td, { width: COL.sn }]}>{i + 1}</Text>
                 <Text style={[styles.td, { width: COL.desc }]}>{li.description}</Text>
-                <Text style={[styles.td, { width: COL.hsn }]}>{li.hsnSac}</Text>
                 <Text style={[styles.td, { width: COL.qty, textAlign: "right" }]}>
                   {formatAmount(li.quantity)}
                 </Text>
@@ -284,6 +311,11 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
             {data.bank.ifsc ? <Text style={styles.bankLine}>IFSC: {data.bank.ifsc}</Text> : null}
           </View>
         ) : null}
+
+        {/* Footer */}
+        <Text style={styles.footer} fixed>
+          This is a computer-generated invoice and does not require a physical signature.
+        </Text>
       </Page>
     </Document>
   );
