@@ -1,4 +1,4 @@
-import type { InvoiceData, InvoiceTotals, TaxGroup } from "@/types/invoice";
+import type { InvoiceData, InvoiceTotals } from "@/types/invoice";
 
 function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -10,46 +10,29 @@ export function lineItemAmount(quantity: number, rate: number): number {
 }
 
 /**
- * Computes per-item amounts, GST sub-totals grouped by rate, and the grand
- * total for an Indian GST invoice.
+ * Computes per-item amounts and the grand total for an Indian GST invoice.
+ * CGST and SGST are invoice-level rates applied directly to the sub-total.
  */
 export function computeTotals(data: InvoiceData): InvoiceTotals {
-  const perItem = data.lineItems.map((li) => {
-    const amount = lineItemAmount(li.quantity, li.rate);
-    return {
-      amount,
-      cgst: round2(amount * ((Number(li.cgstRate) || 0) / 100)),
-      sgst: round2(amount * ((Number(li.sgstRate) || 0) / 100)),
-    };
-  });
+  const perItem = data.lineItems.map((li) => ({
+    amount: lineItemAmount(li.quantity, li.rate),
+  }));
 
   const subTotal = round2(perItem.reduce((s, i) => s + i.amount, 0));
 
-  const group = (key: "cgstRate" | "sgstRate", amountKey: "cgst" | "sgst"): TaxGroup[] => {
-    const map = new Map<number, number>();
-    data.lineItems.forEach((li, i) => {
-      const rate = Number(li[key]) || 0;
-      if (rate <= 0) return;
-      map.set(rate, (map.get(rate) || 0) + perItem[i][amountKey]);
-    });
-    return [...map.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([rate, amount]) => ({ rate, amount: round2(amount) }));
-  };
-
-  const cgstGroups = group("cgstRate", "cgst");
-  const sgstGroups = group("sgstRate", "sgst");
-  const totalCgst = round2(cgstGroups.reduce((s, g) => s + g.amount, 0));
-  const totalSgst = round2(sgstGroups.reduce((s, g) => s + g.amount, 0));
+  const cgstRate = Math.max(0, Number(data.cgstRate) || 0);
+  const sgstRate = Math.max(0, Number(data.sgstRate) || 0);
+  const cgstAmount = round2(subTotal * (cgstRate / 100));
+  const sgstAmount = round2(subTotal * (sgstRate / 100));
 
   return {
     perItem,
     subTotal,
-    cgstGroups,
-    sgstGroups,
-    totalCgst,
-    totalSgst,
-    total: round2(subTotal + totalCgst + totalSgst),
+    cgstRate,
+    sgstRate,
+    cgstAmount,
+    sgstAmount,
+    total: round2(subTotal + cgstAmount + sgstAmount),
   };
 }
 

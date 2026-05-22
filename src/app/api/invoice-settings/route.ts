@@ -3,7 +3,7 @@ import { verifyAuth, requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import InvoiceSettings from "@/models/InvoiceSettings";
 
-const FIELDS = [
+const STRING_FIELDS = [
   "sellerName",
   "sellerAddress",
   "sellerGstin",
@@ -14,12 +14,28 @@ const FIELDS = [
   "bankIfsc",
 ] as const;
 
-type SettingsShape = Record<(typeof FIELDS)[number], string>;
+const NUMBER_FIELDS = ["cgstRate", "sgstRate"] as const;
+
+// Default tax rates used when none have been saved yet (or stored on legacy docs).
+const DEFAULT_RATES: Record<(typeof NUMBER_FIELDS)[number], number> = {
+  cgstRate: 9,
+  sgstRate: 9,
+};
+
+type SettingsShape = Record<(typeof STRING_FIELDS)[number], string> &
+  Record<(typeof NUMBER_FIELDS)[number], number>;
 
 function pick(source: Record<string, unknown>): SettingsShape {
-  return Object.fromEntries(
-    FIELDS.map((f) => [f, typeof source[f] === "string" ? source[f] : ""])
-  ) as SettingsShape;
+  const out = {} as SettingsShape;
+  for (const f of STRING_FIELDS) {
+    out[f] = typeof source[f] === "string" ? (source[f] as string) : "";
+  }
+  for (const f of NUMBER_FIELDS) {
+    const n = Number(source[f]);
+    // Honour an explicit value (including 0); fall back to the default when absent/invalid.
+    out[f] = Number.isFinite(n) && n >= 0 ? n : DEFAULT_RATES[f];
+  }
+  return out;
 }
 
 export async function GET(req: NextRequest) {
@@ -42,8 +58,8 @@ export async function PUT(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const update = pick(body);
-    // Address may be multi-line; trim the rest.
-    for (const f of FIELDS) {
+    // Address may be multi-line; trim the rest of the string fields.
+    for (const f of STRING_FIELDS) {
       if (f !== "sellerAddress") update[f] = update[f].trim();
     }
 

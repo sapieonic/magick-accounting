@@ -35,8 +35,6 @@ function parseInvoice(body: unknown): InvoiceData | string {
         description: str(item.description),
         quantity: num(item.quantity),
         rate: num(item.rate),
-        cgstRate: num(item.cgstRate),
-        sgstRate: num(item.sgstRate),
       };
     })
     .filter((it) => it.description !== "");
@@ -54,6 +52,8 @@ function parseInvoice(body: unknown): InvoiceData | string {
     terms: b.terms ? str(b.terms) : undefined,
     hsnSac: b.hsnSac ? str(b.hsnSac) : undefined,
     placeOfSupply: b.placeOfSupply ? str(b.placeOfSupply) : undefined,
+    cgstRate: num(b.cgstRate),
+    sgstRate: num(b.sgstRate),
     seller: {
       name: str(seller.name),
       address: str(seller.address),

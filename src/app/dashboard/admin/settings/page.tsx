@@ -28,11 +28,15 @@ interface CurrencyRecord {
   isActive: boolean;
 }
 
+// All fields are kept as strings for the controlled inputs; cgstRate/sgstRate
+// are numeric on the wire and coerced via normalizeInvoiceSettings().
 interface InvoiceSettings {
   sellerName: string;
   sellerAddress: string;
   sellerGstin: string;
   hsnSac: string;
+  cgstRate: string;
+  sgstRate: string;
   bankAccountName: string;
   bankAccountNumber: string;
   bankAccountType: string;
@@ -44,11 +48,24 @@ const EMPTY_INVOICE_SETTINGS: InvoiceSettings = {
   sellerAddress: "",
   sellerGstin: "",
   hsnSac: "",
+  cgstRate: "9",
+  sgstRate: "9",
   bankAccountName: "",
   bankAccountNumber: "",
   bankAccountType: "",
   bankIfsc: "",
 };
+
+// Coerce an API settings payload (cgstRate/sgstRate arrive as numbers) into
+// the all-string shape the form inputs expect.
+function normalizeInvoiceSettings(raw: Record<string, unknown>): InvoiceSettings {
+  return {
+    ...EMPTY_INVOICE_SETTINGS,
+    ...raw,
+    cgstRate: raw.cgstRate != null ? String(raw.cgstRate) : EMPTY_INVOICE_SETTINGS.cgstRate,
+    sgstRate: raw.sgstRate != null ? String(raw.sgstRate) : EMPTY_INVOICE_SETTINGS.sgstRate,
+  };
+}
 
 export default function AdminSettingsPage() {
   useTitle("Settings");
@@ -93,7 +110,7 @@ export default function AdminSettingsPage() {
       ]);
       setDomains(domainData.domains);
       setCurrencies(currencyData.currencies);
-      setInvoiceSettings({ ...EMPTY_INVOICE_SETTINGS, ...invoiceData.settings });
+      setInvoiceSettings(normalizeInvoiceSettings(invoiceData.settings));
     } catch {
       toast("Failed to load settings", "error");
     } finally {
@@ -201,7 +218,7 @@ export default function AdminSettingsPage() {
     setSavingInvoiceSettings(true);
     try {
       const res = await api.put("/api/invoice-settings", invoiceSettings);
-      setInvoiceSettings({ ...EMPTY_INVOICE_SETTINGS, ...res.settings });
+      setInvoiceSettings(normalizeInvoiceSettings(res.settings));
       toast("Invoice defaults saved");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to save invoice defaults", "error");
@@ -415,6 +432,33 @@ export default function AdminSettingsPage() {
               />
               <p className="mt-1 text-xs text-gray-400">
                 Applied to every invoice — shown above Place of Supply.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">CGST %</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={invoiceSettings.cgstRate}
+                onChange={(e) => setInvoiceField("cgstRate", e.target.value)}
+                placeholder="e.g. 9"
+                className="input-field tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">SGST %</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={invoiceSettings.sgstRate}
+                onChange={(e) => setInvoiceField("sgstRate", e.target.value)}
+                placeholder="e.g. 9"
+                className="input-field tabular-nums"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                CGST and SGST are charged on the invoice sub-total.
               </p>
             </div>
           </div>
