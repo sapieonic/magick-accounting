@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // @react-pdf/renderer must run from node_modules, not the bundled server output.
-  serverExternalPackages: ["@react-pdf/renderer"],
+  // These run from node_modules, not the bundled server output
+  // (@react-pdf/renderer for PDF generation, mupdf is a WASM module).
+  serverExternalPackages: ["@react-pdf/renderer", "mupdf"],
   images: {
     remotePatterns: [
       {
