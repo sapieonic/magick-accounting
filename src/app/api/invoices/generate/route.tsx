@@ -33,7 +33,6 @@ function parseInvoice(body: unknown): InvoiceData | string {
       const item = it as Record<string, unknown>;
       return {
         description: str(item.description),
-        hsnSac: str(item.hsnSac),
         quantity: num(item.quantity),
         rate: num(item.rate),
         cgstRate: num(item.cgstRate),
@@ -53,6 +52,7 @@ function parseInvoice(body: unknown): InvoiceData | string {
     invoiceDate,
     dueDate,
     terms: b.terms ? str(b.terms) : undefined,
+    hsnSac: b.hsnSac ? str(b.hsnSac) : undefined,
     placeOfSupply: b.placeOfSupply ? str(b.placeOfSupply) : undefined,
     seller: {
       name: str(seller.name),

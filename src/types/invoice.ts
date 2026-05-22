@@ -3,8 +3,6 @@
 
 export interface InvoiceLineItem {
   description: string;
-  /** HSN (goods) or SAC (services) code. */
-  hsnSac: string;
   quantity: number;
   rate: number;
   /** CGST rate as a percentage, e.g. 9 for 9%. */
@@ -42,6 +40,8 @@ export interface InvoiceData {
   dueDate?: string;
   /** Payment terms, free text (e.g. "Custom", "Due on Receipt"). */
   terms?: string;
+  /** Company-wide HSN (goods) / SAC (services) code. */
+  hsnSac?: string;
   /** Place of supply, e.g. "Telangana (36)". */
   placeOfSupply?: string;
   seller: InvoiceSeller;

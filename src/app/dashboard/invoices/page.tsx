@@ -13,7 +13,6 @@ import { FileText, Plus, Trash2 } from "lucide-react";
 
 interface LineRow {
   description: string;
-  hsnSac: string;
   quantity: string;
   rate: string;
   cgstRate: string;
@@ -22,7 +21,6 @@ interface LineRow {
 
 const newRow = (): LineRow => ({
   description: "",
-  hsnSac: "",
   quantity: "1",
   rate: "",
   cgstRate: "9",
@@ -43,6 +41,7 @@ export default function InvoicesPage() {
     invoiceDate: new Date().toISOString().split("T")[0],
     dueDate: "",
     terms: "Custom",
+    hsnSac: "",
     placeOfSupply: "",
   });
   const [seller, setSeller] = useState({
@@ -81,6 +80,7 @@ export default function InvoicesPage() {
           gstin: settings.sellerGstin || prev.gstin,
           address: settings.sellerAddress || prev.address,
         }));
+        setForm((prev) => ({ ...prev, hsnSac: settings.hsnSac || prev.hsnSac }));
         setBank({
           accountName: settings.bankAccountName || "",
           accountNumber: settings.bankAccountNumber || "",
@@ -101,12 +101,12 @@ export default function InvoicesPage() {
     invoiceDate: form.invoiceDate,
     dueDate: form.dueDate || undefined,
     terms: form.terms.trim() || undefined,
+    hsnSac: form.hsnSac.trim() || undefined,
     placeOfSupply: form.placeOfSupply.trim() || undefined,
     seller: { ...seller },
     customer: { ...customer },
     lineItems: lineItems.map((li) => ({
       description: li.description.trim(),
-      hsnSac: li.hsnSac.trim(),
       quantity: parseFloat(li.quantity) || 0,
       rate: parseFloat(li.rate) || 0,
       cgstRate: parseFloat(li.cgstRate) || 0,
@@ -209,6 +209,15 @@ export default function InvoicesPage() {
                 className="input-field"
               />
             </Field>
+            <Field label="HSN/SAC code">
+              <input
+                type="text"
+                value={form.hsnSac}
+                onChange={(e) => setForm({ ...form, hsnSac: e.target.value })}
+                placeholder="e.g. 998314"
+                className="input-field tabular-nums"
+              />
+            </Field>
             <Field label="Place of supply">
               <input
                 type="text"
@@ -219,6 +228,11 @@ export default function InvoicesPage() {
               />
             </Field>
           </div>
+          <p className="mt-3 text-xs text-gray-400">
+            HSN/SAC is set once in{" "}
+            <span className="font-medium">Settings → Invoice Defaults</span> and applies to the
+            whole invoice.
+          </p>
         </Section>
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -301,6 +315,25 @@ export default function InvoicesPage() {
           }
         >
           <div className="space-y-3">
+            {/* Column header (desktop only — rows stack on mobile) */}
+            <div className="hidden grid-cols-12 gap-3 px-1 lg:grid">
+              {[
+                ["Description", "col-span-5"],
+                ["Qty", "col-span-1"],
+                ["Rate", "col-span-2"],
+                ["CGST %", "col-span-1"],
+                ["SGST %", "col-span-1"],
+                ["Amount", "col-span-2"],
+              ].map(([label, span]) => (
+                <span
+                  key={label}
+                  className={`${span} text-xs font-semibold uppercase tracking-wide text-gray-400`}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+
             {lineItems.map((li, i) => (
               <div
                 key={i}
@@ -311,14 +344,7 @@ export default function InvoicesPage() {
                   value={li.description}
                   onChange={(e) => updateRow(i, { description: e.target.value })}
                   placeholder="Description"
-                  className="input-field col-span-2 lg:col-span-4"
-                />
-                <input
-                  type="text"
-                  value={li.hsnSac}
-                  onChange={(e) => updateRow(i, { hsnSac: e.target.value })}
-                  placeholder="HSN/SAC"
-                  className="input-field lg:col-span-2"
+                  className="input-field col-span-2 lg:col-span-5"
                 />
                 <input
                   type="number"
@@ -356,8 +382,8 @@ export default function InvoicesPage() {
                   placeholder="SGST %"
                   className="input-field tabular-nums lg:col-span-1"
                 />
-                <div className="col-span-2 flex items-center justify-between gap-2 lg:col-span-1">
-                  <span className="truncate text-sm tabular-nums text-gray-600">
+                <div className="col-span-2 flex items-center justify-between gap-2 lg:col-span-2">
+                  <span className="truncate text-sm tabular-nums text-gray-700">
                     {formatRupees(
                       lineItemAmount(parseFloat(li.quantity) || 0, parseFloat(li.rate) || 0)
                     )}

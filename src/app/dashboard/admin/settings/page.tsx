@@ -32,6 +32,7 @@ interface InvoiceSettings {
   sellerName: string;
   sellerAddress: string;
   sellerGstin: string;
+  hsnSac: string;
   bankAccountName: string;
   bankAccountNumber: string;
   bankAccountType: string;
@@ -42,6 +43,7 @@ const EMPTY_INVOICE_SETTINGS: InvoiceSettings = {
   sellerName: "",
   sellerAddress: "",
   sellerGstin: "",
+  hsnSac: "",
   bankAccountName: "",
   bankAccountNumber: "",
   bankAccountType: "",
@@ -399,6 +401,21 @@ export default function AdminSettingsPage() {
                 placeholder="36ABCDE1234F1Z5"
                 className="input-field"
               />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                HSN/SAC code
+              </label>
+              <input
+                type="text"
+                value={invoiceSettings.hsnSac}
+                onChange={(e) => setInvoiceField("hsnSac", e.target.value)}
+                placeholder="e.g. 998314"
+                className="input-field tabular-nums"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Applied to every invoice — shown above Place of Supply.
+              </p>
             </div>
           </div>
           <div>

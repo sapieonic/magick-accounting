@@ -7,6 +7,7 @@ export interface IInvoiceSettings extends Document {
   sellerName: string;
   sellerAddress: string;
   sellerGstin: string;
+  hsnSac: string;
   bankAccountName: string;
   bankAccountNumber: string;
   bankAccountType: string;
@@ -21,6 +22,7 @@ const InvoiceSettingsSchema = new Schema<IInvoiceSettings>(
     sellerName: { type: String, default: "", trim: true },
     sellerAddress: { type: String, default: "" }, // multi-line, not trimmed
     sellerGstin: { type: String, default: "", trim: true },
+    hsnSac: { type: String, default: "", trim: true },
     bankAccountName: { type: String, default: "", trim: true },
     bankAccountNumber: { type: String, default: "", trim: true },
     bankAccountType: { type: String, default: "", trim: true },
