@@ -5,10 +5,6 @@ export interface InvoiceLineItem {
   description: string;
   quantity: number;
   rate: number;
-  /** CGST rate as a percentage, e.g. 9 for 9%. */
-  cgstRate: number;
-  /** SGST rate as a percentage, e.g. 9 for 9%. */
-  sgstRate: number;
 }
 
 export interface InvoiceSeller {
@@ -44,31 +40,29 @@ export interface InvoiceData {
   hsnSac?: string;
   /** Place of supply, e.g. "Telangana (36)". */
   placeOfSupply?: string;
+  /** CGST rate as a percentage applied to the invoice sub-total, e.g. 9 for 9%. */
+  cgstRate: number;
+  /** SGST rate as a percentage applied to the invoice sub-total, e.g. 9 for 9%. */
+  sgstRate: number;
   seller: InvoiceSeller;
   customer: InvoiceCustomer;
   lineItems: InvoiceLineItem[];
   bank?: BankDetails;
 }
 
-/** A tax sub-total grouped by rate, e.g. { rate: 9, amount: 3145.5 }. */
-export interface TaxGroup {
-  rate: number;
-  amount: number;
-}
-
 /** Per-line-item derived amounts, index-aligned with InvoiceData.lineItems. */
 export interface LineItemAmounts {
   amount: number;
-  cgst: number;
-  sgst: number;
 }
 
 export interface InvoiceTotals {
   perItem: LineItemAmounts[];
   subTotal: number;
-  cgstGroups: TaxGroup[];
-  sgstGroups: TaxGroup[];
-  totalCgst: number;
-  totalSgst: number;
+  /** CGST rate applied to the sub-total (percentage). */
+  cgstRate: number;
+  /** SGST rate applied to the sub-total (percentage). */
+  sgstRate: number;
+  cgstAmount: number;
+  sgstAmount: number;
   total: number;
 }

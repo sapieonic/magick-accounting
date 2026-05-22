@@ -39,12 +39,10 @@ const HEADER_BG = "#3f444b";
 // Column widths (pt); sum = 525 = A4 width minus horizontal padding.
 const COL = {
   sn: 22,
-  desc: 210,
-  qty: 42,
-  rate: 68,
-  cgst: 62,
-  sgst: 62,
-  amount: 59,
+  desc: 268,
+  qty: 50,
+  rate: 90,
+  amount: 95,
 };
 
 const styles = StyleSheet.create({
@@ -97,7 +95,6 @@ const styles = StyleSheet.create({
     borderBottomColor: LINE,
   },
   td: { fontSize: 8.5 },
-  taxSub: { fontSize: 7, color: MUTED, marginTop: 1 },
 
   totals: { marginTop: 10, flexDirection: "row", justifyContent: "flex-end" },
   totalsBox: { width: 260 },
@@ -222,8 +219,6 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
             <Text style={[styles.th, { width: COL.desc }]}>Description</Text>
             <Text style={[styles.th, { width: COL.qty, textAlign: "right" }]}>Qty</Text>
             <Text style={[styles.th, { width: COL.rate, textAlign: "right" }]}>Rate</Text>
-            <Text style={[styles.th, { width: COL.cgst, textAlign: "right" }]}>CGST</Text>
-            <Text style={[styles.th, { width: COL.sgst, textAlign: "right" }]}>SGST</Text>
             <Text style={[styles.th, { width: COL.amount, textAlign: "right" }]}>Amount</Text>
           </View>
 
@@ -239,14 +234,6 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
                 <Text style={[styles.td, { width: COL.rate, textAlign: "right" }]}>
                   {formatAmount(li.rate)}
                 </Text>
-                <View style={{ width: COL.cgst }}>
-                  <Text style={[styles.td, { textAlign: "right" }]}>{formatAmount(amt.cgst)}</Text>
-                  <Text style={[styles.taxSub, { textAlign: "right" }]}>{li.cgstRate}%</Text>
-                </View>
-                <View style={{ width: COL.sgst }}>
-                  <Text style={[styles.td, { textAlign: "right" }]}>{formatAmount(amt.sgst)}</Text>
-                  <Text style={[styles.taxSub, { textAlign: "right" }]}>{li.sgstRate}%</Text>
-                </View>
                 <Text style={[styles.td, { width: COL.amount, textAlign: "right" }]}>
                   {formatAmount(amt.amount)}
                 </Text>
@@ -262,18 +249,14 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
               <Text style={styles.totalLabel}>Sub Total</Text>
               <Text style={styles.totalValue}>{formatAmount(totals.subTotal)}</Text>
             </View>
-            {totals.cgstGroups.map((g) => (
-              <View style={styles.totalRow} key={`c${g.rate}`}>
-                <Text style={styles.totalLabel}>CGST ({g.rate}%)</Text>
-                <Text style={styles.totalValue}>{formatAmount(g.amount)}</Text>
-              </View>
-            ))}
-            {totals.sgstGroups.map((g) => (
-              <View style={styles.totalRow} key={`s${g.rate}`}>
-                <Text style={styles.totalLabel}>SGST ({g.rate}%)</Text>
-                <Text style={styles.totalValue}>{formatAmount(g.amount)}</Text>
-              </View>
-            ))}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>CGST ({totals.cgstRate}%)</Text>
+              <Text style={styles.totalValue}>{formatAmount(totals.cgstAmount)}</Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>SGST ({totals.sgstRate}%)</Text>
+              <Text style={styles.totalValue}>{formatAmount(totals.sgstAmount)}</Text>
+            </View>
             <View style={styles.grandRow}>
               <Text style={styles.grandLabel}>Total</Text>
               <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>

@@ -8,6 +8,10 @@ export interface IInvoiceSettings extends Document {
   sellerAddress: string;
   sellerGstin: string;
   hsnSac: string;
+  /** CGST rate (%) applied to every invoice sub-total. */
+  cgstRate: number;
+  /** SGST rate (%) applied to every invoice sub-total. */
+  sgstRate: number;
   bankAccountName: string;
   bankAccountNumber: string;
   bankAccountType: string;
@@ -23,6 +27,8 @@ const InvoiceSettingsSchema = new Schema<IInvoiceSettings>(
     sellerAddress: { type: String, default: "" }, // multi-line, not trimmed
     sellerGstin: { type: String, default: "", trim: true },
     hsnSac: { type: String, default: "", trim: true },
+    cgstRate: { type: Number, default: 9, min: 0 },
+    sgstRate: { type: Number, default: 9, min: 0 },
     bankAccountName: { type: String, default: "", trim: true },
     bankAccountNumber: { type: String, default: "", trim: true },
     bankAccountType: { type: String, default: "", trim: true },

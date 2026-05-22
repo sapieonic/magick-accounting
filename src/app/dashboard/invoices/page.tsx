@@ -15,16 +15,12 @@ interface LineRow {
   description: string;
   quantity: string;
   rate: string;
-  cgstRate: string;
-  sgstRate: string;
 }
 
 const newRow = (): LineRow => ({
   description: "",
   quantity: "1",
   rate: "",
-  cgstRate: "9",
-  sgstRate: "9",
 });
 
 export default function InvoicesPage() {
@@ -43,6 +39,8 @@ export default function InvoicesPage() {
     terms: "Custom",
     hsnSac: "",
     placeOfSupply: "",
+    cgstRate: "9",
+    sgstRate: "9",
   });
   const [seller, setSeller] = useState({
     name: process.env.NEXT_PUBLIC_APP_NAME || "",
@@ -80,7 +78,14 @@ export default function InvoicesPage() {
           gstin: settings.sellerGstin || prev.gstin,
           address: settings.sellerAddress || prev.address,
         }));
-        setForm((prev) => ({ ...prev, hsnSac: settings.hsnSac || prev.hsnSac }));
+        setForm((prev) => ({
+          ...prev,
+          hsnSac: settings.hsnSac || prev.hsnSac,
+          cgstRate:
+            settings.cgstRate != null ? String(settings.cgstRate) : prev.cgstRate,
+          sgstRate:
+            settings.sgstRate != null ? String(settings.sgstRate) : prev.sgstRate,
+        }));
         setBank({
           accountName: settings.bankAccountName || "",
           accountNumber: settings.bankAccountNumber || "",
@@ -103,14 +108,14 @@ export default function InvoicesPage() {
     terms: form.terms.trim() || undefined,
     hsnSac: form.hsnSac.trim() || undefined,
     placeOfSupply: form.placeOfSupply.trim() || undefined,
+    cgstRate: parseFloat(form.cgstRate) || 0,
+    sgstRate: parseFloat(form.sgstRate) || 0,
     seller: { ...seller },
     customer: { ...customer },
     lineItems: lineItems.map((li) => ({
       description: li.description.trim(),
       quantity: parseFloat(li.quantity) || 0,
       rate: parseFloat(li.rate) || 0,
-      cgstRate: parseFloat(li.cgstRate) || 0,
-      sgstRate: parseFloat(li.sgstRate) || 0,
     })),
     bank: { ...bank },
   });
@@ -227,11 +232,33 @@ export default function InvoicesPage() {
                 className="input-field"
               />
             </Field>
+            <Field label="CGST %">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.cgstRate}
+                onChange={(e) => setForm({ ...form, cgstRate: e.target.value })}
+                placeholder="e.g. 9"
+                className="input-field tabular-nums"
+              />
+            </Field>
+            <Field label="SGST %">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.sgstRate}
+                onChange={(e) => setForm({ ...form, sgstRate: e.target.value })}
+                placeholder="e.g. 9"
+                className="input-field tabular-nums"
+              />
+            </Field>
           </div>
           <p className="mt-3 text-xs text-gray-400">
-            HSN/SAC is set once in{" "}
-            <span className="font-medium">Settings → Invoice Defaults</span> and applies to the
-            whole invoice.
+            HSN/SAC and GST rates default from{" "}
+            <span className="font-medium">Settings → Invoice Defaults</span> and apply to the
+            whole invoice — CGST and SGST are charged on the sub-total.
           </p>
         </Section>
 
@@ -318,12 +345,10 @@ export default function InvoicesPage() {
             {/* Column header (desktop only — rows stack on mobile) */}
             <div className="hidden grid-cols-12 gap-3 px-1 lg:grid">
               {[
-                ["Description", "col-span-5"],
+                ["Description", "col-span-6"],
                 ["Qty", "col-span-1"],
                 ["Rate", "col-span-2"],
-                ["CGST %", "col-span-1"],
-                ["SGST %", "col-span-1"],
-                ["Amount", "col-span-2"],
+                ["Amount", "col-span-3"],
               ].map(([label, span]) => (
                 <span
                   key={label}
@@ -344,7 +369,7 @@ export default function InvoicesPage() {
                   value={li.description}
                   onChange={(e) => updateRow(i, { description: e.target.value })}
                   placeholder="Description"
-                  className="input-field col-span-2 lg:col-span-5"
+                  className="input-field col-span-2 lg:col-span-6"
                 />
                 <input
                   type="number"
@@ -364,25 +389,7 @@ export default function InvoicesPage() {
                   placeholder="Rate"
                   className="input-field tabular-nums lg:col-span-2"
                 />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={li.cgstRate}
-                  onChange={(e) => updateRow(i, { cgstRate: e.target.value })}
-                  placeholder="CGST %"
-                  className="input-field tabular-nums lg:col-span-1"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={li.sgstRate}
-                  onChange={(e) => updateRow(i, { sgstRate: e.target.value })}
-                  placeholder="SGST %"
-                  className="input-field tabular-nums lg:col-span-1"
-                />
-                <div className="col-span-2 flex items-center justify-between gap-2 lg:col-span-2">
+                <div className="col-span-2 flex items-center justify-between gap-2 lg:col-span-3">
                   <span className="truncate text-sm tabular-nums text-gray-700">
                     {formatRupees(
                       lineItemAmount(parseFloat(li.quantity) || 0, parseFloat(li.rate) || 0)
@@ -450,18 +457,14 @@ export default function InvoicesPage() {
                 <span className="text-gray-500">Sub Total</span>
                 <span className="tabular-nums">{formatRupees(totals.subTotal)}</span>
               </div>
-              {totals.cgstGroups.map((g) => (
-                <div className="flex justify-between" key={`c${g.rate}`}>
-                  <span className="text-gray-500">CGST ({g.rate}%)</span>
-                  <span className="tabular-nums">{formatRupees(g.amount)}</span>
-                </div>
-              ))}
-              {totals.sgstGroups.map((g) => (
-                <div className="flex justify-between" key={`s${g.rate}`}>
-                  <span className="text-gray-500">SGST ({g.rate}%)</span>
-                  <span className="tabular-nums">{formatRupees(g.amount)}</span>
-                </div>
-              ))}
+              <div className="flex justify-between">
+                <span className="text-gray-500">CGST ({totals.cgstRate}%)</span>
+                <span className="tabular-nums">{formatRupees(totals.cgstAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">SGST ({totals.sgstRate}%)</span>
+                <span className="tabular-nums">{formatRupees(totals.sgstAmount)}</span>
+              </div>
               <div className="flex justify-between border-t border-gray-100 pt-3 text-base font-bold text-gray-900">
                 <span>Total</span>
                 <span className="tabular-nums">{formatRupees(totals.total)}</span>
