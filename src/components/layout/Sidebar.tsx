@@ -11,6 +11,7 @@ import {
   Tag,
   Users,
   Shield,
+  FileText,
   X,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ const navItems = [
 ];
 
 const adminItems = [
+  { href: "/dashboard/invoices", label: "Invoices", icon: FileText, color: "text-cyan-500" },
   { href: "/dashboard/admin/users", label: "Users", icon: Users, color: "text-rose-500" },
   { href: "/dashboard/admin/settings", label: "Settings", icon: Shield, color: "text-slate-500" },
 ];
