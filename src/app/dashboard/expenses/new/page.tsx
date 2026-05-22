@@ -7,7 +7,8 @@ import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
-import { ArrowLeft, Upload, X as XIcon } from "lucide-react";
+import Modal from "@/components/ui/Modal";
+import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 interface Department {
@@ -29,6 +30,9 @@ interface CurrencyOption {
   isBase: boolean;
 }
 
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
 export default function NewExpensePage() {
   useTitle("New Expense");
   const router = useRouter();
@@ -39,6 +43,10 @@ export default function NewExpensePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
+
+  const [showUploadModal, setShowUploadModal] = useState(true);
+  const [extracting, setExtracting] = useState(false);
+  const [autoFilled, setAutoFilled] = useState(false);
 
   const [form, setForm] = useState({
     title: "",
@@ -80,17 +88,57 @@ export default function NewExpensePage() {
     loadOptions();
   }, [toast]);
 
-  const handleReceiptSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
+  // Attaches a receipt file and, for images, asks the AI to pre-fill the form.
+  const processReceiptFile = async (file: File) => {
+    if (file.size > MAX_SIZE) {
       toast("File too large. Maximum size is 10MB.", "error");
       return;
     }
 
     setReceipt({ file, filename: file.name });
+
+    if (!IMAGE_TYPES.includes(file.type)) {
+      // PDFs upload fine but can't be auto-read.
+      setShowUploadModal(false);
+      toast("Receipt attached. AI auto-fill works with image receipts.", "info");
+      return;
+    }
+
+    setExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const data = await api.postFormData("/api/expenses/extract", formData);
+
+      setForm((prev) => ({
+        ...prev,
+        title: data.title || prev.title,
+        amount: data.amount != null ? String(data.amount) : prev.amount,
+        date: data.date || prev.date,
+        description: data.description || prev.description,
+        category: data.category || prev.category,
+        currency: data.currency || prev.currency,
+      }));
+
+      setAutoFilled(true);
+      setShowUploadModal(false);
+      toast("Details filled from your receipt — please review before creating.", "success");
+    } catch (err) {
+      setShowUploadModal(false);
+      toast(
+        err instanceof Error ? err.message : "Couldn't read the receipt. Please fill the form manually.",
+        "error"
+      );
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleReceiptSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (file) processReceiptFile(file);
   };
 
   const uploadReceipt = async (): Promise<{ key: string; filename: string } | null> => {
@@ -147,6 +195,55 @@ export default function NewExpensePage() {
 
   return (
     <div className="animate-fade-in">
+      <Modal
+        isOpen={showUploadModal}
+        onClose={() => !extracting && setShowUploadModal(false)}
+        title="Upload a receipt"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg bg-brand-50 px-4 py-3">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" />
+            <p className="text-sm text-gray-600">
+              Just upload your receipt — we&apos;ll read it with AI and fill in the title, amount,
+              category, date and more for you. You can review and edit everything before creating
+              the expense.
+            </p>
+          </div>
+
+          {extracting ? (
+            <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-brand-200 bg-brand-50/30 px-4 py-10">
+              <Spinner size="md" />
+              <span className="text-sm font-medium text-gray-700">Reading your receipt…</span>
+              <span className="text-xs text-gray-400">This usually takes a few seconds</span>
+            </div>
+          ) : (
+            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-gray-200 px-4 py-10 transition-colors hover:border-brand-300 hover:bg-brand-50/30">
+              <Upload className="h-8 w-8 text-gray-300" />
+              <span className="text-sm text-gray-500">Click to upload receipt</span>
+              <span className="text-xs text-gray-400">JPEG, PNG, WebP, or PDF up to 10MB</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={handleReceiptSelect}
+                className="hidden"
+              />
+            </label>
+          )}
+
+          {!extracting && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(false)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Skip — I&apos;ll fill it in manually
+              </button>
+            </div>
+          )}
+        </div>
+      </Modal>
+
       <div className="mb-6">
         <Link href="/dashboard/expenses" className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
           <ArrowLeft className="h-4 w-4" />
@@ -156,6 +253,15 @@ export default function NewExpensePage() {
       </div>
 
       <form onSubmit={handleSubmit} className="card mx-auto max-w-2xl p-6">
+        {autoFilled && (
+          <div className="mb-5 flex items-start gap-3 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" />
+            <p className="text-sm text-gray-600">
+              These details were auto-filled from your receipt. Please review them and adjust
+              anything that looks off before creating the expense.
+            </p>
+          </div>
+        )}
         <div className="space-y-5">
           <div>
             <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -278,9 +384,13 @@ export default function NewExpensePage() {
               <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
                 <Upload className="h-5 w-5 text-gray-400" />
                 <span className="flex-1 truncate text-sm text-gray-700">{receipt.filename}</span>
+                {extracting && <Spinner size="sm" />}
                 <button
                   type="button"
-                  onClick={() => setReceipt(null)}
+                  onClick={() => {
+                    setReceipt(null);
+                    setAutoFilled(false);
+                  }}
                   className="cursor-pointer rounded p-1 text-gray-400 hover:text-gray-600"
                   aria-label="Remove receipt"
                 >
@@ -290,7 +400,10 @@ export default function NewExpensePage() {
             ) : (
               <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-gray-200 px-4 py-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30">
                 <Upload className="h-8 w-8 text-gray-300" />
-                <span className="text-sm text-gray-500">Click to upload receipt</span>
+                <span className="flex items-center gap-1.5 text-sm text-gray-500">
+                  <Sparkles className="h-4 w-4 text-brand-400" />
+                  Upload a receipt to auto-fill the form
+                </span>
                 <span className="text-xs text-gray-400">JPEG, PNG, WebP, or PDF up to 10MB</span>
                 <input
                   type="file"
@@ -307,7 +420,7 @@ export default function NewExpensePage() {
           <Link href="/dashboard/expenses" className="btn-secondary">
             Cancel
           </Link>
-          <button type="submit" className="btn-primary" disabled={submitting || uploadingReceipt}>
+          <button type="submit" className="btn-primary" disabled={submitting || uploadingReceipt || extracting}>
             {submitting || uploadingReceipt ? (
               <>
                 <Spinner size="sm" /> {uploadingReceipt ? "Uploading..." : "Saving..."}

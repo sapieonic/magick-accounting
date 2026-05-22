@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import Modal from "@/components/ui/Modal";
-import { Globe, Plus, Trash2, Shield, Coins, Pencil } from "lucide-react";
+import { Globe, Plus, Trash2, Shield, Coins, Pencil, FileText } from "lucide-react";
 
 interface AllowedDomain {
   _id: string;
@@ -27,6 +27,26 @@ interface CurrencyRecord {
   isBase: boolean;
   isActive: boolean;
 }
+
+interface InvoiceSettings {
+  sellerName: string;
+  sellerAddress: string;
+  sellerGstin: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  bankAccountType: string;
+  bankIfsc: string;
+}
+
+const EMPTY_INVOICE_SETTINGS: InvoiceSettings = {
+  sellerName: "",
+  sellerAddress: "",
+  sellerGstin: "",
+  bankAccountName: "",
+  bankAccountNumber: "",
+  bankAccountType: "",
+  bankIfsc: "",
+};
 
 export default function AdminSettingsPage() {
   useTitle("Settings");
@@ -48,6 +68,10 @@ export default function AdminSettingsPage() {
   const [editRateValue, setEditRateValue] = useState("");
   const [deleteCurrencyTarget, setDeleteCurrencyTarget] = useState<CurrencyRecord | null>(null);
 
+  // Invoice defaults state
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(EMPTY_INVOICE_SETTINGS);
+  const [savingInvoiceSettings, setSavingInvoiceSettings] = useState(false);
+
   // Shared state
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -60,12 +84,14 @@ export default function AdminSettingsPage() {
   const loadData = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
     try {
-      const [domainData, currencyData] = await Promise.all([
+      const [domainData, currencyData, invoiceData] = await Promise.all([
         api.get("/api/domains"),
         api.get("/api/currencies"),
+        api.get("/api/invoice-settings"),
       ]);
       setDomains(domainData.domains);
       setCurrencies(currencyData.currencies);
+      setInvoiceSettings({ ...EMPTY_INVOICE_SETTINGS, ...invoiceData.settings });
     } catch {
       toast("Failed to load settings", "error");
     } finally {
@@ -166,6 +192,24 @@ export default function AdminSettingsPage() {
       setSubmitting(false);
     }
   };
+
+  // --- Invoice defaults handler ---
+  const handleSaveInvoiceSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingInvoiceSettings(true);
+    try {
+      const res = await api.put("/api/invoice-settings", invoiceSettings);
+      setInvoiceSettings({ ...EMPTY_INVOICE_SETTINGS, ...res.settings });
+      toast("Invoice defaults saved");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to save invoice defaults", "error");
+    } finally {
+      setSavingInvoiceSettings(false);
+    }
+  };
+
+  const setInvoiceField = (field: keyof InvoiceSettings, value: string) =>
+    setInvoiceSettings((prev) => ({ ...prev, [field]: value }));
 
   if (loading) return <PageLoader />;
 
@@ -318,6 +362,119 @@ export default function AdminSettingsPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Invoice Defaults Section */}
+      <div className="card">
+        <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
+          <div className="rounded-lg bg-cyan-50 p-2">
+            <FileText className="h-5 w-5 text-cyan-600" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900">Invoice Defaults</h2>
+            <p className="text-xs text-gray-500">
+              Seller and bank details used to pre-fill new invoices.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveInvoiceSettings} className="space-y-5 px-6 py-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Seller name</label>
+              <input
+                type="text"
+                value={invoiceSettings.sellerName}
+                onChange={(e) => setInvoiceField("sellerName", e.target.value)}
+                placeholder="e.g. Magickvoice Llp"
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">GSTIN</label>
+              <input
+                type="text"
+                value={invoiceSettings.sellerGstin}
+                onChange={(e) => setInvoiceField("sellerGstin", e.target.value)}
+                placeholder="36ABCDE1234F1Z5"
+                className="input-field"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Address</label>
+            <textarea
+              rows={2}
+              value={invoiceSettings.sellerAddress}
+              onChange={(e) => setInvoiceField("sellerAddress", e.target.value)}
+              placeholder="One line per row — e.g.&#10;Telangana&#10;India"
+              className="input-field resize-none"
+            />
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">
+              Bank details
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Account name
+                </label>
+                <input
+                  type="text"
+                  value={invoiceSettings.bankAccountName}
+                  onChange={(e) => setInvoiceField("bankAccountName", e.target.value)}
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Account number
+                </label>
+                <input
+                  type="text"
+                  value={invoiceSettings.bankAccountNumber}
+                  onChange={(e) => setInvoiceField("bankAccountNumber", e.target.value)}
+                  className="input-field tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Account type
+                </label>
+                <input
+                  type="text"
+                  value={invoiceSettings.bankAccountType}
+                  onChange={(e) => setInvoiceField("bankAccountType", e.target.value)}
+                  placeholder="e.g. Current"
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">IFSC</label>
+                <input
+                  type="text"
+                  value={invoiceSettings.bankIfsc}
+                  onChange={(e) => setInvoiceField("bankIfsc", e.target.value)}
+                  className="input-field"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button type="submit" className="btn-primary" disabled={savingInvoiceSettings}>
+              {savingInvoiceSettings ? (
+                <>
+                  <Spinner size="sm" /> Saving...
+                </>
+              ) : (
+                "Save Invoice Defaults"
+              )}
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* ========== MODALS ========== */}

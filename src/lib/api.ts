@@ -45,6 +45,17 @@ export const api = {
     return handleResponse(res);
   },
 
+  // POSTs JSON and returns the raw response as a Blob (e.g. for PDF downloads).
+  postBlob: async (url: string, body?: unknown): Promise<Blob> => {
+    const headers = await getAuthHeaders();
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Request failed");
+    }
+    return res.blob();
+  },
+
   put: async (url: string, body: unknown) => {
     const headers = await getAuthHeaders();
     const res = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
