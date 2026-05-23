@@ -69,9 +69,9 @@ export default function AdminUsersPage() {
   };
 
   const roleConfig = {
-    master_admin: { label: "Master Admin", icon: ShieldCheck, color: "bg-purple-100 text-purple-700" },
-    admin: { label: "Admin", icon: Shield, color: "bg-blue-100 text-blue-700" },
-    user: { label: "Member", icon: UserIcon, color: "bg-gray-100 text-gray-600" },
+    master_admin: { label: "Master Admin", icon: ShieldCheck, color: "bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300" },
+    admin: { label: "Admin", icon: Shield, color: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
+    user: { label: "Member", icon: UserIcon, color: "bg-subtle text-muted" },
   };
 
   if (loading) return <PageLoader />;
@@ -80,8 +80,8 @@ export default function AdminUsersPage() {
     <div className="animate-fade-in space-y-6">
       <div className="flex items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-foreground">User Management</h1>
+          <p className="text-sm text-muted-foreground">
             Manage user roles. {isMasterAdmin ? "Click a user's role badge to change it." : "Only the master admin can change roles."}
           </p>
         </div>
@@ -96,7 +96,7 @@ export default function AdminUsersPage() {
         />
       ) : (
         <div className="card overflow-hidden">
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-line">
             {users.map((user) => {
               const config = roleConfig[user.role];
               const canManageRole = isMasterAdmin && user.role !== "master_admin";
@@ -106,7 +106,7 @@ export default function AdminUsersPage() {
               return (
                 <div
                   key={user._id}
-                  className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-gray-50/50"
+                  className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-subtle/50"
                 >
                   <div className="flex items-center gap-4">
                     {user.photoURL ? (
@@ -117,13 +117,13 @@ export default function AdminUsersPage() {
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-sm font-medium text-brand-700">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-sm font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
                         {user.name.charAt(0).toUpperCase()}
                       </div>
                     )}
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                      <p className="text-xs text-gray-500">{user.email}</p>
+                      <p className="text-sm font-medium text-foreground">{user.name}</p>
+                      <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
                   </div>
 
@@ -141,7 +141,7 @@ export default function AdminUsersPage() {
                         disabled={updatingId === user._id}
                         className={`inline-flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all ${
                           user.role === "admin"
-                            ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            ? "bg-subtle text-muted hover:bg-subtle-hover"
                             : "bg-brand-600 text-white hover:bg-brand-700"
                         } ${updatingId === user._id ? "cursor-wait opacity-70" : ""}`}
                         aria-label={`${actionLabel} for ${user.name}`}
@@ -149,7 +149,7 @@ export default function AdminUsersPage() {
                         {updatingId === user._id ? (
                           <Spinner
                             size="sm"
-                            className={user.role === "admin" ? "border-gray-400 border-t-transparent" : "border-white/40 border-t-white"}
+                            className={user.role === "admin" ? "border-muted-foreground border-t-transparent" : "border-white/40 border-t-white"}
                           />
                         ) : (
                           <ActionIcon className="h-3.5 w-3.5" />

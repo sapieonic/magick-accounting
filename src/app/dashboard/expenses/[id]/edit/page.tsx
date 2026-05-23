@@ -151,18 +151,18 @@ export default function EditExpensePage() {
   return (
     <div className="animate-fade-in">
       <div className="mb-6">
-        <Link href="/dashboard/expenses" className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
+        <Link href="/dashboard/expenses" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Back to Expenses
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">Edit Expense</h1>
+        <h1 className="text-2xl font-bold text-foreground">Edit Expense</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="card mx-auto max-w-2xl p-6">
         <div className="space-y-5">
           <div>
-            <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-gray-700">
-              Title <span className="text-red-500">*</span>
+            <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-muted">
+              Title <span className="text-red-500 dark:text-red-400">*</span>
             </label>
             <input
               id="title"
@@ -176,8 +176,8 @@ export default function EditExpensePage() {
 
           <div className="grid gap-5 sm:grid-cols-3">
             <div>
-              <label htmlFor="currency" className="mb-1.5 block text-sm font-medium text-gray-700">
-                Currency <span className="text-red-500">*</span>
+              <label htmlFor="currency" className="mb-1.5 block text-sm font-medium text-muted">
+                Currency <span className="text-red-500 dark:text-red-400">*</span>
               </label>
               <select
                 id="currency"
@@ -193,8 +193,8 @@ export default function EditExpensePage() {
               </select>
             </div>
             <div>
-              <label htmlFor="amount" className="mb-1.5 block text-sm font-medium text-gray-700">
-                Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"}) <span className="text-red-500">*</span>
+              <label htmlFor="amount" className="mb-1.5 block text-sm font-medium text-muted">
+                Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"}) <span className="text-red-500 dark:text-red-400">*</span>
               </label>
               <input
                 id="amount"
@@ -208,8 +208,8 @@ export default function EditExpensePage() {
               />
             </div>
             <div>
-              <label htmlFor="date" className="mb-1.5 block text-sm font-medium text-gray-700">
-                Date <span className="text-red-500">*</span>
+              <label htmlFor="date" className="mb-1.5 block text-sm font-medium text-muted">
+                Date <span className="text-red-500 dark:text-red-400">*</span>
               </label>
               <input
                 id="date"
@@ -224,8 +224,8 @@ export default function EditExpensePage() {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <label htmlFor="category" className="mb-1.5 block text-sm font-medium text-gray-700">
-                Category <span className="text-red-500">*</span>
+              <label htmlFor="category" className="mb-1.5 block text-sm font-medium text-muted">
+                Category <span className="text-red-500 dark:text-red-400">*</span>
               </label>
               <select
                 id="category"
@@ -241,8 +241,8 @@ export default function EditExpensePage() {
               </select>
             </div>
             <div>
-              <label htmlFor="department" className="mb-1.5 block text-sm font-medium text-gray-700">
-                Department <span className="text-red-500">*</span>
+              <label htmlFor="department" className="mb-1.5 block text-sm font-medium text-muted">
+                Department <span className="text-red-500 dark:text-red-400">*</span>
               </label>
               <select
                 id="department"
@@ -260,7 +260,7 @@ export default function EditExpensePage() {
           </div>
 
           <div>
-            <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">
               Description
             </label>
             <textarea
@@ -273,27 +273,27 @@ export default function EditExpensePage() {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Receipt</label>
+            <label className="mb-1.5 block text-sm font-medium text-muted">Receipt</label>
             {existingReceipt || newReceipt ? (
-              <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                <Upload className="h-5 w-5 text-gray-400" />
-                <span className="flex-1 truncate text-sm text-gray-700">
+              <div className="flex items-center gap-3 rounded-lg border border-line bg-subtle px-4 py-3">
+                <Upload className="h-5 w-5 text-muted-foreground" />
+                <span className="flex-1 truncate text-sm text-muted">
                   {newReceipt?.filename || existingReceipt?.filename}
                 </span>
                 <button
                   type="button"
                   onClick={() => { setNewReceipt(null); setExistingReceipt(null); }}
-                  className="cursor-pointer rounded p-1 text-gray-400 hover:text-gray-600"
+                  className="cursor-pointer rounded p-1 text-muted-foreground hover:text-muted"
                   aria-label="Remove receipt"
                 >
                   <XIcon className="h-4 w-4" />
                 </button>
               </div>
             ) : (
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-gray-200 px-4 py-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30">
-                <Upload className="h-8 w-8 text-gray-300" />
-                <span className="text-sm text-gray-500">Click to upload receipt</span>
-                <span className="text-xs text-gray-400">JPEG, PNG, WebP, or PDF up to 10MB</span>
+              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30 dark:hover:bg-brand-500/10">
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Click to upload receipt</span>
+                <span className="text-xs text-muted-foreground">JPEG, PNG, WebP, or PDF up to 10MB</span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -305,7 +305,7 @@ export default function EditExpensePage() {
           </div>
         </div>
 
-        <div className="mt-8 flex justify-end gap-3 border-t border-gray-100 pt-6">
+        <div className="mt-8 flex justify-end gap-3 border-t border-line pt-6">
           <Link href="/dashboard/expenses" className="btn-secondary">
             Cancel
           </Link>

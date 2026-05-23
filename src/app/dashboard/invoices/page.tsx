@@ -164,12 +164,12 @@ export default function InvoicesPage() {
   return (
     <div className="animate-fade-in">
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-500">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-500 dark:bg-cyan-500/10 dark:text-cyan-400">
           <FileText className="h-5 w-5" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Generate Tax Invoice</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-foreground">Generate Tax Invoice</h1>
+          <p className="text-sm text-muted-foreground">
             Fill in the details and download a PDF. Invoices are not stored.
           </p>
         </div>
@@ -255,7 +255,7 @@ export default function InvoicesPage() {
               />
             </Field>
           </div>
-          <p className="mt-3 text-xs text-gray-400">
+          <p className="mt-3 text-xs text-muted-foreground">
             HSN/SAC and GST rates default from{" "}
             <span className="font-medium">Settings → Invoice Defaults</span> and apply to the
             whole invoice — CGST and SGST are charged on the sub-total.
@@ -352,7 +352,7 @@ export default function InvoicesPage() {
               ].map(([label, span]) => (
                 <span
                   key={label}
-                  className={`${span} text-xs font-semibold uppercase tracking-wide text-gray-400`}
+                  className={`${span} text-xs font-semibold uppercase tracking-wide text-muted-foreground`}
                 >
                   {label}
                 </span>
@@ -362,7 +362,7 @@ export default function InvoicesPage() {
             {lineItems.map((li, i) => (
               <div
                 key={i}
-                className="grid grid-cols-2 gap-3 rounded-lg border border-gray-100 p-3 lg:grid-cols-12 lg:border-0 lg:p-0"
+                className="grid grid-cols-2 gap-3 rounded-lg border border-line p-3 lg:grid-cols-12 lg:border-0 lg:p-0"
               >
                 <input
                   type="text"
@@ -390,7 +390,7 @@ export default function InvoicesPage() {
                   className="input-field tabular-nums lg:col-span-2"
                 />
                 <div className="col-span-2 flex items-center justify-between gap-2 lg:col-span-3">
-                  <span className="truncate text-sm tabular-nums text-gray-700">
+                  <span className="truncate text-sm tabular-nums text-muted">
                     {formatRupees(
                       lineItemAmount(parseFloat(li.quantity) || 0, parseFloat(li.rate) || 0)
                     )}
@@ -399,7 +399,7 @@ export default function InvoicesPage() {
                     type="button"
                     onClick={() => removeRow(i)}
                     disabled={lineItems.length === 1}
-                    className="cursor-pointer rounded p-1 text-gray-400 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+                    className="cursor-pointer rounded p-1 text-muted-foreground hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:text-red-400"
                     aria-label="Remove line item"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -454,18 +454,18 @@ export default function InvoicesPage() {
           <Section title="Summary">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Sub Total</span>
+                <span className="text-muted-foreground">Sub Total</span>
                 <span className="tabular-nums">{formatRupees(totals.subTotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">CGST ({totals.cgstRate}%)</span>
+                <span className="text-muted-foreground">CGST ({totals.cgstRate}%)</span>
                 <span className="tabular-nums">{formatRupees(totals.cgstAmount)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">SGST ({totals.sgstRate}%)</span>
+                <span className="text-muted-foreground">SGST ({totals.sgstRate}%)</span>
                 <span className="tabular-nums">{formatRupees(totals.sgstAmount)}</span>
               </div>
-              <div className="flex justify-between border-t border-gray-100 pt-3 text-base font-bold text-gray-900">
+              <div className="flex justify-between border-t border-line pt-3 text-base font-bold text-foreground">
                 <span>Total</span>
                 <span className="tabular-nums">{formatRupees(totals.total)}</span>
               </div>
@@ -504,7 +504,7 @@ function Section({
   return (
     <section className="card p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-gray-400">{title}</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">{title}</h2>
         {action}
       </div>
       {children}
@@ -523,8 +523,8 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-sm font-medium text-gray-700">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label className="mb-1.5 block text-sm font-medium text-muted">
+        {label} {required && <span className="text-red-500 dark:text-red-400">*</span>}
       </label>
       {children}
     </div>

@@ -40,7 +40,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onClick={(e) => e.target === overlayRef.current && onClose()}
       role="dialog"
       aria-modal="true"
@@ -49,13 +49,13 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
       <div
         ref={contentRef}
         tabIndex={-1}
-        className={`animate-slide-up w-full ${maxWidth} rounded-xl border border-gray-200 bg-white shadow-2xl outline-none`}
+        className={`animate-slide-up w-full ${maxWidth} rounded-xl border border-line bg-surface-elevated shadow-2xl outline-none dark:shadow-black/60`}
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
           <button
             onClick={onClose}
-            className="cursor-pointer rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            className="cursor-pointer rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"
             aria-label="Close dialog"
           >
             <X className="h-5 w-5" />
