@@ -107,8 +107,8 @@ export default function DepartmentsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div>
-          <h1 className="text-2xl font-bold text-gray-900">Departments</h1>
-          <p className="text-sm text-gray-500">Organize expenses by department.</p>
+          <h1 className="text-2xl font-bold text-foreground">Departments</h1>
+          <p className="text-sm text-muted-foreground">Organize expenses by department.</p>
           </div>
           {refreshing && <InlineLoader label="Refreshing..." />}
         </div>
@@ -135,13 +135,13 @@ export default function DepartmentsPage() {
             <div key={dept._id} className="card flex flex-col p-5 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-purple-50 p-2.5">
-                    <Building2 className="h-5 w-5 text-purple-600" />
+                  <div className="rounded-lg bg-purple-50 p-2.5 dark:bg-purple-500/10">
+                    <Building2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-gray-900">{dept.name}</h3>
+                    <h3 className="font-medium text-foreground">{dept.name}</h3>
                     {dept.isDefault && (
-                      <span className="text-xs text-gray-400">Default</span>
+                      <span className="text-xs text-muted-foreground">Default</span>
                     )}
                   </div>
                 </div>
@@ -149,14 +149,14 @@ export default function DepartmentsPage() {
                   <div className="flex gap-1">
                     <button
                       onClick={() => openEditForm(dept)}
-                      className="cursor-pointer rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                      className="cursor-pointer rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"
                       aria-label={`Edit ${dept.name}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => setDeleteTarget(dept)}
-                      className="cursor-pointer rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                      className="cursor-pointer rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                       aria-label={`Delete ${dept.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -165,17 +165,17 @@ export default function DepartmentsPage() {
                 )}
               </div>
               {dept.description && (
-                <p className="mt-3 text-sm text-gray-500">{dept.description}</p>
+                <p className="mt-3 text-sm text-muted-foreground">{dept.description}</p>
               )}
               <Link
                 href={`/dashboard/expenses?department=${dept._id}`}
-                className="group mt-4 inline-flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700"
+                className="group mt-4 inline-flex items-center justify-between gap-2 rounded-lg border border-line bg-subtle px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700 dark:hover:border-purple-500/30 dark:hover:bg-purple-500/10 dark:hover:text-purple-300"
               >
                 <span className="inline-flex items-center gap-1.5">
                   <Receipt className="h-3.5 w-3.5" />
                   View Expenses
                 </span>
-                <ArrowUpRight className="h-3.5 w-3.5 text-gray-300 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-purple-500" />
+                <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-purple-500 dark:group-hover:text-purple-400" />
               </Link>
             </div>
           ))}
@@ -190,7 +190,7 @@ export default function DepartmentsPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="dept-name" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="dept-name" className="mb-1.5 block text-sm font-medium text-muted">
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -204,7 +204,7 @@ export default function DepartmentsPage() {
             />
           </div>
           <div>
-            <label htmlFor="dept-desc" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="dept-desc" className="mb-1.5 block text-sm font-medium text-muted">
               Description
             </label>
             <textarea
@@ -229,7 +229,7 @@ export default function DepartmentsPage() {
 
       {/* Delete Modal */}
       <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Department">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted">
           Are you sure you want to delete <span className="font-medium">&ldquo;{deleteTarget?.name}&rdquo;</span>?
           Departments with expenses cannot be deleted.
         </p>

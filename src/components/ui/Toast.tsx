@@ -48,17 +48,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={clsx(
-              "animate-slide-up flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-lg",
-              t.type === "success" && "border-emerald-200",
-              t.type === "error" && "border-red-200",
-              t.type === "info" && "border-blue-200"
+              "animate-slide-up flex items-center gap-3 rounded-lg border bg-surface-elevated px-4 py-3 shadow-lg dark:shadow-black/40",
+              t.type === "success" && "border-emerald-200 dark:border-emerald-500/30",
+              t.type === "error" && "border-red-200 dark:border-red-500/30",
+              t.type === "info" && "border-blue-200 dark:border-blue-500/30"
             )}
           >
             {icons[t.type]}
-            <p className="text-sm text-gray-700">{t.message}</p>
+            <p className="text-sm text-foreground">{t.message}</p>
             <button
               onClick={() => removeToast(t.id)}
-              className="ml-2 rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              className="ml-2 rounded p-1 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"
               aria-label="Dismiss notification"
             >
               <X className="h-4 w-4" />

@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-gray-50">
+      <div className="flex min-h-dvh items-center justify-center bg-background">
         <Spinner size="lg" />
       </div>
     );
@@ -79,24 +79,24 @@ export default function LoginPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">
                 M
               </div>
-              <span className="text-xl font-semibold text-gray-900">Magick Accounting</span>
+              <span className="text-xl font-semibold text-foreground">Magick Accounting</span>
             </div>
           </div>
 
-          <h2 className="mb-2 text-2xl font-bold text-gray-900">Welcome back</h2>
-          <p className="mb-8 text-gray-500">
+          <h2 className="mb-2 text-2xl font-bold text-foreground">Welcome back</h2>
+          <p className="mb-8 text-muted-foreground">
             Sign in with your organization&apos;s Google account to continue.
           </p>
 
           {error && (
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
               {error}
             </div>
           )}
 
           <button
             onClick={signInWithGoogle}
-            className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md active:scale-[0.99]"
+            className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-lg border border-line-strong bg-surface px-4 py-3 text-sm font-medium text-muted shadow-sm transition-all hover:bg-subtle hover:shadow-md active:scale-[0.99]"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -119,7 +119,7 @@ export default function LoginPage() {
             Continue with Google
           </button>
 
-          <p className="mt-6 text-center text-xs text-gray-400">
+          <p className="mt-6 text-center text-xs text-muted-foreground">
             Only authorized organization email domains can access this application.
           </p>
         </div>

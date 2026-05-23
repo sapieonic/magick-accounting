@@ -35,7 +35,7 @@ const navItems = [
 const adminItems = [
   { href: "/dashboard/invoices", label: "Invoices", icon: FileText, color: "text-cyan-500" },
   { href: "/dashboard/admin/users", label: "Users", icon: Users, color: "text-rose-500" },
-  { href: "/dashboard/admin/settings", label: "Settings", icon: Shield, color: "text-slate-500" },
+  { href: "/dashboard/admin/settings", label: "Settings", icon: Shield, color: "text-slate-500 dark:text-slate-300" },
 ];
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
@@ -83,13 +83,13 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         iconOnly ? "justify-center px-0" : "px-3",
         isActive(href)
           ? "bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-md shadow-brand-500/25"
-          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          : "text-muted hover:bg-subtle hover:text-foreground"
       )}
     >
       <Icon className={clsx("h-[18px] w-[18px] flex-shrink-0", isActive(href) ? "text-white" : color)} />
       {!iconOnly && label}
       {iconOnly && (
-        <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/navlink:opacity-100">
+        <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover/navlink:opacity-100">
           {label}
         </span>
       )}
@@ -109,7 +109,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           M
         </div>
         {!iconOnly && (
-          <span className="truncate text-base font-bold text-gray-900">
+          <span className="truncate text-base font-bold text-foreground">
             {process.env.NEXT_PUBLIC_APP_NAME || "Magick Accounting"}
           </span>
         )}
@@ -117,7 +117,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
       <nav className={clsx("flex-1 space-y-1 py-4", iconOnly ? "px-2" : "px-3")}>
         {!iconOnly && (
-          <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+          <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             Main
           </p>
         )}
@@ -127,9 +127,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
         {isAdmin && (
           <>
-            <div className="my-4 border-t border-gray-100" />
+            <div className="my-4 border-t border-line" />
             {!iconOnly && (
-              <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+              <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 Admin
               </p>
             )}
@@ -142,9 +142,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
       {/* Sidebar footer decoration */}
       {!iconOnly && (
-        <div className="mx-3 mb-4 rounded-xl bg-gradient-to-br from-brand-50 to-indigo-50 p-4">
-          <p className="text-xs font-semibold text-brand-700">Need help?</p>
-          <p className="mt-0.5 text-[11px] text-brand-500/70">Contact your administrator for support.</p>
+        <div className="mx-3 mb-4 rounded-xl bg-gradient-to-br from-brand-50 to-indigo-50 p-4 dark:from-brand-500/10 dark:to-indigo-500/10">
+          <p className="text-xs font-semibold text-brand-700 dark:text-brand-300">Need help?</p>
+          <p className="mt-0.5 text-[11px] text-brand-500/70 dark:text-brand-300/70">Contact your administrator for support.</p>
         </div>
       )}
     </div>
@@ -155,14 +155,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Desktop sidebar */}
       <aside
         className={clsx(
-          "relative hidden flex-shrink-0 border-r border-gray-100 bg-white/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
+          "relative hidden flex-shrink-0 border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
           collapsed ? "w-[72px]" : "w-64"
         )}
       >
         {sidebarContent(collapsed)}
         <button
           onClick={toggleCollapsed}
-          className="absolute -right-3 top-[1.55rem] z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shadow-sm transition-colors hover:text-brand-600"
+          className="absolute -right-3 top-[1.55rem] z-10 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-muted-foreground shadow-sm transition-colors hover:text-brand-600 dark:hover:text-brand-400"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
@@ -177,11 +177,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Mobile sidebar overlay */}
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-          <aside className="animate-slide-in-right fixed inset-y-0 left-0 w-72 bg-white shadow-2xl">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+          <aside className="animate-slide-in-right fixed inset-y-0 left-0 w-72 bg-surface shadow-2xl">
             <button
               onClick={onClose}
-              className="absolute right-3 top-4 cursor-pointer rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              className="absolute right-3 top-4 cursor-pointer rounded-lg p-1.5 text-muted-foreground hover:bg-subtle hover:text-muted"
               aria-label="Close navigation"
             >
               <X className="h-5 w-5" />

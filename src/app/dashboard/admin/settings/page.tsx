@@ -236,22 +236,22 @@ export default function AdminSettingsPage() {
     <div className="animate-fade-in space-y-6">
       <div className="flex items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500">Manage application access, security, and currencies.</p>
+          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+          <p className="text-sm text-muted-foreground">Manage application access, security, and currencies.</p>
         </div>
         {refreshing && <InlineLoader label="Refreshing..." />}
       </div>
 
       {/* Domain Whitelist Section */}
       <div className="card">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-emerald-50 p-2">
-              <Shield className="h-5 w-5 text-emerald-600" />
+            <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-500/10">
+              <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900">Allowed Email Domains</h2>
-              <p className="text-xs text-gray-500">Only users from these domains can sign in.</p>
+              <h2 className="font-semibold text-foreground">Allowed Email Domains</h2>
+              <p className="text-xs text-muted-foreground">Only users from these domains can sign in.</p>
             </div>
           </div>
           <button onClick={() => { setNewDomain(""); setShowDomainForm(true); }} className="btn-primary text-sm">
@@ -262,29 +262,29 @@ export default function AdminSettingsPage() {
 
         {domains.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <Globe className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-            <p className="text-sm text-gray-500">No domains configured. Add one to allow sign-ins.</p>
+            <Globe className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No domains configured. Add one to allow sign-ins.</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-line">
             {domains.map((domain) => (
               <div
                 key={domain._id}
-                className="flex items-center justify-between px-6 py-3.5 transition-colors hover:bg-gray-50/50"
+                className="flex items-center justify-between px-6 py-3.5 transition-colors hover:bg-subtle/50"
               >
                 <div className="flex items-center gap-3">
-                  <Globe className="h-4 w-4 text-gray-400" />
+                  <Globe className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-gray-900">@{domain.domain}</p>
+                    <p className="text-sm font-medium text-foreground">@{domain.domain}</p>
                     {domain.addedBy && (
-                      <p className="text-xs text-gray-400">Added by {domain.addedBy.name}</p>
+                      <p className="text-xs text-muted-foreground">Added by {domain.addedBy.name}</p>
                     )}
                   </div>
                 </div>
                 <button
                   onClick={() => setDeleteDomainTarget(domain)}
                   disabled={domains.length <= 1}
-                  className="cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
                   aria-label={`Remove @${domain.domain}`}
                   title={domains.length <= 1 ? "Cannot remove the last domain" : `Remove @${domain.domain}`}
                 >
@@ -298,14 +298,14 @@ export default function AdminSettingsPage() {
 
       {/* Currencies & Exchange Rates Section */}
       <div className="card">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-amber-50 p-2">
-              <Coins className="h-5 w-5 text-amber-600" />
+            <div className="rounded-lg bg-amber-50 p-2 dark:bg-amber-500/10">
+              <Coins className="h-5 w-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900">Currencies & Exchange Rates</h2>
-              <p className="text-xs text-gray-500">Manage supported currencies and their exchange rates to INR.</p>
+              <h2 className="font-semibold text-foreground">Currencies & Exchange Rates</h2>
+              <p className="text-xs text-muted-foreground">Manage supported currencies and their exchange rates to INR.</p>
             </div>
           </div>
           <button
@@ -322,36 +322,36 @@ export default function AdminSettingsPage() {
 
         {currencies.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <Coins className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-            <p className="text-sm text-gray-500">No currencies configured. Run seed or add one manually.</p>
+            <Coins className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No currencies configured. Run seed or add one manually.</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-line">
             {currencies.map((curr) => (
               <div
                 key={curr._id}
-                className="flex items-center justify-between px-6 py-3.5 transition-colors hover:bg-gray-50/50"
+                className="flex items-center justify-between px-6 py-3.5 transition-colors hover:bg-subtle/50"
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-sm font-semibold text-gray-700">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-subtle text-sm font-semibold text-foreground">
                     {curr.symbol}
                   </span>
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900">{curr.code}</p>
+                      <p className="text-sm font-medium text-foreground">{curr.code}</p>
                       {curr.isBase && (
-                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
                           Base
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500">{curr.name}</p>
+                    <p className="text-xs text-muted-foreground">{curr.name}</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {!curr.isBase && (
-                    <span className="mr-2 text-sm tabular-nums text-gray-600">
+                    <span className="mr-2 text-sm tabular-nums text-muted">
                       1 {curr.code} = {curr.rateToBase.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} INR
                     </span>
                   )}
@@ -362,14 +362,14 @@ export default function AdminSettingsPage() {
                           setEditRateTarget(curr);
                           setEditRateValue(curr.rateToBase.toString());
                         }}
-                        className="cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                        className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"
                         aria-label={`Edit rate for ${curr.code}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => setDeleteCurrencyTarget(curr)}
-                        className="cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                         aria-label={`Delete ${curr.code}`}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -385,13 +385,13 @@ export default function AdminSettingsPage() {
 
       {/* Invoice Defaults Section */}
       <div className="card">
-        <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
-          <div className="rounded-lg bg-cyan-50 p-2">
-            <FileText className="h-5 w-5 text-cyan-600" />
+        <div className="flex items-center gap-3 border-b border-line px-6 py-4">
+          <div className="rounded-lg bg-cyan-50 p-2 dark:bg-cyan-500/10">
+            <FileText className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
           </div>
           <div>
-            <h2 className="font-semibold text-gray-900">Invoice Defaults</h2>
-            <p className="text-xs text-gray-500">
+            <h2 className="font-semibold text-foreground">Invoice Defaults</h2>
+            <p className="text-xs text-muted-foreground">
               Seller and bank details used to pre-fill new invoices.
             </p>
           </div>
@@ -400,7 +400,7 @@ export default function AdminSettingsPage() {
         <form onSubmit={handleSaveInvoiceSettings} className="space-y-5 px-6 py-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Seller name</label>
+              <label className="mb-1.5 block text-sm font-medium text-muted">Seller name</label>
               <input
                 type="text"
                 value={invoiceSettings.sellerName}
@@ -410,7 +410,7 @@ export default function AdminSettingsPage() {
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">GSTIN</label>
+              <label className="mb-1.5 block text-sm font-medium text-muted">GSTIN</label>
               <input
                 type="text"
                 value={invoiceSettings.sellerGstin}
@@ -420,7 +420,7 @@ export default function AdminSettingsPage() {
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              <label className="mb-1.5 block text-sm font-medium text-muted">
                 HSN/SAC code
               </label>
               <input
@@ -430,12 +430,12 @@ export default function AdminSettingsPage() {
                 placeholder="e.g. 998314"
                 className="input-field tabular-nums"
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Applied to every invoice — shown above Place of Supply.
               </p>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">CGST %</label>
+              <label className="mb-1.5 block text-sm font-medium text-muted">CGST %</label>
               <input
                 type="number"
                 min="0"
@@ -447,7 +447,7 @@ export default function AdminSettingsPage() {
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">SGST %</label>
+              <label className="mb-1.5 block text-sm font-medium text-muted">SGST %</label>
               <input
                 type="number"
                 min="0"
@@ -457,13 +457,13 @@ export default function AdminSettingsPage() {
                 placeholder="e.g. 9"
                 className="input-field tabular-nums"
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 CGST and SGST are charged on the invoice sub-total.
               </p>
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Address</label>
+            <label className="mb-1.5 block text-sm font-medium text-muted">Address</label>
             <textarea
               rows={2}
               value={invoiceSettings.sellerAddress}
@@ -473,13 +473,13 @@ export default function AdminSettingsPage() {
             />
           </div>
 
-          <div className="border-t border-gray-100 pt-4">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">
+          <div className="border-t border-line pt-4">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">
               Bank details
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                <label className="mb-1.5 block text-sm font-medium text-muted">
                   Account name
                 </label>
                 <input
@@ -490,7 +490,7 @@ export default function AdminSettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                <label className="mb-1.5 block text-sm font-medium text-muted">
                   Account number
                 </label>
                 <input
@@ -501,7 +501,7 @@ export default function AdminSettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                <label className="mb-1.5 block text-sm font-medium text-muted">
                   Account type
                 </label>
                 <input
@@ -513,7 +513,7 @@ export default function AdminSettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">IFSC</label>
+                <label className="mb-1.5 block text-sm font-medium text-muted">IFSC</label>
                 <input
                   type="text"
                   value={invoiceSettings.bankIfsc}
@@ -544,11 +544,11 @@ export default function AdminSettingsPage() {
       <Modal isOpen={showDomainForm} onClose={() => setShowDomainForm(false)} title="Add Email Domain">
         <form onSubmit={handleAddDomain} className="space-y-4">
           <div>
-            <label htmlFor="domain" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="domain" className="mb-1.5 block text-sm font-medium text-muted">
               Domain <span className="text-red-500">*</span>
             </label>
             <div className="flex items-center">
-              <span className="inline-flex items-center rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
+              <span className="inline-flex items-center rounded-l-lg border border-r-0 border-line-strong bg-subtle px-3 py-2.5 text-sm text-muted-foreground">
                 @
               </span>
               <input
@@ -562,7 +562,7 @@ export default function AdminSettingsPage() {
                 autoFocus
               />
             </div>
-            <p className="mt-1.5 text-xs text-gray-400">
+            <p className="mt-1.5 text-xs text-muted-foreground">
               Users with this email domain will be able to sign in.
             </p>
           </div>
@@ -579,7 +579,7 @@ export default function AdminSettingsPage() {
 
       {/* Delete Domain Modal */}
       <Modal isOpen={!!deleteDomainTarget} onClose={() => setDeleteDomainTarget(null)} title="Remove Domain">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted">
           Are you sure you want to remove <span className="font-medium">@{deleteDomainTarget?.domain}</span>?
           Users from this domain will no longer be able to sign in.
         </p>
@@ -598,7 +598,7 @@ export default function AdminSettingsPage() {
         <form onSubmit={handleAddCurrency} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="curr-code" className="mb-1.5 block text-sm font-medium text-gray-700">
+              <label htmlFor="curr-code" className="mb-1.5 block text-sm font-medium text-muted">
                 Code <span className="text-red-500">*</span>
               </label>
               <input
@@ -612,10 +612,10 @@ export default function AdminSettingsPage() {
                 className="input-field uppercase"
                 autoFocus
               />
-              <p className="mt-1 text-xs text-gray-400">3-letter ISO code</p>
+              <p className="mt-1 text-xs text-muted-foreground">3-letter ISO code</p>
             </div>
             <div>
-              <label htmlFor="curr-symbol" className="mb-1.5 block text-sm font-medium text-gray-700">
+              <label htmlFor="curr-symbol" className="mb-1.5 block text-sm font-medium text-muted">
                 Symbol <span className="text-red-500">*</span>
               </label>
               <input
@@ -631,7 +631,7 @@ export default function AdminSettingsPage() {
             </div>
           </div>
           <div>
-            <label htmlFor="curr-name" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="curr-name" className="mb-1.5 block text-sm font-medium text-muted">
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -645,7 +645,7 @@ export default function AdminSettingsPage() {
             />
           </div>
           <div>
-            <label htmlFor="curr-rate" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="curr-rate" className="mb-1.5 block text-sm font-medium text-muted">
               Exchange Rate to INR <span className="text-red-500">*</span>
             </label>
             <input
@@ -659,7 +659,7 @@ export default function AdminSettingsPage() {
               placeholder="83.50"
               className="input-field tabular-nums"
             />
-            <p className="mt-1 text-xs text-gray-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               How many INR per 1 unit of this currency.
             </p>
           </div>
@@ -678,7 +678,7 @@ export default function AdminSettingsPage() {
       <Modal isOpen={!!editRateTarget} onClose={() => setEditRateTarget(null)} title="Edit Exchange Rate">
         <form onSubmit={handleUpdateRate} className="space-y-4">
           <div>
-            <label htmlFor="edit-rate" className="mb-1.5 block text-sm font-medium text-gray-700">
+            <label htmlFor="edit-rate" className="mb-1.5 block text-sm font-medium text-muted">
               1 {editRateTarget?.code} = ? INR
             </label>
             <input
@@ -692,7 +692,7 @@ export default function AdminSettingsPage() {
               className="input-field tabular-nums"
               autoFocus
             />
-            <p className="mt-1.5 text-xs text-gray-400">
+            <p className="mt-1.5 text-xs text-muted-foreground">
               Changing the rate only affects future expenses. Existing expenses keep their original conversion.
             </p>
           </div>
@@ -709,7 +709,7 @@ export default function AdminSettingsPage() {
 
       {/* Delete Currency Modal */}
       <Modal isOpen={!!deleteCurrencyTarget} onClose={() => setDeleteCurrencyTarget(null)} title="Delete Currency">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted">
           Are you sure you want to delete <span className="font-medium">{deleteCurrencyTarget?.code} ({deleteCurrencyTarget?.name})</span>?
           Currencies with expenses cannot be deleted.
         </p>
