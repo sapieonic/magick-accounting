@@ -10,6 +10,7 @@ import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
+import MultiSelect from "@/components/ui/MultiSelect";
 import {
   Plus, Receipt, Trash2, Pencil, Paperclip, Download,
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
@@ -66,7 +67,9 @@ function isImageFile(filename?: string): boolean {
   return /\.(jpg|jpeg|png|webp)$/i.test(filename);
 }
 
-function getMonthOptions(): { value: string; label: string }[] {
+const CUSTOM_DATE_PRESET = "custom";
+
+function getDatePresetOptions(): { value: string; label: string }[] {
   const options = [{ value: "", label: "All Time" }];
   const now = new Date();
   for (let i = 0; i < 12; i++) {
@@ -76,7 +79,29 @@ function getMonthOptions(): { value: string; label: string }[] {
       label: format(d, "MMMM yyyy"),
     });
   }
+  options.push({ value: CUSTOM_DATE_PRESET, label: "Custom Range" });
   return options;
+}
+
+// Resolves the active date preset / custom range into { from, to } yyyy-MM-dd
+// strings for the expense query. Returns empty strings when no bound applies.
+function resolveDateRange(
+  preset: string,
+  customFrom: string,
+  customTo: string
+): { from: string; to: string } {
+  if (preset === CUSTOM_DATE_PRESET) {
+    return { from: customFrom, to: customTo };
+  }
+  if (preset) {
+    const [year, month] = preset.split("-").map(Number);
+    const monthStart = new Date(year, month - 1, 1);
+    return {
+      from: format(monthStart, "yyyy-MM-dd"),
+      to: format(endOfMonth(monthStart), "yyyy-MM-dd"),
+    };
+  }
+  return { from: "", to: "" };
 }
 
 export default function ExpensesPage() {
@@ -95,9 +120,11 @@ export default function ExpensesPage() {
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
   const [loadingReceipt, setLoadingReceipt] = useState<string | null>(null);
 
-  const [filterDept, setFilterDept] = useState("");
-  const [filterCat, setFilterCat] = useState("");
-  const [filterMonth, setFilterMonth] = useState("");
+  const [filterDepts, setFilterDepts] = useState<string[]>([]);
+  const [filterCats, setFilterCats] = useState<string[]>([]);
+  const [datePreset, setDatePreset] = useState("");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [filterUser, setFilterUser] = useState("");
   const [urlSynced, setUrlSynced] = useState(false);
   const [searchInput, setSearchInput] = useState("");
@@ -108,7 +135,12 @@ export default function ExpensesPage() {
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
   const hasLoadedExpenses = useRef(false);
 
-  const monthOptions = useMemo(() => getMonthOptions(), []);
+  const datePresetOptions = useMemo(() => getDatePresetOptions(), []);
+
+  const hasDateFilter =
+    datePreset === CUSTOM_DATE_PRESET ? Boolean(customFrom || customTo) : Boolean(datePreset);
+  const hasAnyFilter =
+    filterDepts.length > 0 || filterCats.length > 0 || hasDateFilter || Boolean(filterUser);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -116,8 +148,10 @@ export default function ExpensesPage() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
-    setFilterDept(params.get("department") ?? "");
-    setFilterCat(params.get("category") ?? "");
+    const depts = params.getAll("department").flatMap((v) => v.split(",")).filter(Boolean);
+    const cats = params.getAll("category").flatMap((v) => v.split(",")).filter(Boolean);
+    setFilterDepts(depts);
+    setFilterCats(cats);
     setFilterUser(params.get("createdBy") ?? "");
     setUrlSynced(true);
   }, []);
@@ -195,17 +229,14 @@ export default function ExpensesPage() {
           includeSummary: "true",
         });
 
-        if (filterDept) params.set("department", filterDept);
-        if (filterCat) params.set("category", filterCat);
+        filterDepts.forEach((id) => params.append("department", id));
+        filterCats.forEach((id) => params.append("category", id));
         if (filterUser) params.set("createdBy", filterUser);
         if (search) params.set("search", search);
 
-        if (filterMonth) {
-          const [year, month] = filterMonth.split("-").map(Number);
-          const monthStart = new Date(year, month - 1, 1);
-          params.set("from", format(monthStart, "yyyy-MM-dd"));
-          params.set("to", format(endOfMonth(monthStart), "yyyy-MM-dd"));
-        }
+        const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
 
         const data = await api.get(`/api/expenses?${params.toString()}`);
         if (!active) return;
@@ -233,7 +264,7 @@ export default function ExpensesPage() {
     return () => {
       active = false;
     };
-  }, [filterCat, filterDept, filterMonth, filterUser, search, toast, urlSynced]);
+  }, [filterCats, filterDepts, datePreset, customFrom, customTo, filterUser, search, toast, urlSynced]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -295,7 +326,12 @@ export default function ExpensesPage() {
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              {filterMonth ? monthOptions.find((o) => o.value === filterMonth)?.label : "All Time"} Total
+              {datePreset === CUSTOM_DATE_PRESET
+                ? "Custom Range"
+                : datePreset
+                  ? datePresetOptions.find((o) => o.value === datePreset)?.label
+                  : "All Time"}{" "}
+              Total
             </p>
             <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
               {formatBaseCurrency(summary.totalAmount)}
@@ -326,46 +362,32 @@ export default function ExpensesPage() {
               <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-400" />
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <select
-                value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
+                value={datePreset}
+                onChange={(e) => setDatePreset(e.target.value)}
                 className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                aria-label="Filter by month"
+                aria-label="Filter by date"
               >
-                {monthOptions.map((opt) => (
+                {datePresetOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
-            <div className="relative">
-              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-400" />
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={filterDept}
-                onChange={(e) => setFilterDept(e.target.value)}
-                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                aria-label="Filter by department"
-              >
-                <option value="">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d._id} value={d._id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="relative">
-              <Tag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={filterCat}
-                onChange={(e) => setFilterCat(e.target.value)}
-                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                aria-label="Filter by category"
-              >
-                <option value="">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c._id} value={c._id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
+            <MultiSelect
+              options={departments.map((d) => ({ value: d._id, label: d.name }))}
+              selected={filterDepts}
+              onChange={setFilterDepts}
+              placeholder="All Departments"
+              ariaLabel="Filter by department"
+              icon={<Filter className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-blue-400" />}
+            />
+            <MultiSelect
+              options={categories.map((c) => ({ value: c._id, label: c.name }))}
+              selected={filterCats}
+              onChange={setFilterCats}
+              placeholder="All Categories"
+              ariaLabel="Filter by category"
+              icon={<Tag className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-amber-400" />}
+            />
             {isAdmin && (
               <div className="relative">
                 <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-400" />
@@ -384,35 +406,76 @@ export default function ExpensesPage() {
               </div>
             )}
           </div>
+
+          {/* Custom date range inputs */}
+          {datePreset === CUSTOM_DATE_PRESET && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  From
+                </label>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="input-field w-full text-sm"
+                  aria-label="From date"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  To
+                </label>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="input-field w-full text-sm"
+                  aria-label="To date"
+                />
+              </div>
+            </div>
+          )}
         </div>
         {/* Active filter pills */}
-        {(filterMonth || filterDept || filterCat || filterUser) && (
+        {hasAnyFilter && (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
             <span className="text-xs text-muted-foreground">Filters:</span>
-            {filterMonth && (
+            {hasDateFilter && (
               <button
-                onClick={() => setFilterMonth("")}
+                onClick={() => {
+                  setDatePreset("");
+                  setCustomFrom("");
+                  setCustomTo("");
+                }}
                 className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
               >
-                {monthOptions.find((o) => o.value === filterMonth)?.label} &times;
+                {datePreset === CUSTOM_DATE_PRESET
+                  ? `${customFrom || "…"} → ${customTo || "…"}`
+                  : datePresetOptions.find((o) => o.value === datePreset)?.label}{" "}
+                &times;
               </button>
             )}
-            {filterDept && (
+            {filterDepts.map((id) => (
               <button
-                onClick={() => setFilterDept("")}
+                key={id}
+                onClick={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}
                 className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20"
               >
-                {departments.find((d) => d._id === filterDept)?.name} &times;
+                {departments.find((d) => d._id === id)?.name} &times;
               </button>
-            )}
-            {filterCat && (
+            ))}
+            {filterCats.map((id) => (
               <button
-                onClick={() => setFilterCat("")}
+                key={id}
+                onClick={() => setFilterCats((prev) => prev.filter((v) => v !== id))}
                 className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
               >
-                {categories.find((c) => c._id === filterCat)?.name} &times;
+                {categories.find((c) => c._id === id)?.name} &times;
               </button>
-            )}
+            ))}
             {filterUser && (
               <button
                 onClick={() => setFilterUser("")}
@@ -429,9 +492,9 @@ export default function ExpensesPage() {
         <EmptyState
           icon={<Receipt className="h-8 w-8" />}
           title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
-          description={search || filterDept || filterCat || filterMonth || filterUser ? "Try adjusting your filters." : "Create your first expense to get started."}
+          description={search || hasAnyFilter ? "Try adjusting your filters." : "Create your first expense to get started."}
           action={
-            !search && !filterDept && !filterCat && !filterMonth && !filterUser ? (
+            !search && !hasAnyFilter ? (
               <Link href="/dashboard/expenses/new" className="btn-primary">
                 <Plus className="h-4 w-4" />
                 Add Expense
