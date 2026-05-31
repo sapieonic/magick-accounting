@@ -254,7 +254,7 @@ describe("getExpenseSummary", () => {
     ] as never);
     const filter = { createdBy: "abc" };
     await getExpenseSummary(filter);
-    const pipeline = vi.mocked(Expense.aggregate).mock.calls[0][0] as Array<Record<string, unknown>>;
+    const pipeline = vi.mocked(Expense.aggregate).mock.calls[0][0] as unknown as Array<Record<string, unknown>>;
     expect(pipeline[0]).toEqual({ $match: filter });
   });
 
