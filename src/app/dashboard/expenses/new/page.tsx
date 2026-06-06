@@ -57,6 +57,7 @@ export default function NewExpensePage() {
     department: "",
     date: new Date().toISOString().split("T")[0],
     description: "",
+    paymentSource: "pocket",
   });
 
   const [receipt, setReceipt] = useState<{
@@ -362,6 +363,22 @@ export default function NewExpensePage() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
+              Payment Source <span className="text-red-500 dark:text-red-400">*</span>
+            </label>
+            <select
+              id="paymentSource"
+              required
+              value={form.paymentSource}
+              onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
+              className="input-field"
+            >
+              <option value="pocket">Paid from pocket</option>
+              <option value="company">Paid from company account</option>
+            </select>
           </div>
 
           <div>

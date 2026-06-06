@@ -27,6 +27,7 @@ interface Expense {
   currency?: { _id: string; code: string; name: string; symbol: string; isBase: boolean };
   date: string;
   description: string;
+  paymentSource?: "pocket" | "company";
   receiptKey?: string;
   receiptFilename?: string;
   category: { _id: string; name: string };
@@ -60,6 +61,10 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 function getCategoryColor(name: string): string {
   return CATEGORY_COLORS[name] || "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30";
+}
+
+function paymentSourceLabel(source?: "pocket" | "company"): string {
+  return source === "company" ? "Company account" : "Pocket";
 }
 
 function isImageFile(filename?: string): boolean {
@@ -589,6 +594,10 @@ export default function ExpensesPage() {
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Department</p>
                           <p className="mt-1 text-sm font-medium text-foreground">{expense.department?.name}</p>
+                        </div>
+                        <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Paid from</p>
+                          <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceLabel(expense.paymentSource)}</p>
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Submitted by</p>

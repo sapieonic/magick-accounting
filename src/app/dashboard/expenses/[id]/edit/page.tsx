@@ -49,6 +49,7 @@ export default function EditExpensePage() {
     department: "",
     date: "",
     description: "",
+    paymentSource: "pocket",
   });
 
   const [existingReceipt, setExistingReceipt] = useState<{ key: string; filename: string } | null>(null);
@@ -71,6 +72,7 @@ export default function EditExpensePage() {
           department: exp.department?._id || "",
           date: new Date(exp.date).toISOString().split("T")[0],
           description: exp.description || "",
+          paymentSource: exp.paymentSource || "pocket",
         });
 
         if (exp.receiptKey) {
@@ -257,6 +259,22 @@ export default function EditExpensePage() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
+              Payment Source <span className="text-red-500 dark:text-red-400">*</span>
+            </label>
+            <select
+              id="paymentSource"
+              required
+              value={form.paymentSource}
+              onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
+              className="input-field"
+            >
+              <option value="pocket">Paid from pocket</option>
+              <option value="company">Paid from company account</option>
+            </select>
           </div>
 
           <div>
