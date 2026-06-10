@@ -1,35 +1,49 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
 import { X, CheckCircle2, AlertCircle, Info } from "lucide-react";
 import clsx from "clsx";
 
 type ToastType = "success" | "error" | "info";
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+interface ToastOptions {
+  action?: ToastAction;
+  durationMs?: number;
+}
+
 interface Toast {
   id: string;
   message: string;
   type: ToastType;
+  action?: ToastAction;
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (message: string, type?: ToastType, options?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+const DEFAULT_DURATION_MS = 4000;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const counter = useRef(0);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const toast = useCallback(
-    (message: string, type: ToastType = "success") => {
-      const id = Date.now().toString();
-      setToasts((prev) => [...prev, { id, message, type }]);
-      setTimeout(() => removeToast(id), 4000);
+    (message: string, type: ToastType = "success", options?: ToastOptions) => {
+      const id = `${Date.now()}-${counter.current++}`;
+      setToasts((prev) => [...prev, { id, message, type, action: options?.action }]);
+      setTimeout(() => removeToast(id), options?.durationMs ?? DEFAULT_DURATION_MS);
     },
     [removeToast]
   );
@@ -56,6 +70,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             {icons[t.type]}
             <p className="text-sm text-foreground">{t.message}</p>
+            {t.action && (
+              <button
+                onClick={() => {
+                  t.action?.onClick();
+                  removeToast(t.id);
+                }}
+                className="ml-1 cursor-pointer rounded-md px-2 py-1 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10"
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               onClick={() => removeToast(t.id)}
               className="ml-2 rounded p-1 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"

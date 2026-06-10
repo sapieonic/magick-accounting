@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
-import { PageLoader } from "@/components/ui/Spinner";
+import { DashboardSkeleton } from "@/components/ui/Skeleton";
 import { Receipt, Building2, Tag, TrendingUp, ArrowUpRight, Sparkles, BarChart3, PieChart as PieChartIcon } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -42,13 +43,13 @@ interface Stats {
 
 interface ChartData {
   monthlyTrend: Array<{ month: string; key: string; total: number; count: number }>;
-  topCategories: Array<{ name: string; total: number; count: number }>;
+  topCategories: Array<{ _id?: string | null; name: string; total: number; count: number }>;
 }
 
 const PIE_COLORS = [
+  "#418a57", // forest (brand)
+  "#dc9626", // brass
   "#6366f1", // indigo
-  "#10b981", // emerald
-  "#f59e0b", // amber
   "#ec4899", // pink
   "#06b6d4", // cyan
   "#a855f7", // purple
@@ -75,6 +76,7 @@ function getCategoryColor(name: string): string {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const { theme } = useTheme();
   useTitle("Dashboard");
@@ -87,12 +89,12 @@ export default function DashboardPage() {
   const chartColors = useMemo(() => {
     const isDark = theme === "dark";
     return {
-      grid: isDark ? "#27272a" : "#e2e8f0",
-      axis: "#94a3b8",
-      tooltipBg: isDark ? "#18181b" : "#ffffff",
-      tooltipBorder: isDark ? "#3f3f46" : "#e2e8f0",
-      tooltipText: isDark ? "#fafafa" : "#0f172a",
-      pieStroke: isDark ? "#18181b" : "#ffffff",
+      grid: isDark ? "#272e29" : "#e6e4dc",
+      axis: isDark ? "#7c867e" : "#8a948c",
+      tooltipBg: isDark ? "#171c19" : "#ffffff",
+      tooltipBorder: isDark ? "#3e4841" : "#e6e4dc",
+      tooltipText: isDark ? "#f5f4ee" : "#1c201c",
+      pieStroke: isDark ? "#171c19" : "#ffffff",
     };
   }, [theme]);
 
@@ -114,7 +116,11 @@ export default function DashboardPage() {
     load();
   }, []);
 
-  if (loading) return <PageLoader />;
+  if (loading) return <DashboardSkeleton />;
+
+  const openCategory = (categoryId?: string | null) => {
+    router.push(categoryId ? `/dashboard/expenses?category=${categoryId}` : "/dashboard/expenses");
+  };
 
   const hasTrendData = (charts?.monthlyTrend ?? []).some((m) => m.total > 0);
   const hasCategoryData = (charts?.topCategories ?? []).length > 0;
@@ -158,7 +164,8 @@ export default function DashboardPage() {
   return (
     <div className="animate-fade-in space-y-6">
       {/* Welcome header with gradient accent */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-600 via-brand-500 to-indigo-500 px-6 py-8 text-white shadow-lg shadow-brand-500/20">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-900 via-brand-700 to-brand-600 px-6 py-8 text-white shadow-lg shadow-brand-900/25">
+        <div className="bg-ledger-contrast absolute inset-0" />
         <div className="relative z-10">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-brand-200" />
@@ -209,17 +216,25 @@ export default function DashboardPage() {
               </div>
               <h2 className="text-base font-bold text-foreground">Monthly Trend</h2>
             </div>
-            <p className="text-xs text-muted-foreground">Last 6 months</p>
+            <p className="text-xs text-muted-foreground">Last 6 months &middot; click a month to filter</p>
           </div>
           <div className="px-2 pb-4 pt-4 sm:px-4">
             {hasTrendData ? (
-              <div className="h-64 w-full">
+              <div className="h-64 w-full cursor-pointer">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={charts?.monthlyTrend ?? []} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                  <AreaChart
+                    data={charts?.monthlyTrend ?? []}
+                    margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+    onClick={(state) => {
+                      const idx = Number(state?.activeIndex);
+                      const key = Number.isInteger(idx) ? charts?.monthlyTrend?.[idx]?.key : undefined;
+                      if (key) router.push(`/dashboard/expenses?month=${key}`);
+                    }}
+                  >
                     <defs>
                       <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.32} />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#418a57" stopOpacity={0.32} />
+                        <stop offset="100%" stopColor="#418a57" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
@@ -263,7 +278,7 @@ export default function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="total"
-                      stroke="#6366f1"
+                      stroke="#418a57"
                       strokeWidth={2}
                       fill="url(#trendFill)"
                     />
@@ -291,6 +306,7 @@ export default function DashboardPage() {
               </div>
               <h2 className="text-base font-bold text-foreground">Top Categories</h2>
             </div>
+            <p className="text-xs text-muted-foreground">Click to filter</p>
           </div>
           <div className="p-4">
             {hasCategoryData ? (
@@ -309,9 +325,10 @@ export default function DashboardPage() {
                         paddingAngle={2}
                         stroke={chartColors.pieStroke}
                         strokeWidth={2}
+                        onClick={(_, index) => openCategory(charts?.topCategories?.[index]?._id)}
                       >
                         {(charts?.topCategories ?? []).map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} className="cursor-pointer" />
                         ))}
                       </Pie>
                       <Tooltip
@@ -335,7 +352,11 @@ export default function DashboardPage() {
                   {(charts?.topCategories ?? []).map((c, i) => {
                     const pct = categoryTotal > 0 ? Math.round((c.total / categoryTotal) * 100) : 0;
                     return (
-                      <div key={c.name} className="flex items-center gap-2 text-xs">
+                      <button
+                        key={c.name}
+                        onClick={() => openCategory(c._id)}
+                        className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs transition-colors hover:bg-subtle"
+                      >
                         <span
                           className="h-2.5 w-2.5 flex-shrink-0 rounded-sm"
                           style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
@@ -345,7 +366,7 @@ export default function DashboardPage() {
                           {formatBaseCurrency(c.total)}
                         </span>
                         <span className="w-9 text-right tabular-nums text-muted-foreground">{pct}%</span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -377,7 +398,7 @@ export default function DashboardPage() {
 
         {stats?.recentExpenses?.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-indigo-100 dark:from-brand-500/15 dark:to-indigo-500/15">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-accent-100 dark:from-brand-500/15 dark:to-accent-500/15">
               <Receipt className="h-6 w-6 text-brand-500 dark:text-brand-400" />
             </div>
             <p className="text-sm font-medium text-muted">No expenses yet</p>
@@ -389,8 +410,9 @@ export default function DashboardPage() {
         ) : (
           <div className="divide-y divide-line">
             {stats?.recentExpenses?.map((expense, i) => (
-              <div
+              <Link
                 key={expense._id}
+                href={`/dashboard/expenses?expand=${expense._id}`}
                 className="flex items-center gap-4 px-6 py-3.5 transition-colors hover:bg-subtle/50"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
@@ -416,7 +438,7 @@ export default function DashboardPage() {
                     </p>
                   )}
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}

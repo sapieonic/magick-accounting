@@ -6,7 +6,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader } from "@/components/ui/Spinner";
+import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import { Users, Shield, ShieldCheck, User as UserIcon } from "lucide-react";
@@ -74,7 +75,7 @@ export default function AdminUsersPage() {
     user: { label: "Member", icon: UserIcon, color: "bg-subtle text-muted" },
   };
 
-  if (loading) return <PageLoader />;
+  if (loading) return <ListPageSkeleton />;
 
   return (
     <div className="animate-fade-in space-y-6">

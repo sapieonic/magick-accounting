@@ -35,28 +35,34 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-dvh">
       {/* Left panel — branding */}
-      <div className="hidden flex-1 flex-col justify-between bg-brand-600 p-12 text-white lg:flex">
-        <div>
+      <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-950 via-brand-800 to-brand-600 p-12 text-white lg:flex">
+        <div className="bg-ledger-contrast absolute inset-0" />
+        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/5 blur-2xl" />
+        <div className="absolute -bottom-24 right-1/4 h-56 w-56 rounded-full bg-accent-400/10 blur-3xl" />
+
+        <div className="relative">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 text-lg font-bold">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 font-display text-lg font-bold italic ring-1 ring-white/20">
               M
             </div>
-            <span className="text-xl font-semibold">Magick Accounting</span>
+            <span className="font-display text-xl font-semibold tracking-tight">Magick Accounting</span>
           </div>
         </div>
 
-        <div className="space-y-8">
-          <h1 className="text-4xl font-bold leading-tight">
-            Simple expense
+        <div className="relative space-y-8">
+          <h1 className="text-5xl font-semibold leading-[1.1]">
+            Every rupee,
             <br />
-            management for
-            <br />
-            your team.
+            <span className="italic text-accent-300">accounted for.</span>
           </h1>
+          <p className="max-w-sm text-sm leading-relaxed text-white/70">
+            Simple expense management for your team — receipts, reports, and
+            reimbursements in one ledger.
+          </p>
           <div className="space-y-4">
             {features.map((f) => (
               <div key={f.title} className="flex items-start gap-3">
-                <div className="rounded-lg bg-white/10 p-2">
+                <div className="rounded-lg bg-white/10 p-2 ring-1 ring-white/10">
                   <f.icon className="h-5 w-5" />
                 </div>
                 <div>
@@ -68,18 +74,18 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="text-sm text-white/50">Powered by Magick Voice</p>
+        <p className="relative text-sm text-white/50">Powered by Magick Voice</p>
       </div>
 
       {/* Right panel — login */}
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="bg-ledger flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 font-display text-lg font-bold italic text-white">
                 M
               </div>
-              <span className="text-xl font-semibold text-foreground">Magick Accounting</span>
+              <span className="font-display text-xl font-semibold tracking-tight text-foreground">Magick Accounting</span>
             </div>
           </div>
 

@@ -6,7 +6,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader } from "@/components/ui/Spinner";
+import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
@@ -80,7 +81,7 @@ export default function CategoriesPage() {
     }
   };
 
-  if (loading) return <PageLoader />;
+  if (loading) return <ListPageSkeleton />;
 
   const defaultCats = categories.filter((c) => c.isDefault);
   const customCats = categories.filter((c) => !c.isDefault);

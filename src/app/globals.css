@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Hanken+Grotesk:ital,wght@0,300..700;1,300..700&family=Spline+Sans+Mono:wght@400..700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,32 +6,34 @@
 
 @layer base {
   :root {
-    --background: 249 250 251;
-    --surface: 255 255 255;
+    /* "Modern ledger" light theme: warm paper, deep ink, forest brand. */
+    --background: 247 246 242;
+    --surface: 254 254 252;
     --surface-elevated: 255 255 255;
-    --surface-muted: 249 250 251;
-    --foreground: 17 24 39;
-    --muted: 75 85 99;
-    --muted-foreground: 156 163 175;
-    --subtle: 243 244 246;
-    --subtle-hover: 229 231 235;
-    --line: 229 231 235;
-    --line-strong: 209 213 219;
+    --surface-muted: 250 249 245;
+    --foreground: 28 32 28;
+    --muted: 74 84 78;
+    --muted-foreground: 138 148 140;
+    --subtle: 240 239 233;
+    --subtle-hover: 229 228 220;
+    --line: 230 228 220;
+    --line-strong: 207 205 195;
     color-scheme: light;
   }
 
   .dark {
-    --background: 9 9 11;
-    --surface: 24 24 27;
-    --surface-elevated: 39 39 42;
-    --surface-muted: 24 24 27;
-    --foreground: 250 250 250;
-    --muted: 212 212 216;
-    --muted-foreground: 113 113 122;
-    --subtle: 39 39 42;
-    --subtle-hover: 63 63 70;
-    --line: 39 39 42;
-    --line-strong: 63 63 70;
+    /* Dark theme: deep pine ink rather than neutral zinc. */
+    --background: 14 17 15;
+    --surface: 23 28 25;
+    --surface-elevated: 33 40 36;
+    --surface-muted: 23 28 25;
+    --foreground: 245 244 238;
+    --muted: 200 206 198;
+    --muted-foreground: 124 134 126;
+    --subtle: 35 42 38;
+    --subtle-hover: 52 61 55;
+    --line: 39 46 41;
+    --line-strong: 62 72 65;
     color-scheme: dark;
   }
 
@@ -47,19 +49,39 @@
   * {
     @apply border-line;
   }
+
+  /* Editorial serif for page and section titles. */
+  h1,
+  h2 {
+    @apply font-display tracking-tight;
+    font-optical-sizing: auto;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-950;
+  }
+
+  .dark ::selection {
+    @apply bg-brand-700 text-brand-50;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-900/20 transition-all hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-all hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-4 py-2.5 text-sm font-medium text-foreground shadow-sm transition-all hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-ghost {
@@ -67,15 +89,36 @@
   }
 
   .input-field {
-    @apply w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-foreground placeholder-muted-foreground transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-subtle disabled:text-muted-foreground;
+    @apply w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-foreground placeholder-muted-foreground shadow-sm shadow-black/[0.02] transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-subtle disabled:text-muted-foreground;
   }
 
   .card {
     @apply rounded-xl border border-line bg-surface shadow-sm dark:shadow-black/30;
   }
+
+  /* Ledger digits: every monetary figure in the app carries .tabular-nums,
+     so this single rule gives all amounts their monospaced register look. */
+  .tabular-nums {
+    font-family: theme(fontFamily.mono);
+    letter-spacing: -0.02em;
+  }
 }
 
 @layer utilities {
+  /* Faint ruled-paper grid drawn from the theme's line color. */
+  .bg-ledger {
+    background-image: linear-gradient(to right, rgb(var(--line-strong) / 0.16) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--line-strong) / 0.16) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  /* Same grid in white, for dark brand panels (login hero). */
+  .bg-ledger-contrast {
+    background-image: linear-gradient(to right, rgb(255 255 255 / 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.07) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
   .animate-fade-in {
     animation: fadeIn 0.2s ease-out;
   }
