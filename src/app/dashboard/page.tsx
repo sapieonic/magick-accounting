@@ -47,12 +47,12 @@ interface ChartData {
 }
 
 const PIE_COLORS = [
-  "#418a57", // forest (brand)
-  "#dc9626", // brass
-  "#6366f1", // indigo
-  "#ec4899", // pink
-  "#06b6d4", // cyan
+  "#6366f1", // indigo (brand)
+  "#22d3ee", // cyan (accent)
   "#a855f7", // purple
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ec4899", // pink
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -89,12 +89,12 @@ export default function DashboardPage() {
   const chartColors = useMemo(() => {
     const isDark = theme === "dark";
     return {
-      grid: isDark ? "#272e29" : "#e6e4dc",
-      axis: isDark ? "#7c867e" : "#8a948c",
-      tooltipBg: isDark ? "#171c19" : "#ffffff",
-      tooltipBorder: isDark ? "#3e4841" : "#e6e4dc",
-      tooltipText: isDark ? "#f5f4ee" : "#1c201c",
-      pieStroke: isDark ? "#171c19" : "#ffffff",
+      grid: isDark ? "#27272a" : "#e2e8f0",
+      axis: "#94a3b8",
+      tooltipBg: isDark ? "#18181b" : "#ffffff",
+      tooltipBorder: isDark ? "#3f3f46" : "#e2e8f0",
+      tooltipText: isDark ? "#fafafa" : "#0f172a",
+      pieStroke: isDark ? "#18181b" : "#ffffff",
     };
   }, [theme]);
 
@@ -164,7 +164,7 @@ export default function DashboardPage() {
   return (
     <div className="animate-fade-in space-y-6">
       {/* Welcome header with gradient accent */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-900 via-brand-700 to-brand-600 px-6 py-8 text-white shadow-lg shadow-brand-900/25">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-700 via-brand-600 to-accent-500 px-6 py-8 text-white shadow-lg shadow-brand-700/25">
         <div className="bg-ledger-contrast absolute inset-0" />
         <div className="relative z-10">
           <div className="flex items-center gap-2">
@@ -233,8 +233,8 @@ export default function DashboardPage() {
                   >
                     <defs>
                       <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#418a57" stopOpacity={0.32} />
-                        <stop offset="100%" stopColor="#418a57" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.32} />
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
@@ -278,7 +278,7 @@ export default function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="total"
-                      stroke="#418a57"
+                      stroke="#6366f1"
                       strokeWidth={2}
                       fill="url(#trendFill)"
                     />

@@ -105,9 +105,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           iconOnly ? "justify-center px-0" : "px-6"
         )}
       >
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-800 font-display text-base font-bold italic text-white shadow-md shadow-brand-900/30">
-          M
-        </div>
+        <img
+          src="/logo.svg"
+          alt="Magick Accounting logo"
+          className="h-10 w-10 flex-shrink-0 drop-shadow-sm"
+        />
         {!iconOnly && (
           <span className="truncate font-display text-base font-bold tracking-tight text-foreground">
             {process.env.NEXT_PUBLIC_APP_NAME || "Magick Accounting"}
