@@ -43,7 +43,7 @@ export default function LoginPage() {
         <div className="relative">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white p-1 shadow-lg ring-1 ring-white/30">
-              <img src="/logo.svg" alt="Magick Accounting logo" className="h-9 w-9" />
+              <img src="/logo.png" alt="Magick Accounting logo" className="h-9 w-auto" />
             </div>
             <span className="font-display text-xl font-semibold tracking-tight">Magick Accounting</span>
           </div>
@@ -82,7 +82,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
             <div className="flex items-center gap-3">
-              <img src="/logo.svg" alt="Magick Accounting logo" className="h-10 w-10" />
+              <img src="/logo.png" alt="Magick Accounting logo" className="h-10 w-auto" />
               <span className="font-display text-xl font-semibold tracking-tight text-foreground">Magick Accounting</span>
             </div>
           </div>

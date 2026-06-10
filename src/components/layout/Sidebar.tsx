@@ -106,9 +106,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         )}
       >
         <img
-          src="/logo.svg"
+          src="/logo.png"
           alt="Magick Accounting logo"
-          className="h-10 w-10 flex-shrink-0 drop-shadow-sm"
+          className="h-10 w-auto flex-shrink-0 drop-shadow-sm"
         />
         {!iconOnly && (
           <span className="truncate font-display text-base font-bold tracking-tight text-foreground">
