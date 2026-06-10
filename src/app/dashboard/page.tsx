@@ -47,9 +47,9 @@ interface ChartData {
 }
 
 const PIE_COLORS = [
+  "#418a57", // forest (brand)
+  "#dc9626", // brass
   "#6366f1", // indigo
-  "#10b981", // emerald
-  "#f59e0b", // amber
   "#ec4899", // pink
   "#06b6d4", // cyan
   "#a855f7", // purple
@@ -89,12 +89,12 @@ export default function DashboardPage() {
   const chartColors = useMemo(() => {
     const isDark = theme === "dark";
     return {
-      grid: isDark ? "#27272a" : "#e2e8f0",
-      axis: "#94a3b8",
-      tooltipBg: isDark ? "#18181b" : "#ffffff",
-      tooltipBorder: isDark ? "#3f3f46" : "#e2e8f0",
-      tooltipText: isDark ? "#fafafa" : "#0f172a",
-      pieStroke: isDark ? "#18181b" : "#ffffff",
+      grid: isDark ? "#272e29" : "#e6e4dc",
+      axis: isDark ? "#7c867e" : "#8a948c",
+      tooltipBg: isDark ? "#171c19" : "#ffffff",
+      tooltipBorder: isDark ? "#3e4841" : "#e6e4dc",
+      tooltipText: isDark ? "#f5f4ee" : "#1c201c",
+      pieStroke: isDark ? "#171c19" : "#ffffff",
     };
   }, [theme]);
 
@@ -164,7 +164,8 @@ export default function DashboardPage() {
   return (
     <div className="animate-fade-in space-y-6">
       {/* Welcome header with gradient accent */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-600 via-brand-500 to-indigo-500 px-6 py-8 text-white shadow-lg shadow-brand-500/20">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-900 via-brand-700 to-brand-600 px-6 py-8 text-white shadow-lg shadow-brand-900/25">
+        <div className="bg-ledger-contrast absolute inset-0" />
         <div className="relative z-10">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-brand-200" />
@@ -232,8 +233,8 @@ export default function DashboardPage() {
                   >
                     <defs>
                       <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.32} />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#418a57" stopOpacity={0.32} />
+                        <stop offset="100%" stopColor="#418a57" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
@@ -277,7 +278,7 @@ export default function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="total"
-                      stroke="#6366f1"
+                      stroke="#418a57"
                       strokeWidth={2}
                       fill="url(#trendFill)"
                     />
@@ -397,7 +398,7 @@ export default function DashboardPage() {
 
         {stats?.recentExpenses?.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-indigo-100 dark:from-brand-500/15 dark:to-indigo-500/15">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-accent-100 dark:from-brand-500/15 dark:to-accent-500/15">
               <Receipt className="h-6 w-6 text-brand-500 dark:text-brand-400" />
             </div>
             <p className="text-sm font-medium text-muted">No expenses yet</p>

@@ -105,11 +105,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           iconOnly ? "justify-center px-0" : "px-6"
         )}
       >
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-md shadow-brand-500/30">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-800 font-display text-base font-bold italic text-white shadow-md shadow-brand-900/30">
           M
         </div>
         {!iconOnly && (
-          <span className="truncate text-base font-bold text-foreground">
+          <span className="truncate font-display text-base font-bold tracking-tight text-foreground">
             {process.env.NEXT_PUBLIC_APP_NAME || "Magick Accounting"}
           </span>
         )}
@@ -142,9 +142,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
       {/* Sidebar footer decoration */}
       {!iconOnly && (
-        <div className="mx-3 mb-4 rounded-xl bg-gradient-to-br from-brand-50 to-indigo-50 p-4 dark:from-brand-500/10 dark:to-indigo-500/10">
+        <div className="mx-3 mb-4 rounded-xl bg-gradient-to-br from-brand-50 to-accent-50 p-4 dark:from-brand-500/10 dark:to-accent-500/10">
           <p className="text-xs font-semibold text-brand-700 dark:text-brand-300">Need help?</p>
-          <p className="mt-0.5 text-[11px] text-brand-500/70 dark:text-brand-300/70">Contact your administrator for support.</p>
+          <p className="mt-0.5 text-[11px] text-brand-600/70 dark:text-brand-300/70">Contact your administrator for support.</p>
         </div>
       )}
     </div>
