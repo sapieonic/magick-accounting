@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Menu, LogOut, ChevronDown } from "lucide-react";
+import { Menu, LogOut, ChevronDown, Search } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -54,6 +55,18 @@ export default function Header({ onMenuClick }: HeaderProps) {
       <div className="lg:flex-1" />
 
       <div className="flex items-center gap-1">
+        <button
+          onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
+          className="flex cursor-pointer items-center gap-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground sm:border sm:border-line sm:px-3 sm:py-1.5"
+          aria-label="Open search"
+          title="Search (Ctrl+K)"
+        >
+          <Search className="h-4 w-4" />
+          <span className="hidden text-xs sm:block">Search</span>
+          <kbd className="hidden rounded-md border border-line bg-subtle px-1.5 py-0.5 text-[10px] font-medium sm:block">
+            ⌘K
+          </kbd>
+        </button>
         <ThemeToggle />
 
         <div className="relative" ref={dropdownRef}>

@@ -6,7 +6,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import Spinner, { PageLoader } from "@/components/ui/Spinner";
+import Spinner from "@/components/ui/Spinner";
+import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import { computeTotals, formatRupees, lineItemAmount } from "@/lib/invoice";
 import type { InvoiceData } from "@/types/invoice";
 import { FileText, Plus, Trash2 } from "lucide-react";
@@ -159,7 +160,7 @@ export default function InvoicesPage() {
   };
 
   if (!isAdmin) return null;
-  if (loading) return <PageLoader />;
+  if (loading) return <ListPageSkeleton />;
 
   return (
     <div className="animate-fade-in">

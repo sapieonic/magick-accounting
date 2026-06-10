@@ -3,12 +3,19 @@ import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 
-function Harness() {
+function Harness({ onUndo }: { onUndo?: () => void }) {
   const { toast } = useToast();
   return (
     <div>
       <button onClick={() => toast("Saved!")}>fire success</button>
       <button onClick={() => toast("Boom", "error")}>fire error</button>
+      <button
+        onClick={() =>
+          toast("Deleted", "info", { action: { label: "Undo", onClick: onUndo ?? (() => {}) } })
+        }
+      >
+        fire undoable
+      </button>
     </div>
   );
 }
@@ -55,6 +62,23 @@ describe("Toast", () => {
         await vi.advanceTimersByTimeAsync(4000);
       });
       expect(screen.queryByText("Saved!")).not.toBeInTheDocument();
+    });
+
+    it("runs the action callback and dismisses the toast when the action is clicked", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const onUndo = vi.fn();
+      render(
+        <ToastProvider>
+          <Harness onUndo={onUndo} />
+        </ToastProvider>
+      );
+
+      await user.click(screen.getByRole("button", { name: "fire undoable" }));
+      expect(screen.getByText("Deleted")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Undo" }));
+      expect(onUndo).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText("Deleted")).not.toBeInTheDocument();
     });
 
     it("can be dismissed manually via the dismiss button", async () => {

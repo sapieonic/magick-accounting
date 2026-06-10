@@ -1,23 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { InlineLoader, PageLoader } from "@/components/ui/Spinner";
+import { InlineLoader } from "@/components/ui/Spinner";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
-import Modal from "@/components/ui/Modal";
 import MultiSelect from "@/components/ui/MultiSelect";
+import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
 import {
   Plus, Receipt, Trash2, Pencil, Paperclip, Download,
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
-  Calendar, TrendingUp, User as UserIcon, Tag,
+  Calendar, TrendingUp, User as UserIcon, Tag, X as XIcon,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
+import { buildCsv, downloadCsv } from "@/lib/csv";
 
 interface Expense {
   _id: string;
@@ -73,6 +74,9 @@ function isImageFile(filename?: string): boolean {
 }
 
 const CUSTOM_DATE_PRESET = "custom";
+const PAGE_SIZE = 25;
+const EXPORT_LIMIT = 10000;
+const UNDO_WINDOW_MS = 5000;
 
 function getDatePresetOptions(): { value: string; label: string }[] {
   const options = [{ value: "", label: "All Time" }];
@@ -109,6 +113,12 @@ function resolveDateRange(
   return { from: "", to: "" };
 }
 
+interface PendingDelete {
+  expense: Expense;
+  index: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
@@ -117,9 +127,6 @@ export default function ExpensesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
@@ -135,10 +142,16 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
   const [loadingLookups, setLoadingLookups] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
   const hasLoadedExpenses = useRef(false);
+  const pendingExpandId = useRef<string | null>(null);
+  const pendingDeletes = useRef(new Map<string, PendingDelete>());
 
   const datePresetOptions = useMemo(() => getDatePresetOptions(), []);
 
@@ -147,6 +160,8 @@ export default function ExpensesPage() {
   const hasAnyFilter =
     filterDepts.length > 0 || filterCats.length > 0 || hasDateFilter || Boolean(filterUser);
 
+  // Restore filter state from the URL on first mount so filtered views are
+  // shareable and survive refresh / back navigation.
   useEffect(() => {
     if (typeof window === "undefined") {
       setUrlSynced(true);
@@ -158,8 +173,50 @@ export default function ExpensesPage() {
     setFilterDepts(depts);
     setFilterCats(cats);
     setFilterUser(params.get("createdBy") ?? "");
+
+    const month = params.get("month") ?? "";
+    const from = params.get("from") ?? "";
+    const to = params.get("to") ?? "";
+    if (month === CUSTOM_DATE_PRESET || (!month && (from || to))) {
+      setDatePreset(CUSTOM_DATE_PRESET);
+      setCustomFrom(from);
+      setCustomTo(to);
+    } else if (month) {
+      setDatePreset(month);
+    }
+
+    const q = params.get("q") ?? "";
+    if (q) {
+      setSearchInput(q);
+      setSearch(q);
+    }
+
+    pendingExpandId.current = params.get("expand");
     setUrlSynced(true);
   }, []);
+
+  // Mirror filter state back into the URL (replaceState avoids a server
+  // round-trip and keeps the back stack clean).
+  useEffect(() => {
+    if (!urlSynced || typeof window === "undefined") return;
+
+    const params = new URLSearchParams();
+    filterDepts.forEach((id) => params.append("department", id));
+    filterCats.forEach((id) => params.append("category", id));
+    if (filterUser) params.set("createdBy", filterUser);
+    if (datePreset === CUSTOM_DATE_PRESET) {
+      params.set("month", CUSTOM_DATE_PRESET);
+      if (customFrom) params.set("from", customFrom);
+      if (customTo) params.set("to", customTo);
+    } else if (datePreset) {
+      params.set("month", datePreset);
+    }
+    if (search) params.set("q", search);
+
+    const query = params.toString();
+    const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    window.history.replaceState(null, "", url);
+  }, [urlSynced, filterDepts, filterCats, filterUser, datePreset, customFrom, customTo, search]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -216,6 +273,44 @@ export default function ExpensesPage() {
     };
   }, [isAdmin]);
 
+  const buildQueryParams = useCallback(
+    (pageNum: number, limit: number, includeSummary: boolean) => {
+      const params = new URLSearchParams({
+        page: String(pageNum),
+        limit: String(limit),
+      });
+      if (includeSummary) params.set("includeSummary", "true");
+
+      filterDepts.forEach((id) => params.append("department", id));
+      filterCats.forEach((id) => params.append("category", id));
+      if (filterUser) params.set("createdBy", filterUser);
+      if (search) params.set("search", search);
+
+      const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+
+      return params;
+    },
+    [filterDepts, filterCats, filterUser, search, datePreset, customFrom, customTo]
+  );
+
+  // Commit any deletes still inside their undo window. Called before reloading
+  // the list (so the server result matches the UI) and on unmount.
+  const flushPendingDeletes = useCallback(async () => {
+    const entries = Array.from(pendingDeletes.current.values());
+    pendingDeletes.current.clear();
+    entries.forEach((entry) => clearTimeout(entry.timer));
+    await Promise.allSettled(entries.map((entry) => api.delete(`/api/expenses/${entry.expense._id}`)));
+  }, []);
+
+  useEffect(() => {
+    const flush = flushPendingDeletes;
+    return () => {
+      void flush();
+    };
+  }, [flushPendingDeletes]);
+
   useEffect(() => {
     if (!urlSynced) return;
     let active = true;
@@ -229,25 +324,21 @@ export default function ExpensesPage() {
       }
 
       try {
-        const params = new URLSearchParams({
-          limit: "100",
-          includeSummary: "true",
-        });
-
-        filterDepts.forEach((id) => params.append("department", id));
-        filterCats.forEach((id) => params.append("category", id));
-        if (filterUser) params.set("createdBy", filterUser);
-        if (search) params.set("search", search);
-
-        const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
-        if (from) params.set("from", from);
-        if (to) params.set("to", to);
-
+        await flushPendingDeletes();
+        const params = buildQueryParams(1, PAGE_SIZE, true);
         const data = await api.get(`/api/expenses?${params.toString()}`);
         if (!active) return;
 
         setExpenses(data.expenses);
+        setPage(1);
+        setTotalCount(data.pagination?.total ?? data.expenses.length);
         setSummary(data.summary || { totalAmount: 0, totalExpenses: 0 });
+
+        if (pendingExpandId.current) {
+          const target = data.expenses.find((e: Expense) => e._id === pendingExpandId.current);
+          if (target) setExpandedId(target._id);
+          pendingExpandId.current = null;
+        }
       } catch {
         if (active) {
           toast("Failed to load expenses", "error");
@@ -258,7 +349,6 @@ export default function ExpensesPage() {
         if (initialLoad) {
           setLoadingExpenses(false);
           hasLoadedExpenses.current = true;
-          setLoading(false);
         } else {
           setRefreshingExpenses(false);
         }
@@ -269,46 +359,145 @@ export default function ExpensesPage() {
     return () => {
       active = false;
     };
-  }, [filterCats, filterDepts, datePreset, customFrom, customTo, filterUser, search, toast, urlSynced]);
+  }, [buildQueryParams, flushPendingDeletes, toast, urlSynced]);
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  const loadMore = async () => {
+    setLoadingMore(true);
     try {
-      await api.delete(`/api/expenses/${deleteTarget._id}`);
-      setExpenses((prev) => prev.filter((e) => e._id !== deleteTarget._id));
-      toast("Expense deleted");
-      setDeleteTarget(null);
-      if (expandedId === deleteTarget._id) setExpandedId(null);
+      const params = buildQueryParams(page + 1, PAGE_SIZE, false);
+      const data = await api.get(`/api/expenses?${params.toString()}`);
+      setExpenses((prev) => {
+        const seen = new Set(prev.map((e) => e._id));
+        return [...prev, ...data.expenses.filter((e: Expense) => !seen.has(e._id))];
+      });
+      setPage((p) => p + 1);
+      setTotalCount(data.pagination?.total ?? totalCount);
     } catch {
-      toast("Failed to delete expense", "error");
+      toast("Failed to load more expenses", "error");
     } finally {
-      setDeleting(false);
+      setLoadingMore(false);
     }
   };
 
-  const toggleExpand = async (expense: Expense) => {
-    if (expandedId === expense._id) {
-      setExpandedId(null);
-      return;
-    }
-    setExpandedId(expense._id);
-    if (expense.receiptKey && !receiptUrls[expense._id]) {
-      setLoadingReceipt(expense._id);
-      try {
-        const { downloadUrl } = await api.get(`/api/upload?key=${encodeURIComponent(expense.receiptKey)}`);
-        setReceiptUrls((prev) => ({ ...prev, [expense._id]: downloadUrl }));
-      } catch {
-        toast("Failed to load receipt", "error");
-      } finally {
-        setLoadingReceipt(null);
-      }
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const params = buildQueryParams(1, EXPORT_LIMIT, false);
+      const data = await api.get(`/api/expenses?${params.toString()}`);
+      const rows = (data.expenses as Expense[]).map((e) => [
+        format(new Date(e.date), "yyyy-MM-dd"),
+        e.title,
+        e.amount,
+        e.currency?.code ?? "",
+        e.amountInBaseCurrency ?? e.amount,
+        e.category?.name ?? "",
+        e.department?.name ?? "",
+        paymentSourceLabel(e.paymentSource),
+        e.createdBy?.name ?? "",
+        e.description ?? "",
+      ]);
+      const csv = buildCsv(
+        ["Date", "Title", "Amount", "Currency", "Amount (Base)", "Category", "Department", "Paid From", "Submitted By", "Description"],
+        rows
+      );
+      downloadCsv(`expenses-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
+      toast(`Exported ${rows.length} expense${rows.length !== 1 ? "s" : ""}`);
+    } catch {
+      toast("Failed to export expenses", "error");
+    } finally {
+      setExporting(false);
     }
   };
+
+  // Optimistically remove the expense and give the user a short undo window
+  // before the delete is committed to the server.
+  const handleDelete = (expense: Expense) => {
+    const index = expenses.findIndex((e) => e._id === expense._id);
+    if (index === -1) return;
+
+    setExpenses((prev) => prev.filter((e) => e._id !== expense._id));
+    setSummary((prev) => ({
+      totalAmount: prev.totalAmount - (expense.amountInBaseCurrency ?? expense.amount),
+      totalExpenses: Math.max(0, prev.totalExpenses - 1),
+    }));
+    setTotalCount((prev) => Math.max(0, prev - 1));
+    if (expandedId === expense._id) setExpandedId(null);
+
+    const restore = () => {
+      setExpenses((prev) => {
+        const next = [...prev];
+        next.splice(Math.min(index, next.length), 0, expense);
+        return next;
+      });
+      setSummary((prev) => ({
+        totalAmount: prev.totalAmount + (expense.amountInBaseCurrency ?? expense.amount),
+        totalExpenses: prev.totalExpenses + 1,
+      }));
+      setTotalCount((prev) => prev + 1);
+    };
+
+    const timer = setTimeout(async () => {
+      if (!pendingDeletes.current.has(expense._id)) return;
+      pendingDeletes.current.delete(expense._id);
+      try {
+        await api.delete(`/api/expenses/${expense._id}`);
+      } catch {
+        restore();
+        toast("Failed to delete expense", "error");
+      }
+    }, UNDO_WINDOW_MS);
+
+    pendingDeletes.current.set(expense._id, { expense, index, timer });
+
+    toast(`Deleted "${expense.title}"`, "info", {
+      durationMs: UNDO_WINDOW_MS,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const pending = pendingDeletes.current.get(expense._id);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          pendingDeletes.current.delete(expense._id);
+          restore();
+        },
+      },
+    });
+  };
+
+  const toggleExpand = (expense: Expense) => {
+    setExpandedId((prev) => (prev === expense._id ? null : expense._id));
+  };
+
+  // Lazily fetch the presigned receipt URL whenever a row with a receipt is
+  // expanded (covers both clicks and ?expand= deep links).
+  useEffect(() => {
+    if (!expandedId) return;
+    const expense = expenses.find((e) => e._id === expandedId);
+    if (!expense?.receiptKey || receiptUrls[expandedId]) return;
+
+    let active = true;
+    setLoadingReceipt(expandedId);
+    api
+      .get(`/api/upload?key=${encodeURIComponent(expense.receiptKey)}`)
+      .then(({ downloadUrl }) => {
+        if (!active) return;
+        setReceiptUrls((prev) => ({ ...prev, [expandedId]: downloadUrl }));
+      })
+      .catch(() => {
+        if (active) toast("Failed to load receipt", "error");
+      })
+      .finally(() => {
+        if (active) setLoadingReceipt(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [expandedId, expenses, receiptUrls, toast]);
 
   const handleDownload = (url: string) => { window.open(url, "_blank"); };
 
-  if (loading || loadingLookups || loadingExpenses) return <PageLoader />;
+  if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -323,29 +512,41 @@ export default function ExpensesPage() {
         </Link>
       </div>
 
-      {/* Summary bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
-          <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
-            <TrendingUp className="h-4 w-4" />
+      {/* Summary bar — sticky so the total stays visible on long lists */}
+      <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
+            <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                {datePreset === CUSTOM_DATE_PRESET
+                  ? "Custom Range"
+                  : datePreset
+                    ? datePresetOptions.find((o) => o.value === datePreset)?.label
+                    : "All Time"}{" "}
+                Total
+              </p>
+              <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
+                {formatBaseCurrency(summary.totalAmount)}
+              </p>
+            </div>
+            <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+              {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
+            </span>
+            {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
           </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              {datePreset === CUSTOM_DATE_PRESET
-                ? "Custom Range"
-                : datePreset
-                  ? datePresetOptions.find((o) => o.value === datePreset)?.label
-                  : "All Time"}{" "}
-              Total
-            </p>
-            <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
-              {formatBaseCurrency(summary.totalAmount)}
-            </p>
-          </div>
-          <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-            {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
-          </span>
-          {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
+
+          <button
+            onClick={handleExport}
+            disabled={exporting || expenses.length === 0}
+            className="btn-secondary text-sm"
+            title="Download the currently filtered expenses as CSV"
+          >
+            {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
+            Export CSV
+          </button>
         </div>
       </div>
 
@@ -359,8 +560,17 @@ export default function ExpensesPage() {
               placeholder="Search expenses..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="input-field pl-10"
+              className="input-field pl-10 pr-10"
             />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <XIcon className="h-4 w-4" />
+              </button>
+            )}
           </div>
           <div className={`grid gap-2 sm:grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
             <div className="relative">
@@ -523,51 +733,73 @@ export default function ExpensesPage() {
                 }`}
               >
                 {/* Summary row */}
-                <button
-                  onClick={() => toggleExpand(expense)}
-                  className="flex w-full cursor-pointer items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-subtle/50"
-                  aria-expanded={isExpanded}
-                >
-                  {/* Amount with colored left accent */}
-                  <div className="w-28 flex-shrink-0 tabular-nums">
-                    <p className="text-sm font-bold text-foreground">
-                      {formatCurrency(expense.amount, expense.currency?.code)}
-                    </p>
-                    {expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null && (
-                      <p className="text-[11px] text-muted-foreground">{formatBaseCurrency(expense.amountInBaseCurrency)}</p>
-                    )}
-                  </div>
-
-                  {/* Title & meta */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium text-foreground">{expense.title}</p>
-                      {expense.receiptKey && (
-                        <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-blue-400 dark:text-blue-300" />
+                <div className="group relative">
+                  <button
+                    onClick={() => toggleExpand(expense)}
+                    className="flex w-full cursor-pointer items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-subtle/50"
+                    aria-expanded={isExpanded}
+                  >
+                    {/* Amount with colored left accent */}
+                    <div className="w-28 flex-shrink-0 tabular-nums">
+                      <p className="text-sm font-bold text-foreground">
+                        {formatCurrency(expense.amount, expense.currency?.code)}
+                      </p>
+                      {expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null && (
+                        <p className="text-[11px] text-muted-foreground">{formatBaseCurrency(expense.amountInBaseCurrency)}</p>
                       )}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${catColor}`}>
-                        {expense.category?.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {expense.department?.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground">&middot;</span>
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(expense.date), "MMM d, yyyy")}
-                      </span>
-                      <span className="hidden text-xs text-muted-foreground sm:inline">&middot;</span>
-                      <span className="hidden text-xs text-muted-foreground sm:inline">{expense.createdBy?.name}</span>
-                    </div>
-                  </div>
 
-                  <ChevronDown
-                    className={`h-5 w-5 flex-shrink-0 text-muted-foreground transition-transform duration-200 ${
-                      isExpanded ? "rotate-180 text-brand-500" : ""
-                    }`}
-                  />
-                </button>
+                    {/* Title & meta */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium text-foreground">{expense.title}</p>
+                        {expense.receiptKey && (
+                          <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-blue-400 dark:text-blue-300" />
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${catColor}`}>
+                          {expense.category?.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {expense.department?.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">&middot;</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(expense.date), "MMM d, yyyy")}
+                        </span>
+                        <span className="hidden text-xs text-muted-foreground sm:inline">&middot;</span>
+                        <span className="hidden text-xs text-muted-foreground sm:inline">{expense.createdBy?.name}</span>
+                      </div>
+                    </div>
+
+                    <ChevronDown
+                      className={`h-5 w-5 flex-shrink-0 text-muted-foreground transition-transform duration-200 ${
+                        isExpanded ? "rotate-180 text-brand-500" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {/* Quick actions, shown on hover/focus without expanding the row */}
+                  <div className="absolute right-14 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-lg border border-line bg-surface/95 p-1 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100 sm:flex">
+                    <Link
+                      href={`/dashboard/expenses/${expense._id}/edit`}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground"
+                      aria-label={`Edit ${expense.title}`}
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(expense)}
+                      className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                      aria-label={`Delete ${expense.title}`}
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
 
                 {/* Expanded detail */}
                 {isExpanded && (
@@ -660,7 +892,7 @@ export default function ExpensesPage() {
                           <Pencil className="h-4 w-4" /> Edit
                         </Link>
                         <button
-                          onClick={() => setDeleteTarget(expense)}
+                          onClick={() => handleDelete(expense)}
                           className="btn-ghost text-sm text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
                         >
                           <Trash2 className="h-4 w-4" /> Delete
@@ -672,23 +904,29 @@ export default function ExpensesPage() {
               </div>
             );
           })}
+
+          {/* Pagination */}
+          <div className="flex flex-col items-center gap-3 pt-3">
+            <p className="text-xs text-muted-foreground">
+              Showing {expenses.length} of {totalCount} expense{totalCount !== 1 ? "s" : ""}
+            </p>
+            {expenses.length < totalCount && (
+              <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
+                {loadingMore ? (
+                  <>
+                    <Spinner size="sm" /> Loading...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Load more
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       )}
-
-      {/* Delete modal */}
-      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Expense">
-        <p className="text-sm text-muted">
-          Are you sure you want to delete <span className="font-medium">&ldquo;{deleteTarget?.title}&rdquo;</span>? This action cannot be undone.
-        </p>
-        <div className="mt-6 flex justify-end gap-3">
-          <button onClick={() => setDeleteTarget(null)} className="btn-secondary" disabled={deleting}>
-            Cancel
-          </button>
-          <button onClick={handleDelete} className="btn-danger" disabled={deleting}>
-            {deleting ? "Deleting..." : "Delete"}
-          </button>
-        </div>
-      </Modal>
     </div>
   );
 }
