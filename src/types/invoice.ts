@@ -50,6 +50,39 @@ export interface InvoiceData {
   bank?: BankDetails;
 }
 
+/** Supported payment methods for a payment receipt. */
+export type PaymentMethod = "Bank Transfer" | "UPI" | "Card" | "Cheque" | "Cash";
+
+export const PAYMENT_METHODS: PaymentMethod[] = [
+  "Bank Transfer",
+  "UPI",
+  "Card",
+  "Cheque",
+  "Cash",
+];
+
+export interface ReceiptPayment {
+  /** How the payment was made (e.g. "Bank Transfer", "UPI"). */
+  method: string;
+  /** Transaction / UTR / UPI / cheque reference number. Optional for cash. */
+  reference: string;
+  /** ISO date string (YYYY-MM-DD) the payment was received. */
+  paidOn: string;
+  /** Amount actually received. Balance due = invoice total − this. */
+  amountReceived: number;
+}
+
+/**
+ * A payment receipt reuses the full invoice shape (so the line items, totals
+ * and parties match the invoice it acknowledges) and adds payment details plus
+ * its own receipt number. `invoiceNumber` is reused as the referenced invoice.
+ */
+export interface ReceiptData extends InvoiceData {
+  /** Receipt number — distinct from the referenced invoice number. */
+  receiptNumber: string;
+  payment: ReceiptPayment;
+}
+
 /** Per-line-item derived amounts, index-aligned with InvoiceData.lineItems. */
 export interface LineItemAmounts {
   amount: number;
