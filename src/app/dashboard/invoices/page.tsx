@@ -9,8 +9,9 @@ import { useToast } from "@/components/ui/Toast";
 import Spinner from "@/components/ui/Spinner";
 import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import { computeTotals, formatRupees, lineItemAmount } from "@/lib/invoice";
-import type { InvoiceData } from "@/types/invoice";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { PAYMENT_METHODS } from "@/types/invoice";
+import type { InvoiceData, ReceiptData } from "@/types/invoice";
+import { FileText, Plus, Receipt, Trash2 } from "lucide-react";
 
 interface LineRow {
   description: string;
@@ -31,6 +32,7 @@ export default function InvoicesPage() {
   const { toast } = useToast();
 
   const [generating, setGenerating] = useState(false);
+  const [receiptGenerating, setReceiptGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [form, setForm] = useState({
@@ -57,6 +59,13 @@ export default function InvoicesPage() {
     ifsc: "",
   });
   const [lineItems, setLineItems] = useState<LineRow[]>([newRow()]);
+  const [payment, setPayment] = useState({
+    receiptNumber: `RCPT-${Date.now()}`,
+    method: PAYMENT_METHODS[0] as string,
+    reference: "",
+    paidOn: new Date().toISOString().split("T")[0],
+    amountReceived: "",
+  });
 
   useEffect(() => {
     if (!isAdmin) router.replace("/dashboard");
@@ -121,6 +130,19 @@ export default function InvoicesPage() {
     bank: { ...bank },
   });
 
+  const buildReceiptData = (): ReceiptData => ({
+    ...buildInvoiceData(),
+    receiptNumber: payment.receiptNumber.trim(),
+    payment: {
+      method: payment.method.trim(),
+      reference: payment.reference.trim(),
+      paidOn: payment.paidOn,
+      amountReceived: payment.amountReceived.trim()
+        ? parseFloat(payment.amountReceived) || 0
+        : totals.total,
+    },
+  });
+
   const totals = useMemo(() => computeTotals(buildInvoiceData()), [form, lineItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateRow = (i: number, patch: Partial<LineRow>) =>
@@ -159,6 +181,38 @@ export default function InvoicesPage() {
     }
   };
 
+  const handleGenerateReceipt = async () => {
+    const data = buildReceiptData();
+
+    if (!data.invoiceNumber) return toast("Invoice number is required", "error");
+    if (!data.seller.name) return toast("Seller name is required", "error");
+    if (!data.customer.name) return toast("Customer name is required", "error");
+    if (data.lineItems.every((li) => li.description === "")) {
+      return toast("Add at least one line item with a description", "error");
+    }
+    if (!data.receiptNumber) return toast("Receipt number is required", "error");
+    if (!data.payment.method) return toast("Payment method is required", "error");
+    if (!data.payment.paidOn) return toast("Payment date is required", "error");
+
+    setReceiptGenerating(true);
+    try {
+      const blob = await api.postBlob("/api/invoices/receipt", data);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receipt-${data.receiptNumber.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast("Receipt PDF generated");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to generate receipt", "error");
+    } finally {
+      setReceiptGenerating(false);
+    }
+  };
+
   if (!isAdmin) return null;
   if (loading) return <ListPageSkeleton />;
 
@@ -171,7 +225,8 @@ export default function InvoicesPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Generate Tax Invoice</h1>
           <p className="text-sm text-muted-foreground">
-            Fill in the details and download a PDF. Invoices are not stored.
+            Fill in the details and download a tax invoice or payment receipt PDF. Nothing is
+            stored.
           </p>
         </div>
       </div>
@@ -411,6 +466,66 @@ export default function InvoicesPage() {
           </div>
         </Section>
 
+        {/* Payment details — only used when generating a receipt */}
+        <Section title="Payment details (for receipt)">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Receipt number">
+              <input
+                type="text"
+                value={payment.receiptNumber}
+                onChange={(e) => setPayment({ ...payment, receiptNumber: e.target.value })}
+                className="input-field tabular-nums"
+              />
+            </Field>
+            <Field label="Payment date">
+              <input
+                type="date"
+                value={payment.paidOn}
+                onChange={(e) => setPayment({ ...payment, paidOn: e.target.value })}
+                className="input-field"
+              />
+            </Field>
+            <Field label="Payment method">
+              <select
+                value={payment.method}
+                onChange={(e) => setPayment({ ...payment, method: e.target.value })}
+                className="input-field"
+              >
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Transaction / reference ID">
+              <input
+                type="text"
+                value={payment.reference}
+                onChange={(e) => setPayment({ ...payment, reference: e.target.value })}
+                placeholder="e.g. UTR / UPI ref / cheque no."
+                className="input-field"
+              />
+            </Field>
+            <Field label="Amount received">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={payment.amountReceived}
+                onChange={(e) => setPayment({ ...payment, amountReceived: e.target.value })}
+                placeholder="Defaults to invoice total"
+                className="input-field tabular-nums"
+              />
+            </Field>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            These fields are only used for the{" "}
+            <span className="font-medium">payment receipt</span>. Leave amount received blank to
+            use the full invoice total.
+          </p>
+        </Section>
+
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Bank details */}
           <Section title="Payment / bank details">
@@ -482,10 +597,29 @@ export default function InvoicesPage() {
                 </>
               ) : (
                 <>
-                  <FileText className="h-4 w-4" /> Generate PDF
+                  <FileText className="h-4 w-4" /> Generate Invoice
                 </>
               )}
             </button>
+            <button
+              type="button"
+              onClick={handleGenerateReceipt}
+              disabled={receiptGenerating}
+              className="btn-secondary mt-3 w-full justify-center"
+            >
+              {receiptGenerating ? (
+                <>
+                  <Spinner size="sm" /> Generating...
+                </>
+              ) : (
+                <>
+                  <Receipt className="h-4 w-4" /> Generate Receipt
+                </>
+              )}
+            </button>
+            <p className="mt-3 text-xs text-muted-foreground">
+              The receipt reuses these invoice details and adds the payment info above.
+            </p>
           </Section>
         </div>
       </form>
