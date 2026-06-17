@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(npx next:*)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"root: %{http_code}\\\\n\" http://localhost:3000)"
     ]
   }
 }
