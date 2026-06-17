@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Menu, LogOut, ChevronDown, Search } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
+import clsx from "clsx";
 
 interface HeaderProps {
   onMenuClick: () => void;
