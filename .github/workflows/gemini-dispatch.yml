@@ -7,6 +7,10 @@ on:
     types:
       - 'opened'
       - 'reopened'
+      - 'synchronize'
+  issue_comment:
+    types:
+      - 'created'
 
 defaults:
   run:
@@ -15,7 +19,8 @@ defaults:
 jobs:
   dispatch:
     if: |-
-      github.event.pull_request.head.repo.fork == false
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@gemini-cli /review'))
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
@@ -23,7 +28,7 @@ jobs:
       pull-requests: 'write'
     outputs:
       command: 'review'
-      issue_number: '${{ github.event.pull_request.number }}'
+      issue_number: '${{ github.event.pull_request.number || github.event.issue.number }}'
     steps:
       - name: 'Mint identity token'
         id: 'mint_identity_token'
@@ -40,7 +45,7 @@ jobs:
       - name: 'Acknowledge request'
         env:
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
-          ISSUE_NUMBER: '${{ github.event.pull_request.number }}'
+          ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           MESSAGE: |-
             🤖 Hi @${{ github.actor }}, I've received your request for a code review, and I'm working on it now! You can track my progress [in the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.
           REPOSITORY: '${{ github.repository }}'
