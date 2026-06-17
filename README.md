@@ -267,6 +267,15 @@ npm run start     # Start production server
 npm run lint      # Run ESLint
 ```
 
+## Development
+
+### Gemini Code Review
+This project uses an automated AI code review system powered by Gemini.
+
+- **Automatic Reviews**: Gemini automatically reviews any Pull Request opened against the `main` branch.
+- **Manual Trigger**: To request a fresh review at any time, comment `@gemini-cli /review` on your Pull Request.
+- **Specific Instructions**: You can provide additional context to the reviewer, for example: `@gemini-cli /review focus on performance and security`.
+
 ## Deployment
 
 The app can be deployed to any platform that supports Next.js:
