@@ -1,7 +1,120 @@
-import type { InvoiceData, InvoiceTotals } from "@/types/invoice";
+import type {
+  InvoiceData,
+  InvoiceLineItem,
+  InvoiceTotals,
+  ReceiptData,
+} from "@/types/invoice";
 
 function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+const str = (v: unknown) => String(v ?? "").trim();
+const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Validates and normalizes a raw request body into a clean InvoiceData object,
+ * or returns an error message string. Shared by the invoice and receipt routes.
+ */
+export function parseInvoice(body: unknown): InvoiceData | string {
+  if (!body || typeof body !== "object") return "Invalid request body";
+  const b = body as Record<string, unknown>;
+
+  const invoiceNumber = str(b.invoiceNumber);
+  if (!invoiceNumber) return "Invoice number is required";
+
+  const invoiceDate = str(b.invoiceDate);
+  if (!ISO_DATE.test(invoiceDate)) return "A valid invoice date is required";
+
+  const dueDate = b.dueDate ? str(b.dueDate) : undefined;
+  if (dueDate && !ISO_DATE.test(dueDate)) return "Due date is invalid";
+
+  const seller = (b.seller ?? {}) as Record<string, unknown>;
+  const customer = (b.customer ?? {}) as Record<string, unknown>;
+  if (!str(seller.name)) return "Seller name is required";
+  if (!str(customer.name)) return "Customer name is required";
+
+  const lineItems: InvoiceLineItem[] = (Array.isArray(b.lineItems) ? b.lineItems : [])
+    .map((it) => {
+      const item = it as Record<string, unknown>;
+      return {
+        description: str(item.description),
+        quantity: num(item.quantity),
+        rate: num(item.rate),
+      };
+    })
+    .filter((it) => it.description !== "");
+
+  if (lineItems.length === 0) {
+    return "At least one line item with a description is required";
+  }
+
+  const bank = (b.bank ?? {}) as Record<string, unknown>;
+
+  return {
+    invoiceNumber,
+    invoiceDate,
+    dueDate,
+    terms: b.terms ? str(b.terms) : undefined,
+    hsnSac: b.hsnSac ? str(b.hsnSac) : undefined,
+    placeOfSupply: b.placeOfSupply ? str(b.placeOfSupply) : undefined,
+    cgstRate: num(b.cgstRate),
+    sgstRate: num(b.sgstRate),
+    seller: {
+      name: str(seller.name),
+      address: str(seller.address),
+      email: str(seller.email),
+      gstin: str(seller.gstin),
+    },
+    customer: {
+      name: str(customer.name),
+      gstin: str(customer.gstin),
+    },
+    lineItems,
+    bank: {
+      accountName: str(bank.accountName),
+      accountNumber: str(bank.accountNumber),
+      accountType: str(bank.accountType),
+      ifsc: str(bank.ifsc),
+    },
+  };
+}
+
+/**
+ * Validates and normalizes a raw request body into a ReceiptData object, or
+ * returns an error message string. Builds on parseInvoice and adds the payment
+ * block. Amount received defaults to the full invoice total when omitted.
+ */
+export function parseReceipt(body: unknown): ReceiptData | string {
+  const invoice = parseInvoice(body);
+  if (typeof invoice === "string") return invoice;
+
+  const b = body as Record<string, unknown>;
+
+  const receiptNumber = str(b.receiptNumber);
+  if (!receiptNumber) return "Receipt number is required";
+
+  const payment = (b.payment ?? {}) as Record<string, unknown>;
+  const method = str(payment.method);
+  if (!method) return "Payment method is required";
+
+  const paidOn = str(payment.paidOn);
+  if (!ISO_DATE.test(paidOn)) return "A valid payment date is required";
+
+  const total = computeTotals(invoice).total;
+  const received = payment.amountReceived != null ? num(payment.amountReceived) : total;
+
+  return {
+    ...invoice,
+    receiptNumber,
+    payment: {
+      method,
+      reference: str(payment.reference),
+      paidOn,
+      amountReceived: received,
+    },
+  };
 }
 
 /** Amount for a single line item (quantity × rate). */

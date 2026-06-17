@@ -7,6 +7,10 @@
     "build": "cross-env NODE_ENV=production next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest run --project ui",
+    "test:backend": "vitest run --project backend",
     "seed": "npx ts-node --compiler-options '{\"module\":\"commonjs\"}' src/scripts/seed.ts"
   },
   "dependencies": {
@@ -26,13 +30,20 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "autoprefixer": "^10.4.20",
     "cross-env": "^10.1.0",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^3.2.4"
   }
 }

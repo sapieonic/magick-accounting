@@ -1,5 +1,5 @@
 import { Document, Page, View, Text, Image } from "@react-pdf/renderer";
-import type { InvoiceData } from "@/types/invoice";
+import type { ReceiptData } from "@/types/invoice";
 import {
   computeTotals,
   formatAmount,
@@ -9,24 +9,29 @@ import {
 } from "@/lib/invoice";
 import { styles, COL, LOGO_PATH, MetaRow } from "./pdfBase";
 
-export function InvoiceDocument({ data }: { data: InvoiceData }) {
+export function ReceiptDocument({ data }: { data: ReceiptData }) {
   const totals = computeTotals(data);
+  const received = Math.max(0, Number(data.payment.amountReceived) || 0);
+  const balanceDue = Math.max(0, totals.total - received);
   const addressLines = data.seller.address
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
 
   return (
-    <Document title={`Invoice ${data.invoiceNumber}`}>
+    <Document title={`Payment Receipt ${data.receiptNumber}`}>
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
           <Image src={LOGO_PATH} style={styles.logo} />
           <View style={styles.headerRight}>
-            <Text style={styles.docTitle}>TAX INVOICE</Text>
-            <Text style={styles.invoiceNo}># {data.invoiceNumber}</Text>
-            <Text style={styles.balanceLabel}>Balance Due</Text>
-            <Text style={styles.balanceValue}>{formatRupees(totals.total)}</Text>
+            <Text style={styles.docTitle}>PAYMENT RECEIPT</Text>
+            <Text style={styles.invoiceNo}># {data.receiptNumber}</Text>
+            <View style={styles.paidBadge}>
+              <Text style={styles.paidBadgeText}>PAID</Text>
+            </View>
+            <Text style={styles.balanceLabel}>Amount Received</Text>
+            <Text style={styles.balanceValue}>{formatRupees(received)}</Text>
           </View>
         </View>
 
@@ -45,10 +50,10 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
           ) : null}
         </View>
 
-        {/* Customer + invoice meta */}
+        {/* Customer + receipt meta */}
         <View style={styles.midRow}>
           <View>
-            <Text style={styles.partyLabel}>BILL TO</Text>
+            <Text style={styles.partyLabel}>RECEIVED FROM</Text>
             <Text style={styles.customerName}>{data.customer.name}</Text>
             {data.customer.gstin ? (
               <Text style={styles.customerLine}>GSTIN {data.customer.gstin}</Text>
@@ -65,11 +70,9 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
             ) : null}
           </View>
           <View style={styles.metaTable}>
+            <MetaRow label="Payment Date :" value={formatInvoiceDate(data.payment.paidOn)} />
+            <MetaRow label="Invoice Ref :" value={data.invoiceNumber} />
             <MetaRow label="Invoice Date :" value={formatInvoiceDate(data.invoiceDate)} />
-            {data.terms ? <MetaRow label="Terms :" value={data.terms} /> : null}
-            {data.dueDate ? (
-              <MetaRow label="Due Date :" value={formatInvoiceDate(data.dueDate)} />
-            ) : null}
           </View>
         </View>
 
@@ -122,43 +125,40 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
               <Text style={styles.grandLabel}>Total</Text>
               <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
             </View>
+            <View style={styles.receivedRow}>
+              <Text style={styles.grandLabel}>Amount Received</Text>
+              <Text style={styles.grandValue}>{formatRupees(received)}</Text>
+            </View>
             <View style={styles.balanceRow}>
               <Text style={styles.grandLabel}>Balance Due</Text>
-              <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
+              <Text style={styles.grandValue}>{formatRupees(balanceDue)}</Text>
             </View>
           </View>
         </View>
 
         {/* Amount in words */}
         <View style={styles.words}>
-          <Text style={styles.wordsLabel}>Total In Words:</Text>
-          <Text style={styles.wordsValue}>{amountInWords(totals.total)}</Text>
+          <Text style={styles.wordsLabel}>Received In Words:</Text>
+          <Text style={styles.wordsValue}>{amountInWords(received)}</Text>
         </View>
 
-        {/* Bank details */}
-        {data.bank &&
-        (data.bank.accountName ||
-          data.bank.accountNumber ||
-          data.bank.accountType ||
-          data.bank.ifsc) ? (
-          <View style={styles.bank}>
-            <Text style={styles.bankTitle}>Please Pay at :</Text>
-            {data.bank.accountName ? (
-              <Text style={styles.bankLine}>Account Name: {data.bank.accountName}</Text>
-            ) : null}
-            {data.bank.accountNumber ? (
-              <Text style={styles.bankLine}>Account Number: {data.bank.accountNumber}</Text>
-            ) : null}
-            {data.bank.accountType ? (
-              <Text style={styles.bankLine}>Account Type: {data.bank.accountType}</Text>
-            ) : null}
-            {data.bank.ifsc ? <Text style={styles.bankLine}>IFSC: {data.bank.ifsc}</Text> : null}
-          </View>
-        ) : null}
+        {/* Payment details */}
+        <View style={styles.payment}>
+          <Text style={styles.paymentTitle}>Payment Details</Text>
+          <Text style={styles.paymentLine}>Payment Method: {data.payment.method}</Text>
+          {data.payment.reference ? (
+            <Text style={styles.paymentLine}>
+              Transaction / Reference ID: {data.payment.reference}
+            </Text>
+          ) : null}
+          <Text style={styles.paymentLine}>
+            Payment Date: {formatInvoiceDate(data.payment.paidOn)}
+          </Text>
+        </View>
 
         {/* Footer */}
         <Text style={styles.footer} fixed>
-          This is a computer-generated invoice and does not require a physical signature.
+          This is a computer-generated receipt and does not require a physical signature.
         </Text>
       </Page>
     </Document>

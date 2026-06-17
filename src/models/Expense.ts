@@ -1,5 +1,9 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+export type PaymentSource = "pocket" | "company";
+
+export const PAYMENT_SOURCES: PaymentSource[] = ["pocket", "company"];
+
 export interface IExpense extends Document {
   title: string;
   amount: number;
@@ -9,6 +13,7 @@ export interface IExpense extends Document {
   department: mongoose.Types.ObjectId;
   date: Date;
   description: string;
+  paymentSource: PaymentSource;
   receiptKey?: string;
   receiptFilename?: string;
   createdBy: mongoose.Types.ObjectId;
@@ -26,6 +31,12 @@ const ExpenseSchema = new Schema<IExpense>(
     department: { type: Schema.Types.ObjectId, ref: "Department", required: true },
     date: { type: Date, required: true },
     description: { type: String, default: "", trim: true },
+    paymentSource: {
+      type: String,
+      enum: PAYMENT_SOURCES,
+      default: "pocket",
+      required: true,
+    },
     receiptKey: { type: String },
     receiptFilename: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },

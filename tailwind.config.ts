@@ -51,7 +51,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          "Inter",
+          "Hanken Grotesk",
           "system-ui",
           "-apple-system",
           "BlinkMacSystemFont",
@@ -63,6 +63,8 @@ const config: Config = {
           "Inter",
           "sans-serif",
         ],
+        display: ["Fraunces", "Georgia", "serif"],
+        mono: ["Spline Sans Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       boxShadow: {
         soft: "0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.03)",

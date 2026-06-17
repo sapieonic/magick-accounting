@@ -37,14 +37,14 @@ export default function Spinner({ className, size = "md" }: { className?: string
       <span className="absolute inset-0 animate-loader-orbit">
         <span
           className={clsx(
-            "absolute left-1/2 top-0 -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-500 to-cyan-400 shadow-[0_0_14px_rgba(37,99,235,0.35)]",
+            "absolute left-1/2 top-0 -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-500 to-accent-400 shadow-[0_0_14px_rgba(99,102,241,0.35)]",
             sizeConfig.dot
           )}
         />
       </span>
       <span
         className={clsx(
-          "relative rounded-full bg-gradient-to-br from-brand-600 via-brand-500 to-cyan-400 shadow-[0_0_18px_rgba(37,99,235,0.2)] animate-loader-breathe",
+          "relative rounded-full bg-gradient-to-br from-brand-600 via-brand-500 to-accent-400 shadow-[0_0_18px_rgba(99,102,241,0.2)] animate-loader-breathe",
           sizeConfig.core
         )}
       />
@@ -54,7 +54,7 @@ export default function Spinner({ className, size = "md" }: { className?: string
 
 export function PageLoader() {
   return (
-    <div className="relative flex min-h-[16rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-brand-100/70 bg-gradient-to-b from-surface via-brand-50/40 to-cyan-50/60 px-6 py-10 text-center dark:border-brand-500/20 dark:from-surface dark:via-brand-500/5 dark:to-cyan-500/5">
+    <div className="relative flex min-h-[16rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-brand-100/70 bg-gradient-to-b from-surface via-brand-50/40 to-accent-50/60 px-6 py-10 text-center dark:border-brand-500/20 dark:from-surface dark:via-brand-500/5 dark:to-accent-500/5">
       <div className="absolute left-1/2 top-1/2 h-32 w-32 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-200/20 blur-3xl dark:bg-brand-500/10" />
       <div className="relative flex flex-col items-center gap-4">
         <div className="rounded-full bg-surface/80 p-4 shadow-lg shadow-brand-100/50 ring-1 ring-brand-100/80 backdrop-blur dark:shadow-black/40 dark:ring-brand-500/30">

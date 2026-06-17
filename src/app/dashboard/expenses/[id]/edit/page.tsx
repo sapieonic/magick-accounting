@@ -5,10 +5,10 @@ import { useRouter, useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { FormSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
+import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import { ArrowLeft, Upload, X as XIcon } from "lucide-react";
-import Link from "next/link";
 
 interface Department {
   _id: string;
@@ -41,7 +41,7 @@ export default function EditExpensePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
-  const [form, setForm] = useState({
+  const emptyForm = {
     title: "",
     amount: "",
     currency: "",
@@ -49,10 +49,36 @@ export default function EditExpensePage() {
     department: "",
     date: "",
     description: "",
-  });
+    paymentSource: "pocket",
+  };
+  const [form, setForm] = useState(emptyForm);
+  const [initialForm, setInitialForm] = useState(emptyForm);
+  const [initialHadReceipt, setInitialHadReceipt] = useState(false);
 
   const [existingReceipt, setExistingReceipt] = useState<{ key: string; filename: string } | null>(null);
   const [newReceipt, setNewReceipt] = useState<{ file: File; filename: string } | null>(null);
+
+  // Warn before discarding unsaved edits on a full page unload.
+  const isDirty =
+    JSON.stringify(form) !== JSON.stringify(initialForm) ||
+    newReceipt !== null ||
+    (initialHadReceipt && !existingReceipt && !newReceipt);
+
+  useEffect(() => {
+    if (!isDirty || submitting) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty, submitting]);
+
+  const handleCancel = () => {
+    if (isDirty && !window.confirm("Discard your changes to this expense?")) {
+      return;
+    }
+    router.push("/dashboard/expenses");
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -63,7 +89,7 @@ export default function EditExpensePage() {
         ]);
 
         const exp = expData.expense;
-        setForm({
+        const loadedForm = {
           title: exp.title,
           amount: exp.amount.toString(),
           currency: exp.currency?._id || "",
@@ -71,10 +97,14 @@ export default function EditExpensePage() {
           department: exp.department?._id || "",
           date: new Date(exp.date).toISOString().split("T")[0],
           description: exp.description || "",
-        });
+          paymentSource: exp.paymentSource || "pocket",
+        };
+        setForm(loadedForm);
+        setInitialForm(loadedForm);
 
         if (exp.receiptKey) {
           setExistingReceipt({ key: exp.receiptKey, filename: exp.receiptFilename || "Receipt" });
+          setInitialHadReceipt(true);
         }
 
         setDepartments(lookupData.departments);
@@ -90,9 +120,7 @@ export default function EditExpensePage() {
     loadData();
   }, [params.id, toast, router]);
 
-  const handleReceiptSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleReceiptFile = (file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       toast("File too large. Maximum size is 10MB.", "error");
       return;
@@ -146,15 +174,19 @@ export default function EditExpensePage() {
     }
   };
 
-  if (loading) return <PageLoader />;
+  if (loading) return <FormSkeleton />;
 
   return (
     <div className="animate-fade-in">
       <div className="mb-6">
-        <Link href="/dashboard/expenses" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to Expenses
-        </Link>
+        </button>
         <h1 className="text-2xl font-bold text-foreground">Edit Expense</h1>
       </div>
 
@@ -260,6 +292,22 @@ export default function EditExpensePage() {
           </div>
 
           <div>
+            <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
+              Payment Source <span className="text-red-500 dark:text-red-400">*</span>
+            </label>
+            <select
+              id="paymentSource"
+              required
+              value={form.paymentSource}
+              onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
+              className="input-field"
+            >
+              <option value="pocket">Paid from pocket</option>
+              <option value="company">Paid from company account</option>
+            </select>
+          </div>
+
+          <div>
             <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">
               Description
             </label>
@@ -290,25 +338,15 @@ export default function EditExpensePage() {
                 </button>
               </div>
             ) : (
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30 dark:hover:bg-brand-500/10">
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Click to upload receipt</span>
-                <span className="text-xs text-muted-foreground">JPEG, PNG, WebP, or PDF up to 10MB</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={handleReceiptSelect}
-                  className="hidden"
-                />
-              </label>
+              <ReceiptDropzone onFile={handleReceiptFile} acceptPaste />
             )}
           </div>
         </div>
 
         <div className="mt-8 flex justify-end gap-3 border-t border-line pt-6">
-          <Link href="/dashboard/expenses" className="btn-secondary">
+          <button type="button" onClick={handleCancel} className="btn-secondary">
             Cancel
-          </Link>
+          </button>
           <button type="submit" className="btn-primary" disabled={submitting || uploadingReceipt}>
             {submitting || uploadingReceipt ? (
               <>

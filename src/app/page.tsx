@@ -36,7 +36,10 @@ export default function LoginPage() {
     <div className="flex min-h-dvh bg-background selection:bg-brand-500/30">
       {/* Left panel — branding */}
       <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-brand-950 p-16 text-white lg:flex">
-        {/* Subtle background patterns */}
+        {/* Ledger pattern from main */}
+        <div className="bg-ledger-contrast absolute inset-0 opacity-10" />
+
+        {/* Subtle background patterns from Executive UI */}
         <div className="absolute inset-0 z-0 opacity-20">
           <div className="absolute -left-1/4 -top-1/4 h-full w-full rounded-full bg-brand-500 blur-[120px]" />
           <div className="absolute -bottom-1/4 -right-1/4 h-full w-full rounded-full bg-indigo-500 blur-[120px]" />
@@ -44,8 +47,8 @@ export default function LoginPage() {
 
         <div className="relative z-10">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-xl font-bold backdrop-blur-md">
-              M
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white p-1.5 shadow-lg ring-1 ring-white/30 backdrop-blur-md">
+              <img src="/logo.png" alt="Magick Accounting logo" className="h-9 w-auto" />
             </div>
             <span className="font-heading text-2xl font-bold tracking-tight">Magick Accounting</span>
           </div>
@@ -53,11 +56,9 @@ export default function LoginPage() {
 
         <div className="relative z-10 space-y-12">
           <h1 className="font-heading text-5xl font-extrabold leading-[1.1] tracking-tight">
-            Sophisticated
+            Every rupee,
             <br />
-            expense control
-            <br />
-            for elite teams.
+            <span className="italic text-brand-300">accounted for.</span>
           </h1>
           <div className="space-y-6">
             {features.map((f) => (
@@ -80,13 +81,11 @@ export default function LoginPage() {
       </div>
 
       {/* Right panel — login */}
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="bg-ledger flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <div className="mb-12 lg:hidden">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-600 text-xl font-bold text-white shadow-soft shadow-brand-500/40">
-                M
-              </div>
+              <img src="/logo.png" alt="Magick Accounting logo" className="h-12 w-auto" />
               <span className="font-heading text-2xl font-bold tracking-tight text-foreground">
                 Magick Accounting
               </span>

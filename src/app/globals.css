@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Hanken+Grotesk:ital,wght@0,300..700;1,300..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400..700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -48,6 +48,26 @@
   * {
     @apply border-line;
   }
+
+  /* Editorial serif for page and section titles. */
+  h1,
+  h2 {
+    @apply font-heading tracking-tight;
+    font-optical-sizing: auto;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-950;
+  }
+
+  .dark ::selection {
+    @apply bg-brand-700 text-brand-50;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
 }
 
 @layer components {
@@ -78,9 +98,30 @@
   .card-hover {
     @apply hover:border-line-strong hover:shadow-elevated;
   }
+
+  /* Ledger digits: every monetary figure in the app carries .tabular-nums,
+     so this single rule gives all amounts their monospaced register look. */
+  .tabular-nums {
+    font-family: theme(fontFamily.mono);
+    letter-spacing: -0.02em;
+  }
 }
 
 @layer utilities {
+  /* Faint ruled-paper grid drawn from the theme's line color. */
+  .bg-ledger {
+    background-image: linear-gradient(to right, rgb(var(--line-strong) / 0.16) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--line-strong) / 0.16) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  /* Same grid in white, for dark brand panels (login hero). */
+  .bg-ledger-contrast {
+    background-image: linear-gradient(to right, rgb(255 255 255 / 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.07) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
   .animate-fade-in {
     animation: fadeIn 0.2s ease-out;
   }

@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
       {
         $project: {
-          _id: 0,
+          _id: { $ifNull: ["$category._id", null] },
           name: { $ifNull: ["$category.name", "Uncategorized"] },
           total: 1,
           count: 1,

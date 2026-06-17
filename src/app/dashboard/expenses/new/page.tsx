@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import { PageLoader } from "@/components/ui/Spinner";
+import { FormSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import Modal from "@/components/ui/Modal";
+import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
-import Link from "next/link";
 
 interface Department {
   _id: string;
@@ -33,6 +33,7 @@ interface CurrencyOption {
 // File types the AI auto-fill can read (images + PDF).
 const EXTRACTABLE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const SKIP_UPLOAD_MODAL_KEY = "expense-upload-modal-skip";
 
 export default function NewExpensePage() {
   useTitle("New Expense");
@@ -45,9 +46,17 @@ export default function NewExpensePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
-  const [showUploadModal, setShowUploadModal] = useState(true);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
+
+  // Open the AI-upload modal on arrival unless the user opted out earlier.
+  useEffect(() => {
+    if (localStorage.getItem(SKIP_UPLOAD_MODAL_KEY) !== "true") {
+      setShowUploadModal(true);
+    }
+  }, []);
 
   const [form, setForm] = useState({
     title: "",
@@ -57,6 +66,7 @@ export default function NewExpensePage() {
     department: "",
     date: new Date().toISOString().split("T")[0],
     description: "",
+    paymentSource: "pocket",
   });
 
   const [receipt, setReceipt] = useState<{
@@ -64,6 +74,27 @@ export default function NewExpensePage() {
     key?: string;
     filename: string;
   } | null>(null);
+
+  // Warn before discarding typed-in or extracted data on a full page unload.
+  const isDirty = Boolean(
+    form.title || form.amount || form.description || form.category !== "" || receipt
+  );
+
+  useEffect(() => {
+    if (!isDirty || submitting) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty, submitting]);
+
+  const handleCancel = () => {
+    if (isDirty && !window.confirm("Discard this expense? Your changes will be lost.")) {
+      return;
+    }
+    router.push("/dashboard/expenses");
+  };
 
   useEffect(() => {
     async function loadOptions() {
@@ -135,12 +166,6 @@ export default function NewExpensePage() {
     }
   };
 
-  const handleReceiptSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file
-    if (file) processReceiptFile(file);
-  };
-
   const uploadReceipt = async (): Promise<{ key: string; filename: string } | null> => {
     if (!receipt?.file) return null;
 
@@ -191,7 +216,7 @@ export default function NewExpensePage() {
     }
   };
 
-  if (loading) return <PageLoader />;
+  if (loading) return <FormSkeleton />;
 
   return (
     <div className="animate-fade-in">
@@ -217,24 +242,28 @@ export default function NewExpensePage() {
               <span className="text-xs text-muted-foreground">This usually takes a few seconds</span>
             </div>
           ) : (
-            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-10 transition-colors hover:border-brand-300 hover:bg-brand-50/30 dark:hover:bg-brand-500/10">
-              <Upload className="h-8 w-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Click to upload receipt</span>
-              <span className="text-xs text-muted-foreground">JPEG, PNG, WebP, or PDF up to 10MB</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
-                onChange={handleReceiptSelect}
-                className="hidden"
-              />
-            </label>
+            <ReceiptDropzone onFile={processReceiptFile} className="py-10" />
           )}
 
           {!extracting && (
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={(e) => setDontShowAgain(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-line-strong accent-brand-600"
+                />
+                Don&apos;t show this automatically again
+              </label>
               <button
                 type="button"
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => {
+                  if (dontShowAgain) {
+                    localStorage.setItem(SKIP_UPLOAD_MODAL_KEY, "true");
+                  }
+                  setShowUploadModal(false);
+                }}
                 className="text-sm text-muted-foreground hover:text-foreground"
               >
                 Skip — I&apos;ll fill it in manually
@@ -245,10 +274,14 @@ export default function NewExpensePage() {
       </Modal>
 
       <div className="mb-6">
-        <Link href="/dashboard/expenses" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to Expenses
-        </Link>
+        </button>
         <h1 className="text-2xl font-bold text-foreground">New Expense</h1>
       </div>
 
@@ -365,6 +398,22 @@ export default function NewExpensePage() {
           </div>
 
           <div>
+            <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
+              Payment Source <span className="text-red-500 dark:text-red-400">*</span>
+            </label>
+            <select
+              id="paymentSource"
+              required
+              value={form.paymentSource}
+              onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
+              className="input-field"
+            >
+              <option value="pocket">Paid from pocket</option>
+              <option value="company">Paid from company account</option>
+            </select>
+          </div>
+
+          <div>
             <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">
               Description
             </label>
@@ -398,28 +447,24 @@ export default function NewExpensePage() {
                 </button>
               </div>
             ) : (
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-8 transition-colors hover:border-brand-300 hover:bg-brand-50/30 dark:hover:bg-brand-500/10">
+              <ReceiptDropzone onFile={processReceiptFile} acceptPaste>
                 <Upload className="h-8 w-8 text-muted-foreground" />
                 <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Sparkles className="h-4 w-4 text-brand-400" />
                   Upload a receipt to auto-fill the form
                 </span>
-                <span className="text-xs text-muted-foreground">JPEG, PNG, WebP, or PDF up to 10MB</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={handleReceiptSelect}
-                  className="hidden"
-                />
-              </label>
+                <span className="text-xs text-muted-foreground">
+                  Click, drag &amp; drop, or paste &middot; JPEG, PNG, WebP, or PDF up to 10MB
+                </span>
+              </ReceiptDropzone>
             )}
           </div>
         </div>
 
         <div className="mt-8 flex justify-end gap-3 border-t border-line pt-6">
-          <Link href="/dashboard/expenses" className="btn-secondary">
+          <button type="button" onClick={handleCancel} className="btn-secondary">
             Cancel
-          </Link>
+          </button>
           <button type="submit" className="btn-primary" disabled={submitting || uploadingReceipt || extracting}>
             {submitting || uploadingReceipt ? (
               <>

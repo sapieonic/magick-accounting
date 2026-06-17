@@ -26,6 +26,24 @@ function toObjectId(value: string | null): mongoose.Types.ObjectId | null {
   return new mongoose.Types.ObjectId(value);
 }
 
+// Collects all valid ObjectIds for a param, supporting both repeated params
+// (?category=a&category=b) and comma-separated values (?category=a,b).
+function toObjectIds(searchParams: URLSearchParams, key: string): mongoose.Types.ObjectId[] {
+  const ids: mongoose.Types.ObjectId[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of searchParams.getAll(key)) {
+    for (const part of raw.split(",")) {
+      const trimmed = part.trim();
+      if (!trimmed || seen.has(trimmed) || !mongoose.isValidObjectId(trimmed)) continue;
+      seen.add(trimmed);
+      ids.push(new mongoose.Types.ObjectId(trimmed));
+    }
+  }
+
+  return ids;
+}
+
 export function buildExpenseFilter(
   searchParams: URLSearchParams,
   user: AuthUser
@@ -41,14 +59,17 @@ export function buildExpenseFilter(
     }
   }
 
-  const department = toObjectId(searchParams.get("department"));
-  const category = toObjectId(searchParams.get("category"));
+  const departments = toObjectIds(searchParams, "department");
+  const categories = toObjectIds(searchParams, "category");
   const search = searchParams.get("search")?.trim();
   const from = parseDateBoundary(searchParams.get("from"), false);
   const to = parseDateBoundary(searchParams.get("to"), true);
 
-  if (department) filter.department = department;
-  if (category) filter.category = category;
+  if (departments.length === 1) filter.department = departments[0];
+  else if (departments.length > 1) filter.department = { $in: departments };
+
+  if (categories.length === 1) filter.category = categories[0];
+  else if (categories.length > 1) filter.category = { $in: categories };
 
   if (search) {
     const regex = new RegExp(escapeRegExp(search), "i");
