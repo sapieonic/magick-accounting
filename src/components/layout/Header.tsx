@@ -31,7 +31,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
     },
     admin: {
       label: "Admin",
-      color: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+      color: "bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300",
     },
     user: {
       label: "Member",
@@ -42,10 +42,10 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const badge = user ? roleBadge[user.role] : null;
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-line bg-surface px-4 lg:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line/50 bg-surface/80 px-4 backdrop-blur-md lg:px-8">
       <button
         onClick={onMenuClick}
-        className="cursor-pointer rounded-lg p-2 text-muted-foreground hover:bg-subtle lg:hidden"
+        className="cursor-pointer rounded-xl p-2 text-muted-foreground transition-colors hover:bg-subtle lg:hidden"
         aria-label="Open navigation menu"
       >
         <Menu className="h-5 w-5" />
@@ -53,13 +53,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       <div className="lg:flex-1" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <ThemeToggle />
 
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-subtle"
+            className="group flex cursor-pointer items-center gap-3 rounded-xl px-2 py-1.5 transition-all duration-200 hover:bg-subtle/60"
             aria-expanded={dropdownOpen}
             aria-haspopup="true"
           >
@@ -67,42 +67,44 @@ export default function Header({ onMenuClick }: HeaderProps) {
               <img
                 src={user.photoURL}
                 alt={user.name}
-                className="h-8 w-8 rounded-full object-cover"
+                className="h-9 w-9 rounded-full border border-line object-cover shadow-sm transition-transform duration-200 group-hover:scale-105"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-medium text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-brand-200 text-sm font-bold text-brand-700 shadow-sm transition-transform duration-200 group-hover:scale-105 dark:from-brand-500/20 dark:to-brand-500/30 dark:text-brand-300">
                 {user?.name?.charAt(0).toUpperCase()}
               </div>
             )}
             <div className="hidden text-left sm:block">
-              <p className="text-sm font-medium text-foreground">{user?.name}</p>
-              <p className="text-xs text-muted-foreground">{user?.email}</p>
+              <p className="font-heading text-sm font-bold leading-none text-foreground">{user?.name}</p>
+              <p className="mt-1 text-[11px] font-medium text-muted-foreground">{user?.email}</p>
             </div>
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            <ChevronDown className={clsx("h-4 w-4 text-muted-foreground transition-transform duration-200", dropdownOpen && "rotate-180")} />
           </button>
 
           {dropdownOpen && (
-            <div className="animate-fade-in absolute right-0 mt-1 w-64 rounded-xl border border-line bg-surface-elevated py-2 shadow-lg dark:shadow-black/50">
-              <div className="border-b border-line px-4 py-3">
-                <p className="text-sm font-medium text-foreground">{user?.name}</p>
-                <p className="text-xs text-muted-foreground">{user?.email}</p>
+            <div className="animate-fade-in absolute right-0 mt-2 w-64 origin-top-right overflow-hidden rounded-2xl border border-line bg-surface-elevated shadow-elevated dark:shadow-black/60">
+              <div className="border-b border-line bg-subtle/30 px-5 py-4">
+                <p className="font-heading text-sm font-bold text-foreground">{user?.name}</p>
+                <p className="mt-0.5 text-xs font-medium text-muted-foreground">{user?.email}</p>
                 {badge && (
-                  <span className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.color}`}>
+                  <span className={clsx("mt-3 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", badge.color)}>
                     {badge.label}
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => {
-                  setDropdownOpen(false);
-                  logout();
-                }}
-                className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2.5 text-sm text-muted transition-colors hover:bg-subtle hover:text-red-600 dark:hover:text-red-400"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </button>
+              <div className="p-1.5">
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    logout();
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold text-muted transition-all duration-200 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+              </div>
             </div>
           )}
         </div>

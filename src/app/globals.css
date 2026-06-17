@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,30 +6,30 @@
 
 @layer base {
   :root {
-    --background: 249 250 251;
+    --background: 255 255 255;
     --surface: 255 255 255;
     --surface-elevated: 255 255 255;
-    --surface-muted: 249 250 251;
-    --foreground: 17 24 39;
-    --muted: 75 85 99;
-    --muted-foreground: 156 163 175;
-    --subtle: 243 244 246;
-    --subtle-hover: 229 231 235;
-    --line: 229 231 235;
-    --line-strong: 209 213 219;
+    --surface-muted: 250 250 250;
+    --foreground: 9 9 11;
+    --muted: 82 82 91;
+    --muted-foreground: 161 161 170;
+    --subtle: 244 244 245;
+    --subtle-hover: 228 228 231;
+    --line: 228 228 231;
+    --line-strong: 212 212 216;
     color-scheme: light;
   }
 
   .dark {
     --background: 9 9 11;
-    --surface: 24 24 27;
-    --surface-elevated: 39 39 42;
-    --surface-muted: 24 24 27;
+    --surface: 15 15 18;
+    --surface-elevated: 24 24 27;
+    --surface-muted: 15 15 18;
     --foreground: 250 250 250;
-    --muted: 212 212 216;
+    --muted: 161 161 170;
     --muted-foreground: 113 113 122;
-    --subtle: 39 39 42;
-    --subtle-hover: 63 63 70;
+    --subtle: 24 24 27;
+    --subtle-hover: 39 39 42;
     --line: 39 39 42;
     --line-strong: 63 63 70;
     color-scheme: dark;
@@ -38,10 +38,11 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground selection:bg-brand-500/30;
   }
 
   * {
@@ -51,27 +52,31 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-brand-600 to-brand-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-900/10 transition-all duration-200 hover:from-brand-500 hover:to-brand-600 hover:shadow-md hover:shadow-brand-900/20 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-all hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line-strong bg-surface px-5 py-2.5 text-sm font-semibold text-foreground shadow-sm transition-all duration-200 hover:bg-subtle hover:shadow-md focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-red-600 to-red-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:from-red-500 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-muted transition-all hover:bg-subtle hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-muted transition-all duration-200 hover:bg-subtle hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .input-field {
-    @apply w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-sm text-foreground placeholder-muted-foreground transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-subtle disabled:text-muted-foreground;
+    @apply w-full rounded-xl border border-line-strong bg-surface px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground transition-all duration-200 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10 disabled:bg-subtle disabled:text-muted-foreground;
   }
 
   .card {
-    @apply rounded-xl border border-line bg-surface shadow-sm dark:shadow-black/30;
+    @apply overflow-hidden rounded-2xl border border-line bg-surface shadow-soft transition-all duration-300 dark:shadow-black/40;
+  }
+
+  .card-hover {
+    @apply hover:border-line-strong hover:shadow-elevated;
   }
 }
 
