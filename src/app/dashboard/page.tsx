@@ -7,10 +7,13 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
 import { DashboardSkeleton } from "@/components/ui/Skeleton";
-import { Receipt, Building2, Tag, TrendingUp, ArrowUpRight, Sparkles, BarChart3, PieChart as PieChartIcon } from "lucide-react";
+import { Receipt, Building2, Tag, TrendingUp, BarChart3, PieChart as PieChartIcon } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
+import { motion, Variants } from "framer-motion";
+import { StatCard } from "@/components/dashboard/StatCard";
+import { InsightsHeader } from "@/components/dashboard/InsightsHeader";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -75,6 +78,19 @@ function getCategoryColor(name: string): string {
   return CATEGORY_COLORS[name] || "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300";
 }
 
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1 },
+  },
+};
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } },
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -84,14 +100,12 @@ export default function DashboardPage() {
   const [charts, setCharts] = useState<ChartData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Recharts renders raw SVG that can't read Tailwind dark: variants, so we
-  // resolve the few colors it needs from the active theme here.
   const chartColors = useMemo(() => {
     const isDark = theme === "dark";
     return {
       grid: isDark ? "#27272a" : "#e2e8f0",
       axis: "#94a3b8",
-      tooltipBg: isDark ? "#18181b" : "#ffffff",
+      tooltipBg: isDark ? "rgba(24, 24, 27, 0.85)" : "rgba(255, 255, 255, 0.85)",
       tooltipBorder: isDark ? "#3f3f46" : "#e2e8f0",
       tooltipText: isDark ? "#fafafa" : "#0f172a",
       pieStroke: isDark ? "#18181b" : "#ffffff",
@@ -162,156 +176,138 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="animate-fade-in space-y-6">
-      {/* Welcome header with gradient accent */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-700 via-brand-600 to-accent-500 px-6 py-8 text-white shadow-lg shadow-brand-700/25">
-        <div className="bg-ledger-contrast absolute inset-0" />
-        <div className="relative z-10">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-brand-200" />
-            <p className="text-sm font-medium text-brand-100">Good to see you!</p>
-          </div>
-          <h1 className="mt-1 text-2xl font-bold">
-            Welcome back, {user?.name?.split(" ")[0]}
-          </h1>
-          <p className="mt-1 text-sm text-white/70">Here&apos;s an overview of your expenses.</p>
-        </div>
-        {/* Background decoration */}
-        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5" />
-        <div className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-white/5" />
-        <div className="absolute left-1/2 top-0 h-32 w-32 rounded-full bg-white/5" />
-      </div>
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="space-y-6 lg:space-y-8"
+    >
+      <motion.div variants={itemVariants}>
+        <InsightsHeader userName={user?.name} />
+      </motion.div>
 
-      {/* Stat cards with gradient icons */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <motion.div
+        variants={itemVariants}
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
         {statCards.map((card) => (
-          <Link
-            key={card.label}
-            href={card.href}
-            className="group relative overflow-hidden rounded-xl border border-line bg-surface p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:shadow-black/40"
-          >
-            <div className={`absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 ${card.bgGlow}`} />
-            <div className="relative flex items-center gap-4">
-              <div className={`rounded-xl bg-gradient-to-br ${card.gradient} p-3 text-white shadow-lg shadow-black/10`}>
-                <card.icon className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</p>
-                <p className="mt-0.5 text-xl font-bold text-foreground">{card.value}</p>
-              </div>
-              <ArrowUpRight className="h-4 w-4 text-line-strong transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-muted-foreground" />
-            </div>
-          </Link>
+          <StatCard key={card.label} {...card} />
         ))}
-      </div>
+      </motion.div>
 
-      {/* Trend charts */}
-      <div className="grid gap-4 lg:grid-cols-5">
-        {/* Monthly trend */}
-        <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm lg:col-span-3">
-          <div className="flex items-center justify-between border-b border-line px-6 py-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 p-1.5 text-white">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Monthly Trend - 8 cols */}
+        <motion.div variants={itemVariants} className="card flex flex-col lg:col-span-8">
+          <div className="flex items-center justify-between border-b border-line px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 p-2 text-white shadow-sm">
                 <BarChart3 className="h-4 w-4" />
               </div>
-              <h2 className="text-base font-bold text-foreground">Monthly Trend</h2>
+              <div>
+                <h2 className="text-base font-bold text-foreground">Monthly Trend</h2>
+                <p className="text-xs text-muted-foreground">Last 6 months overview</p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Last 6 months &middot; click a month to filter</p>
           </div>
-          <div className="px-2 pb-4 pt-4 sm:px-4">
+          <div className="flex-1 p-4 sm:p-6">
             {hasTrendData ? (
-              <div className="h-64 w-full cursor-pointer">
+              <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={charts?.monthlyTrend ?? []}
-                    margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
-    onClick={(state) => {
-                      const idx = Number(state?.activeIndex);
-                      const key = Number.isInteger(idx) ? charts?.monthlyTrend?.[idx]?.key : undefined;
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    onClick={(state: any) => {
+                      const key = state?.activePayload?.[0]?.payload?.key;
                       if (key) router.push(`/dashboard/expenses?month=${key}`);
                     }}
                   >
                     <defs>
                       <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.32} />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
                     <XAxis
                       dataKey="month"
                       stroke={chartColors.axis}
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 12, fill: chartColors.axis }}
                       tickLine={false}
                       axisLine={false}
+                      dy={10}
                     />
                     <YAxis
                       stroke={chartColors.axis}
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 12, fill: chartColors.axis }}
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(v: number) =>
                         v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
                       }
-                      width={48}
                     />
                     <Tooltip
-                      cursor={{ stroke: chartColors.axis, strokeWidth: 1, strokeDasharray: "3 3" }}
+                      cursor={{ stroke: chartColors.axis, strokeWidth: 1, strokeDasharray: "4 4" }}
                       contentStyle={{
-                        borderRadius: 12,
+                        borderRadius: "16px",
                         backgroundColor: chartColors.tooltipBg,
                         border: `1px solid ${chartColors.tooltipBorder}`,
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-                        fontSize: 12,
+                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+                        fontSize: "13px",
                         color: chartColors.tooltipText,
+                        backdropFilter: "blur(12px)",
                       }}
-                      formatter={((value: unknown, _name: unknown, item: { payload?: { count?: number } }) => {
+                      formatter={(value: any, _name: any, item: any) => {
                         const numericValue = typeof value === "number" ? value : Number(value);
                         const count = item?.payload?.count ?? 0;
                         return [
-                          formatBaseCurrency(numericValue),
-                          `Total (${count} ${count === 1 ? "expense" : "expenses"})`,
+                          <span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>,
+                          <span key="count" className="text-muted-foreground">{count} expenses</span>,
                         ];
-                      }) as never}
-                      labelStyle={{ fontWeight: 600, color: chartColors.tooltipText }}
+                      }}
                     />
                     <Area
                       type="monotone"
                       dataKey="total"
                       stroke="#6366f1"
-                      strokeWidth={2}
+                      strokeWidth={3}
                       fill="url(#trendFill)"
+                      activeDot={{ r: 6, strokeWidth: 0, fill: "#6366f1" }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-500/15 dark:to-indigo-500/15">
-                  <BarChart3 className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-500/20 dark:to-indigo-500/20">
+                  <BarChart3 className="h-6 w-6 text-blue-500 dark:text-blue-400" />
                 </div>
-                <p className="text-sm font-medium text-muted">No trend data yet</p>
-                <p className="mt-1 text-xs text-muted-foreground">Add expenses to see your monthly trend.</p>
+                <p className="text-sm font-semibold text-foreground">No trend data yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">Add your first expense to generate insights.</p>
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
 
-        {/* Top categories */}
-        <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-line px-6 py-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-amber-500 to-pink-500 p-1.5 text-white">
+        {/* Top Categories - 4 cols */}
+        <motion.div variants={itemVariants} className="card flex flex-col lg:col-span-4">
+          <div className="flex items-center justify-between border-b border-line px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-amber-500 to-pink-500 p-2 text-white shadow-sm">
                 <PieChartIcon className="h-4 w-4" />
               </div>
               <h2 className="text-base font-bold text-foreground">Top Categories</h2>
             </div>
-            <p className="text-xs text-muted-foreground">Click to filter</p>
           </div>
-          <div className="p-4">
+          <div className="flex-1 p-6">
             {hasCategoryData ? (
-              <>
-                <div className="h-44 w-full">
+              <div className="flex h-full flex-col">
+                <div className="relative h-48 w-full">
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total</span>
+                    <span className="font-display text-xl font-bold text-foreground">
+                      {formatBaseCurrency(categoryTotal)}
+                    </span>
+                  </div>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -320,129 +316,139 @@ export default function DashboardPage() {
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={42}
-                        outerRadius={72}
-                        paddingAngle={2}
+                        innerRadius={65}
+                        outerRadius={85}
+                        paddingAngle={3}
                         stroke={chartColors.pieStroke}
                         strokeWidth={2}
-                        onClick={(_, index) => openCategory(charts?.topCategories?.[index]?._id)}
+                        cornerRadius={4}
+                        onClick={(entry: any) => openCategory(entry?.payload?._id || entry?._id)}
                       >
                         {(charts?.topCategories ?? []).map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} className="cursor-pointer" />
+                          <Cell
+                            key={i}
+                            fill={PIE_COLORS[i % PIE_COLORS.length]}
+                            className="cursor-pointer transition-all duration-300 hover:opacity-80"
+                          />
                         ))}
                       </Pie>
                       <Tooltip
                         contentStyle={{
-                          borderRadius: 12,
+                          borderRadius: "12px",
                           backgroundColor: chartColors.tooltipBg,
                           border: `1px solid ${chartColors.tooltipBorder}`,
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-                          fontSize: 12,
+                          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+                          fontSize: "13px",
                           color: chartColors.tooltipText,
+                          backdropFilter: "blur(12px)",
                         }}
-                        formatter={((value: unknown) => {
+                        formatter={(value: any) => {
                           const numericValue = typeof value === "number" ? value : Number(value);
-                          return [formatBaseCurrency(numericValue), "Total"];
-                        }) as never}
+                          return [<span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>, ""];
+                        }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-3 space-y-1.5">
+                <div className="mt-6 flex-1 space-y-2 overflow-y-auto pr-2">
                   {(charts?.topCategories ?? []).map((c, i) => {
-                    const pct = categoryTotal > 0 ? Math.round((c.total / categoryTotal) * 100) : 0;
                     return (
                       <button
                         key={c.name}
                         onClick={() => openCategory(c._id)}
-                        className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs transition-colors hover:bg-subtle"
+                        className="group flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-subtle"
                       >
                         <span
-                          className="h-2.5 w-2.5 flex-shrink-0 rounded-sm"
+                          className="h-3 w-3 flex-shrink-0 rounded-full"
                           style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
                         />
-                        <span className="min-w-0 flex-1 truncate text-muted">{c.name}</span>
-                        <span className="font-semibold tabular-nums text-foreground">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground group-hover:text-foreground">
+                          {c.name}
+                        </span>
+                        <span className="font-display text-sm font-bold tabular-nums text-foreground">
                           {formatBaseCurrency(c.total)}
                         </span>
-                        <span className="w-9 text-right tabular-nums text-muted-foreground">{pct}%</span>
                       </button>
                     );
                   })}
                 </div>
-              </>
+              </div>
             ) : (
-              <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-pink-100 dark:from-amber-500/15 dark:to-pink-500/15">
-                  <PieChartIcon className="h-5 w-5 text-pink-500 dark:text-pink-400" />
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-pink-100 dark:from-amber-500/20 dark:to-pink-500/20">
+                  <PieChartIcon className="h-6 w-6 text-pink-500 dark:text-pink-400" />
                 </div>
-                <p className="text-sm font-medium text-muted">No category data</p>
-                <p className="mt-1 text-xs text-muted-foreground">Add expenses to see your top categories.</p>
+                <p className="text-sm font-semibold text-foreground">No category data</p>
+                <p className="mt-1 text-sm text-muted-foreground">Your top categories will appear here.</p>
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </motion.div>
 
-      {/* Recent expenses */}
-      <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
-        <div className="flex items-center justify-between border-b border-line px-6 py-4">
-          <h2 className="text-base font-bold text-foreground">Recent Expenses</h2>
-          <Link
-            href="/dashboard/expenses"
-            className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
-          >
-            View all
-          </Link>
-        </div>
-
-        {stats?.recentExpenses?.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-accent-100 dark:from-brand-500/15 dark:to-accent-500/15">
-              <Receipt className="h-6 w-6 text-brand-500 dark:text-brand-400" />
-            </div>
-            <p className="text-sm font-medium text-muted">No expenses yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Create your first expense to get started!</p>
-            <Link href="/dashboard/expenses/new" className="btn-primary mt-4 inline-flex text-sm">
-              Add Expense
+        {/* Recent Expenses - 12 cols */}
+        <motion.div variants={itemVariants} className="card lg:col-span-12">
+          <div className="flex items-center justify-between border-b border-line px-6 py-5">
+            <h2 className="text-base font-bold text-foreground">Recent Expenses</h2>
+            <Link
+              href="/dashboard/expenses"
+              className="group flex items-center gap-1 rounded-lg bg-subtle px-3 py-1.5 text-xs font-semibold text-foreground transition-all hover:bg-line"
+            >
+              View all <span className="transition-transform group-hover:translate-x-0.5">&rarr;</span>
             </Link>
           </div>
-        ) : (
-          <div className="divide-y divide-line">
-            {stats?.recentExpenses?.map((expense, i) => (
-              <Link
-                key={expense._id}
-                href={`/dashboard/expenses?expand=${expense._id}`}
-                className="flex items-center gap-4 px-6 py-3.5 transition-colors hover:bg-subtle/50"
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
-                {/* Category color dot */}
-                <span
-                  className={`inline-flex items-center rounded-lg px-2 py-1 text-[11px] font-semibold ${getCategoryColor(expense.category?.name)}`}
-                >
-                  {expense.category?.name}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{expense.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {expense.department?.name} &middot; {format(new Date(expense.date), "MMM d, yyyy")}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold tabular-nums text-foreground">
-                    {formatCurrency(expense.amount, expense.currency?.code)}
-                  </p>
-                  {expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null && (
-                    <p className="text-[11px] tabular-nums text-muted-foreground">
-                      {formatBaseCurrency(expense.amountInBaseCurrency)}
-                    </p>
-                  )}
-                </div>
+
+          {stats?.recentExpenses?.length === 0 ? (
+            <div className="px-6 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-100 to-accent-100 dark:from-brand-500/20 dark:to-accent-500/20">
+                <Receipt className="h-8 w-8 text-brand-500 dark:text-brand-400" />
+              </div>
+              <p className="text-base font-semibold text-foreground">No expenses yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">Create your first expense to get started!</p>
+              <Link href="/dashboard/expenses/new" className="btn-primary mt-5">
+                Add Expense
               </Link>
-            ))}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className="divide-y divide-line">
+              {stats?.recentExpenses?.map((expense) => (
+                <Link
+                  key={expense._id}
+                  href={`/dashboard/expenses?expand=${expense._id}`}
+                  className="group flex items-center gap-4 px-6 py-4 transition-all hover:bg-subtle/50"
+                >
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${getCategoryColor(
+                      expense.category?.name
+                    )}`}
+                  >
+                    <Receipt className="h-5 w-5 opacity-70" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-brand-500 dark:group-hover:text-brand-400">
+                      {expense.title}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="font-medium text-muted">{expense.department?.name}</span>
+                      <span>&bull;</span>
+                      <span>{format(new Date(expense.date), "MMM d, yyyy")}</span>
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-display text-base font-bold tabular-nums text-foreground">
+                      {formatCurrency(expense.amount, expense.currency?.code)}
+                    </p>
+                    {expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null && (
+                      <p className="text-[11px] tabular-nums text-muted-foreground">
+                        {formatBaseCurrency(expense.amountInBaseCurrency)}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }
