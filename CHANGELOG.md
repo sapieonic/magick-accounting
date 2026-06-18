@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/sapieonic/magick-accounting/compare/v1.0.0...v1.1.0) (2026-06-18)
+
+
+### Features
+
+* Dashboard Redesign ([#15](https://github.com/sapieonic/magick-accounting/issues/15)) ([b933517](https://github.com/sapieonic/magick-accounting/commit/b933517e123ca7447942620079dbebb562b8ae74))
+
 # 1.0.0 (2026-06-18)
 
 
