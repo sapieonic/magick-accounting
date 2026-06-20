@@ -23,7 +23,7 @@ export function StatCard({ label, value, icon: Icon, gradient, bgGlow, href }: S
       />
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
         <div
-          className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${gradient} text-white shadow-lg shadow-black/10 transition-transform duration-300 group-hover:scale-110 sm:h-14 sm:w-14`}
+          className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${gradient} text-white shadow-lg shadow-black/10 transition-transform duration-300 group-hover:scale-110 sm:h-14 sm:w-14`}
         >
           <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
         </div>

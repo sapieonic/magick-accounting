@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import pkg from "../../../package.json";
 
 interface SidebarProps {
   open: boolean;
@@ -149,6 +150,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <div className="mx-4 mb-6 rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50/50 to-white p-4 shadow-sm dark:border-brand-500/10 dark:from-brand-500/5 dark:to-transparent">
           <p className="font-heading text-xs font-bold text-brand-800 dark:text-brand-300">Need help?</p>
           <p className="mt-1 text-[11px] leading-relaxed text-brand-600/70 dark:text-brand-300/60">Contact your administrator for support.</p>
+          <div className="mt-3 flex items-center justify-between border-t border-brand-100/50 pt-3 dark:border-brand-500/10">
+            <p className="font-mono text-[10px] font-medium text-brand-600/50 dark:text-brand-300/50">v{pkg.version}</p>
+          </div>
         </div>
       )}
     </div>

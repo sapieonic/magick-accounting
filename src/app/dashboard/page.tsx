@@ -7,7 +7,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
 import { DashboardSkeleton } from "@/components/ui/Skeleton";
-import { Receipt, Building2, Tag, TrendingUp, BarChart3, PieChart as PieChartIcon } from "lucide-react";
+import { Receipt, Building2, Tag, TrendingUp, BarChart3, PieChart as PieChartIcon, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
@@ -25,6 +25,8 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
 } from "recharts";
 
 interface Stats {
@@ -47,6 +49,8 @@ interface Stats {
 interface ChartData {
   monthlyTrend: Array<{ month: string; key: string; total: number; count: number }>;
   topCategories: Array<{ _id?: string | null; name: string; total: number; count: number }>;
+  paymentSources: Array<{ name: string; total: number; count: number }>;
+  departmentSpend: Array<{ _id?: string | null; name: string; total: number; count: number }>;
 }
 
 const PIE_COLORS = [
@@ -380,6 +384,174 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-sm font-semibold text-foreground">No category data</p>
                 <p className="mt-1 text-sm text-muted-foreground">Your top categories will appear here.</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Department Spend - 8 cols */}
+        <motion.div variants={itemVariants} className="card flex flex-col lg:col-span-8">
+          <div className="flex items-center justify-between border-b border-line px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 p-2 text-white shadow-sm">
+                <Building2 className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-foreground">Department Spend</h2>
+                <p className="text-xs text-muted-foreground">Top spending departments</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 p-4 sm:p-6">
+            {(charts?.departmentSpend ?? []).length > 0 ? (
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={charts?.departmentSpend ?? []}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      stroke={chartColors.axis}
+                      tick={{ fontSize: 12, fill: chartColors.axis }}
+                      tickLine={false}
+                      axisLine={false}
+                      dy={10}
+                    />
+                    <YAxis
+                      stroke={chartColors.axis}
+                      tick={{ fontSize: 12, fill: chartColors.axis }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) =>
+                        v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
+                      }
+                    />
+                    <Tooltip
+                      cursor={{ fill: chartColors.grid, opacity: 0.4 }}
+                      contentStyle={{
+                        borderRadius: "16px",
+                        backgroundColor: chartColors.tooltipBg,
+                        border: `1px solid ${chartColors.tooltipBorder}`,
+                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+                        fontSize: "13px",
+                        color: chartColors.tooltipText,
+                        backdropFilter: "blur(12px)",
+                      }}
+                      formatter={(value: any, _name: any, item: any) => {
+                        const numericValue = typeof value === "number" ? value : Number(value);
+                        const count = item?.payload?.count ?? 0;
+                        return [
+                          <span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>,
+                          <span key="count" className="text-muted-foreground">{count} expenses</span>,
+                        ];
+                      }}
+                    />
+                    <Bar
+                      dataKey="total"
+                      fill="#8b5cf6"
+                      radius={[6, 6, 0, 0]}
+                      barSize={40}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-fuchsia-100 dark:from-violet-500/20 dark:to-fuchsia-500/20">
+                  <Building2 className="h-6 w-6 text-violet-500 dark:text-violet-400" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">No department data</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Payment Sources - 4 cols */}
+        <motion.div variants={itemVariants} className="card flex flex-col lg:col-span-4">
+          <div className="flex items-center justify-between border-b border-line px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white shadow-sm">
+                <CreditCard className="h-4 w-4" />
+              </div>
+              <h2 className="text-base font-bold text-foreground">Payment Source</h2>
+            </div>
+          </div>
+          <div className="flex-1 p-6">
+            {(charts?.paymentSources ?? []).length > 0 ? (
+              <div className="flex h-full flex-col">
+                <div className="relative h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={charts?.paymentSources ?? []}
+                        dataKey="total"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={3}
+                        stroke={chartColors.pieStroke}
+                        strokeWidth={2}
+                        cornerRadius={4}
+                      >
+                        {(charts?.paymentSources ?? []).map((entry, i) => (
+                          <Cell
+                            key={i}
+                            fill={entry.name === "company" ? "#10b981" : "#f59e0b"}
+                            className="transition-all duration-300 hover:opacity-80"
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: "12px",
+                          backgroundColor: chartColors.tooltipBg,
+                          border: `1px solid ${chartColors.tooltipBorder}`,
+                          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+                          fontSize: "13px",
+                          color: chartColors.tooltipText,
+                          backdropFilter: "blur(12px)",
+                        }}
+                        formatter={(value: any, _name: any, item: any) => {
+                          const numericValue = typeof value === "number" ? value : Number(value);
+                          return [<span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>, item.payload.name === "company" ? "Company Card" : "Out of Pocket"];
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-6 flex-1 space-y-3 pr-2">
+                  {(charts?.paymentSources ?? []).map((c) => {
+                    const isCompany = c.name === "company";
+                    return (
+                      <div
+                        key={c.name}
+                        className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5"
+                      >
+                        <span
+                          className="h-3 w-3 flex-shrink-0 rounded-full"
+                          style={{ background: isCompany ? "#10b981" : "#f59e0b" }}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
+                          {isCompany ? "Company Card" : "Out of Pocket"}
+                        </span>
+                        <span className="font-display text-sm font-bold tabular-nums text-foreground">
+                          {formatBaseCurrency(c.total)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-500/20 dark:to-teal-500/20">
+                  <CreditCard className="h-6 w-6 text-emerald-500 dark:text-emerald-400" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">No payment data</p>
               </div>
             )}
           </div>
