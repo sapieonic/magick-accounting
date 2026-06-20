@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/sapieonic/magick-accounting/compare/v1.2.0...v1.3.0) (2026-06-20)
+
+
+### Features
+
+* add dashboard analytics and UI tests ([#17](https://github.com/sapieonic/magick-accounting/issues/17)) ([6b0edb4](https://github.com/sapieonic/magick-accounting/commit/6b0edb4392efe6ac8405961863ff4cdfb210b3f8))
+
 # [1.2.0](https://github.com/sapieonic/magick-accounting/compare/v1.1.0...v1.2.0) (2026-06-20)
 
 
