@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/sapieonic/magick-accounting/compare/v1.3.0...v1.3.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* resolve duplicate Out of Pocket and compress InsightsHeader ([#18](https://github.com/sapieonic/magick-accounting/issues/18)) ([9fc8d12](https://github.com/sapieonic/magick-accounting/commit/9fc8d1267afeaecf2911dbe06d2a3a4ee656e9db))
+
 # [1.3.0](https://github.com/sapieonic/magick-accounting/compare/v1.2.0...v1.3.0) (2026-06-20)
 
 
