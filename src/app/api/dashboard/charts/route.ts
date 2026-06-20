@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
       { $match: filter },
       {
         $group: {
-          _id: "$paymentSource",
+          _id: { $cond: [{ $eq: ["$paymentSource", "company"] }, "company", "pocket"] },
           total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
           count: { $sum: 1 },
         },

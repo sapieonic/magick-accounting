@@ -13,7 +13,7 @@ export function InsightsHeader({ userName, insightsMessage }: InsightsHeaderProp
   const firstName = userName?.split(" ")[0] || "there";
 
   return (
-    <div className="relative flex flex-col gap-6 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-900 via-brand-800 to-accent-900 px-6 py-8 text-white shadow-xl shadow-brand-900/20 sm:flex-row sm:items-center sm:justify-between sm:px-10 sm:py-12">
+    <div className="relative flex flex-col gap-4 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-900 via-brand-800 to-accent-900 px-6 py-6 text-white shadow-xl shadow-brand-900/20 sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-8">
       {/* Background patterns */}
       <div className="bg-ledger-contrast absolute inset-0 opacity-20 mix-blend-overlay" />
       <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-brand-500/30 blur-[80px]" />
@@ -27,7 +27,7 @@ export function InsightsHeader({ userName, insightsMessage }: InsightsHeaderProp
           className="flex items-center gap-2"
         >
           <Sparkles className="h-5 w-5 text-accent-300" />
-          <p className="text-sm font-semibold tracking-wide text-accent-100 uppercase">
+          <p className="text-xs font-semibold tracking-wide text-accent-100 uppercase">
             Magick Insights
           </p>
         </motion.div>
@@ -36,7 +36,7 @@ export function InsightsHeader({ userName, insightsMessage }: InsightsHeaderProp
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="font-display mt-3 text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl"
+          className="font-display mt-2 text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl"
         >
           Welcome back, {firstName}.
         </motion.h1>
@@ -45,7 +45,7 @@ export function InsightsHeader({ userName, insightsMessage }: InsightsHeaderProp
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="mt-3 text-base text-brand-100/80 sm:text-lg"
+          className="mt-2 text-sm text-brand-100/80 sm:text-base"
         >
           {insightsMessage || "Here's an overview of your expenses and top categories."}
         </motion.p>
@@ -59,7 +59,7 @@ export function InsightsHeader({ userName, insightsMessage }: InsightsHeaderProp
       >
         <Link
           href="/dashboard/expenses/new"
-          className="group flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-5 py-3.5 text-sm font-semibold text-white backdrop-blur-md transition-all hover:bg-white/20 hover:shadow-lg hover:shadow-black/10 active:scale-95"
+          className="group flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-md transition-all hover:bg-white/20 hover:shadow-lg hover:shadow-black/10 active:scale-95"
         >
           <Plus className="h-5 w-5 transition-transform group-hover:rotate-90" />
           <span>New Expense</span>
