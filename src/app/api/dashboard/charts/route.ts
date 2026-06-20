@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/mongodb";
 import { buildExpenseFilter } from "@/lib/expense-query";
 import Expense from "@/models/Expense";
 import "@/models/Category";
+import "@/models/Department";
 
 const TREND_MONTHS = 6;
 const TOP_CATEGORIES = 6;
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
     date: { $gte: trendStart, $lt: trendEnd },
   };
 
-  const [trendRows, categoryRows] = await Promise.all([
+  const [trendRows, categoryRows, paymentSourceRows, departmentSpendRows] = await Promise.all([
     Expense.aggregate([
       { $match: trendFilter },
       {
@@ -77,6 +78,53 @@ export async function GET(req: NextRequest) {
         },
       },
     ]),
+    Expense.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: "$paymentSource",
+          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { total: -1 } },
+      {
+        $project: {
+          name: "$_id",
+          total: 1,
+          count: 1,
+        },
+      },
+    ]),
+    Expense.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: "$department",
+          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { total: -1 } },
+      { $limit: TOP_CATEGORIES },
+      {
+        $lookup: {
+          from: "departments",
+          localField: "_id",
+          foreignField: "_id",
+          as: "department",
+        },
+      },
+      { $unwind: { path: "$department", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: { $ifNull: ["$department._id", null] },
+          name: { $ifNull: ["$department.name", "Unknown"] },
+          total: 1,
+          count: 1,
+        },
+      },
+    ]),
   ]);
 
   const trendMap = new Map<string, { total: number; count: number }>();
@@ -95,5 +143,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     monthlyTrend,
     topCategories: categoryRows,
+    paymentSources: paymentSourceRows,
+    departmentSpend: departmentSpendRows,
   });
 }
