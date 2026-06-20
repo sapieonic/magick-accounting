@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/sapieonic/magick-accounting/compare/v1.1.0...v1.2.0) (2026-06-20)
+
+
+### Features
+
+* add user spend pie chart to admin dashboard and tests ([#16](https://github.com/sapieonic/magick-accounting/issues/16)) ([9baa1fe](https://github.com/sapieonic/magick-accounting/commit/9baa1fe89de2e4ce42a0ff21582ddd3b739e1213))
+
 # [1.1.0](https://github.com/sapieonic/magick-accounting/compare/v1.0.0...v1.1.0) (2026-06-18)
 
 
