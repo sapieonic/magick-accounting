@@ -122,10 +122,10 @@ describe("ExpensesPage", () => {
     const listRegion = await screen.findByLabelText("Expenses list");
     const analyticsRegion = await screen.findByLabelText("Expense analytics");
 
-    expect(listRegion).toHaveClass("lg:overflow-y-auto");
-    expect(listRegion).toHaveClass("lg:min-h-0");
-    expect(analyticsRegion).toHaveClass("lg:overflow-y-auto");
-    expect(analyticsRegion).toHaveClass("lg:min-h-0");
+    expect(listRegion).toHaveClass("xl:overflow-y-auto");
+    expect(listRegion).toHaveClass("xl:min-h-0");
+    expect(analyticsRegion).toHaveClass("xl:overflow-y-auto");
+    expect(analyticsRegion).toHaveClass("xl:min-h-0");
     expect(screen.getByText("Monthly Trend")).toBeInTheDocument();
     expect(screen.getByText("Top Categories")).toBeInTheDocument();
   });

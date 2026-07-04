@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/sapieonic/magick-accounting/compare/v1.3.1...v1.4.0) (2026-07-04)
+
+
+### Features
+
+* add live analytics rail to expenses page ([#19](https://github.com/sapieonic/magick-accounting/issues/19)) ([46df0ca](https://github.com/sapieonic/magick-accounting/commit/46df0ca02def5c85d9c8bed4dcd39c555172308f))
+
 ## [1.3.1](https://github.com/sapieonic/magick-accounting/compare/v1.3.0...v1.3.1) (2026-06-20)
 
 

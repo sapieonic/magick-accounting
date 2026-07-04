@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { useTheme } from "@/contexts/ThemeContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
@@ -16,25 +15,11 @@ import {
   Plus, Receipt, Trash2, Pencil, Paperclip, Download,
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
   Calendar, TrendingUp, User as UserIcon, Tag, X as XIcon,
-  BarChart3, PieChart as PieChartIcon, Building2, CreditCard,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-} from "recharts";
+import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
 
 interface Expense {
   _id: string;
@@ -59,22 +44,6 @@ interface ExpenseSummary {
   totalAmount: number;
   totalExpenses: number;
 }
-
-interface ExpenseChartData {
-  monthlyTrend: Array<{ month: string; key: string; total: number; count: number }>;
-  topCategories: Array<{ _id?: string | null; name: string; total: number; count: number }>;
-  paymentSources: Array<{ name: string; total: number; count: number }>;
-  departmentSpend: Array<{ _id?: string | null; name: string; total: number; count: number }>;
-}
-
-const PIE_COLORS = [
-  "#6366f1",
-  "#22d3ee",
-  "#a855f7",
-  "#10b981",
-  "#f59e0b",
-  "#ec4899",
-];
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Office Supplies": "bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
@@ -155,7 +124,6 @@ export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
   const { isAdmin } = useAuth();
-  const { theme } = useTheme();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -175,32 +143,20 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
-  const [charts, setCharts] = useState<ExpenseChartData | null>(null);
   const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loadingLookups, setLoadingLookups] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
+  const [view, setView] = useState<"list" | "insights">("list");
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
 
   const datePresetOptions = useMemo(() => getDatePresetOptions(), []);
-  const chartColors = useMemo(() => {
-    const isDark = theme === "dark";
-    return {
-      grid: isDark ? "#27272a" : "#e2e8f0",
-      axis: "#94a3b8",
-      tooltipBg: isDark ? "rgba(24, 24, 27, 0.9)" : "rgba(255, 255, 255, 0.9)",
-      tooltipBorder: isDark ? "#3f3f46" : "#e2e8f0",
-      tooltipText: isDark ? "#fafafa" : "#0f172a",
-      pieStroke: isDark ? "#18181b" : "#ffffff",
-    };
-  }, [theme]);
 
   const hasDateFilter =
     datePreset === CUSTOM_DATE_PRESET ? Boolean(customFrom || customTo) : Boolean(datePreset);
@@ -346,24 +302,9 @@ export default function ExpensesPage() {
     [buildFilterParams]
   );
 
-  const openCategory = useCallback((categoryId?: string | null) => {
-    if (categoryId) {
-      setFilterCats([categoryId]);
-    }
-  }, []);
-
-  const openDepartment = useCallback((departmentId?: string | null) => {
-    if (departmentId) {
-      setFilterDepts([departmentId]);
-    }
-  }, []);
-
-  const hasTrendData = (charts?.monthlyTrend ?? []).some((m) => m.total > 0);
-  const hasCategoryData = (charts?.topCategories ?? []).length > 0;
-  const hasPaymentSourceData = (charts?.paymentSources ?? []).length > 0;
-  const hasDepartmentSpendData = (charts?.departmentSpend ?? []).length > 0;
-  const categoryTotal = (charts?.topCategories ?? []).reduce((sum, c) => sum + c.total, 0);
-  const paymentSourceTotal = (charts?.paymentSources ?? []).reduce((sum, c) => sum + c.total, 0);
+  // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
+  // analytics rail reflects the active filters without refetching on "Load more".
+  const filterQuery = useMemo(() => buildFilterParams().toString(), [buildFilterParams]);
 
   // Commit any deletes still inside their undo window. Called before reloading
   // the list (so the server result matches the UI) and on unmount.
@@ -430,35 +371,6 @@ export default function ExpensesPage() {
       active = false;
     };
   }, [buildQueryParams, flushPendingDeletes, toast, urlSynced]);
-
-  useEffect(() => {
-    if (!urlSynced) return;
-    let active = true;
-
-    async function loadAnalytics() {
-      setLoadingAnalytics(true);
-      try {
-        const params = buildFilterParams();
-        const query = params.toString();
-        const data = await api.get(`/api/dashboard/charts${query ? `?${query}` : ""}`);
-        if (!active) return;
-        setCharts(data);
-      } catch {
-        if (active) {
-          toast("Failed to load analytics", "error");
-        }
-      } finally {
-        if (active) {
-          setLoadingAnalytics(false);
-        }
-      }
-    }
-
-    loadAnalytics();
-    return () => {
-      active = false;
-    };
-  }, [analyticsRefreshKey, buildFilterParams, toast, urlSynced]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -612,45 +524,7 @@ export default function ExpensesPage() {
         </Link>
       </div>
 
-      {/* Summary bar — sticky so the total stays visible on long lists */}
-      <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
-            <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                {datePreset === CUSTOM_DATE_PRESET
-                  ? "Custom Range"
-                  : datePreset
-                    ? datePresetOptions.find((o) => o.value === datePreset)?.label
-                    : "All Time"}{" "}
-                Total
-              </p>
-              <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
-                {formatBaseCurrency(summary.totalAmount)}
-              </p>
-            </div>
-            <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-              {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
-            </span>
-            {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
-          </div>
-
-          <button
-            onClick={handleExport}
-            disabled={exporting || expenses.length === 0}
-            className="btn-secondary text-sm"
-            title="Download the currently filtered expenses as CSV"
-          >
-            {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
-            Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
+      {/* Filters — full width so they visibly drive both the list and the analytics rail */}
       <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
         <div className="space-y-3">
           <div className="relative">
@@ -803,11 +677,83 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,34%)]">
+      {/* Mobile view toggle — hidden at xl where both panes are always visible */}
+      <div
+        className="flex rounded-xl border border-line bg-surface p-1 xl:hidden"
+        role="group"
+        aria-label="Toggle between expenses and insights"
+      >
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          aria-pressed={view === "list"}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+            view === "list"
+              ? "bg-brand-500 text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Expenses
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("insights")}
+          aria-pressed={view === "insights"}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+            view === "insights"
+              ? "bg-brand-500 text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Insights
+        </button>
+      </div>
+
+      {/* Split pane: expense list (left) + live analytics rail (right) */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        {/* Left: summary bar + expense list */}
         <section
           aria-label="Expenses list"
-          className="min-h-0 lg:min-h-0 lg:overflow-y-auto lg:pr-2"
+          className={`min-w-0 space-y-6 ${view === "list" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
         >
+          {/* Summary bar — sticky so the total stays visible on long lists */}
+          <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
+                <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
+                  <TrendingUp className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    {datePreset === CUSTOM_DATE_PRESET
+                      ? "Custom Range"
+                      : datePreset
+                        ? datePresetOptions.find((o) => o.value === datePreset)?.label
+                        : "All Time"}{" "}
+                    Total
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
+                    {formatBaseCurrency(summary.totalAmount)}
+                  </p>
+                </div>
+                <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                  {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
+                </span>
+                {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
+              </div>
+
+              <button
+                onClick={handleExport}
+                disabled={exporting || expenses.length === 0}
+                className="btn-secondary text-sm"
+                title="Download the currently filtered expenses as CSV"
+              >
+                {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
+                Export CSV
+              </button>
+            </div>
+          </div>
+
           {expenses.length === 0 ? (
             <EmptyState
               icon={<Receipt className="h-8 w-8" />}
@@ -1011,367 +957,35 @@ export default function ExpensesPage() {
           })}
 
           {/* Pagination */}
-              <div className="flex flex-col items-center gap-3 pt-3">
-                <p className="text-xs text-muted-foreground">
-                  Showing {expenses.length} of {totalCount} expense{totalCount !== 1 ? "s" : ""}
-                </p>
-                {expenses.length < totalCount && (
-                  <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
-                    {loadingMore ? (
-                      <>
-                        <Spinner size="sm" /> Loading...
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className="h-4 w-4" />
-                        Load more
-                      </>
-                    )}
-                  </button>
+          <div className="flex flex-col items-center gap-3 pt-3">
+            <p className="text-xs text-muted-foreground">
+              Showing {expenses.length} of {totalCount} expense{totalCount !== 1 ? "s" : ""}
+            </p>
+            {expenses.length < totalCount && (
+              <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
+                {loadingMore ? (
+                  <>
+                    <Spinner size="sm" /> Loading...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Load more
+                  </>
                 )}
-              </div>
+              </button>
+            )}
+          </div>
             </div>
           )}
         </section>
 
+        {/* Right: live analytics rail driven by the same filters as the list */}
         <aside
           aria-label="Expense analytics"
-          className="min-h-0 space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-2"
+          className={`min-w-0 ${view === "insights" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-foreground">Analytics</h2>
-              <p className="text-sm text-muted-foreground">Reflects the filters above.</p>
-            </div>
-            {loadingAnalytics && <InlineLoader label="Updating..." />}
-          </div>
-
-          <div className="card flex flex-col">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-              <div className="rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 p-2 text-white shadow-sm">
-                <BarChart3 className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-foreground">Monthly Trend</h3>
-                <p className="text-xs text-muted-foreground">Last 6 months overview</p>
-              </div>
-            </div>
-            <div className="p-4">
-              {hasTrendData ? (
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={charts?.monthlyTrend ?? []} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="expenseTrendFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
-                      <XAxis
-                        dataKey="month"
-                        stroke={chartColors.axis}
-                        tick={{ fontSize: 12, fill: chartColors.axis }}
-                        tickLine={false}
-                        axisLine={false}
-                        dy={10}
-                      />
-                      <YAxis
-                        stroke={chartColors.axis}
-                        tick={{ fontSize: 12, fill: chartColors.axis }}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(v: number) =>
-                          v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
-                        }
-                      />
-                      <Tooltip
-                        cursor={{ stroke: chartColors.axis, strokeWidth: 1, strokeDasharray: "4 4" }}
-                        contentStyle={{
-                          borderRadius: "12px",
-                          backgroundColor: chartColors.tooltipBg,
-                          border: `1px solid ${chartColors.tooltipBorder}`,
-                          color: chartColors.tooltipText,
-                          fontSize: "13px",
-                          backdropFilter: "blur(12px)",
-                        }}
-                        formatter={(value: any, _name: any, item: any) => {
-                          const numericValue = typeof value === "number" ? value : Number(value);
-                          const count = item?.payload?.count ?? 0;
-                          return [
-                            <span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>,
-                            <span key="count" className="text-muted-foreground">{count} expenses</span>,
-                          ];
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="total"
-                        stroke="#6366f1"
-                        strokeWidth={3}
-                        fill="url(#expenseTrendFill)"
-                        activeDot={{ r: 5, strokeWidth: 0, fill: "#6366f1" }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="flex h-52 flex-col items-center justify-center text-center">
-                  <BarChart3 className="mb-3 h-8 w-8 text-blue-400" />
-                  <p className="text-sm font-semibold text-foreground">No trend data yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Add matching expenses to see a trend.</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="card flex flex-col">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-              <div className="rounded-xl bg-gradient-to-br from-amber-500 to-pink-500 p-2 text-white shadow-sm">
-                <PieChartIcon className="h-4 w-4" />
-              </div>
-              <h3 className="text-base font-bold text-foreground">Top Categories</h3>
-            </div>
-            <div className="p-5">
-              {hasCategoryData ? (
-                <>
-                  <div className="relative h-48 w-full">
-                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total</span>
-                      <span className="text-xl font-bold tabular-nums text-foreground">
-                        {formatBaseCurrency(categoryTotal)}
-                      </span>
-                    </div>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={charts?.topCategories ?? []}
-                          dataKey="total"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={58}
-                          outerRadius={82}
-                          paddingAngle={3}
-                          stroke={chartColors.pieStroke}
-                          strokeWidth={2}
-                          cornerRadius={4}
-                          onClick={(entry: any) => openCategory(entry?.payload?._id || entry?._id)}
-                        >
-                          {(charts?.topCategories ?? []).map((_, i) => (
-                            <Cell
-                              key={i}
-                              fill={PIE_COLORS[i % PIE_COLORS.length]}
-                              className="cursor-pointer transition-opacity hover:opacity-80"
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: "12px",
-                            backgroundColor: chartColors.tooltipBg,
-                            border: `1px solid ${chartColors.tooltipBorder}`,
-                            color: chartColors.tooltipText,
-                            fontSize: "13px",
-                            backdropFilter: "blur(12px)",
-                          }}
-                          formatter={(value: any) => {
-                            const numericValue = typeof value === "number" ? value : Number(value);
-                            return [<span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>, ""];
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-4 max-h-44 space-y-2 overflow-y-auto pr-1">
-                    {(charts?.topCategories ?? []).map((c, i) => (
-                      <button
-                        key={c.name}
-                        onClick={() => openCategory(c._id)}
-                        className="group flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-subtle"
-                      >
-                        <span
-                          className="h-3 w-3 flex-shrink-0 rounded-full"
-                          style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground group-hover:text-foreground">
-                          {c.name}
-                        </span>
-                        <span className="text-sm font-bold tabular-nums text-foreground">
-                          {formatBaseCurrency(c.total)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="flex h-48 flex-col items-center justify-center text-center">
-                  <PieChartIcon className="mb-3 h-8 w-8 text-pink-400" />
-                  <p className="text-sm font-semibold text-foreground">No category data</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="card flex flex-col">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-              <div className="rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 p-2 text-white shadow-sm">
-                <Building2 className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-foreground">Department Spend</h3>
-                <p className="text-xs text-muted-foreground">Top spending departments</p>
-              </div>
-            </div>
-            <div className="p-4">
-              {hasDepartmentSpendData ? (
-                <div className="h-56 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={charts?.departmentSpend ?? []} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
-                      <XAxis
-                        dataKey="name"
-                        stroke={chartColors.axis}
-                        tick={{ fontSize: 11, fill: chartColors.axis }}
-                        tickLine={false}
-                        axisLine={false}
-                        dy={10}
-                      />
-                      <YAxis
-                        stroke={chartColors.axis}
-                        tick={{ fontSize: 12, fill: chartColors.axis }}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(v: number) =>
-                          v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
-                        }
-                      />
-                      <Tooltip
-                        cursor={{ fill: chartColors.grid, opacity: 0.4 }}
-                        contentStyle={{
-                          borderRadius: "12px",
-                          backgroundColor: chartColors.tooltipBg,
-                          border: `1px solid ${chartColors.tooltipBorder}`,
-                          color: chartColors.tooltipText,
-                          fontSize: "13px",
-                          backdropFilter: "blur(12px)",
-                        }}
-                        formatter={(value: any, _name: any, item: any) => {
-                          const numericValue = typeof value === "number" ? value : Number(value);
-                          const count = item?.payload?.count ?? 0;
-                          return [
-                            <span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>,
-                            <span key="count" className="text-muted-foreground">{count} expenses</span>,
-                          ];
-                        }}
-                      />
-                      <Bar
-                        dataKey="total"
-                        fill="#8b5cf6"
-                        radius={[6, 6, 0, 0]}
-                        barSize={32}
-                        onClick={(entry: any) => openDepartment(entry?.payload?._id || entry?._id)}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="flex h-40 flex-col items-center justify-center text-center">
-                  <Building2 className="mb-3 h-8 w-8 text-violet-400" />
-                  <p className="text-sm font-semibold text-foreground">No department data</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="card flex flex-col">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-              <div className="rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white shadow-sm">
-                <CreditCard className="h-4 w-4" />
-              </div>
-              <h3 className="text-base font-bold text-foreground">Payment Source</h3>
-            </div>
-            <div className="p-5">
-              {hasPaymentSourceData ? (
-                <>
-                  <div className="relative h-44 w-full">
-                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total</span>
-                      <span className="text-lg font-bold tabular-nums text-foreground">
-                        {formatBaseCurrency(paymentSourceTotal)}
-                      </span>
-                    </div>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={charts?.paymentSources ?? []}
-                          dataKey="total"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={50}
-                          outerRadius={76}
-                          paddingAngle={3}
-                          stroke={chartColors.pieStroke}
-                          strokeWidth={2}
-                          cornerRadius={4}
-                        >
-                          {(charts?.paymentSources ?? []).map((entry, i) => (
-                            <Cell
-                              key={i}
-                              fill={entry.name === "company" ? "#10b981" : "#f59e0b"}
-                              className="transition-opacity hover:opacity-80"
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: "12px",
-                            backgroundColor: chartColors.tooltipBg,
-                            border: `1px solid ${chartColors.tooltipBorder}`,
-                            color: chartColors.tooltipText,
-                            fontSize: "13px",
-                            backdropFilter: "blur(12px)",
-                          }}
-                          formatter={(value: any, _name: any, item: any) => {
-                            const numericValue = typeof value === "number" ? value : Number(value);
-                            return [
-                              <span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>,
-                              item.payload.name === "company" ? "Company account" : "Pocket",
-                            ];
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {(charts?.paymentSources ?? []).map((c) => {
-                      const isCompany = c.name === "company";
-                      return (
-                        <div key={c.name} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5">
-                          <span
-                            className="h-3 w-3 flex-shrink-0 rounded-full"
-                            style={{ background: isCompany ? "#10b981" : "#f59e0b" }}
-                          />
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
-                            {isCompany ? "Company account" : "Pocket"}
-                          </span>
-                          <span className="text-sm font-bold tabular-nums text-foreground">
-                            {formatBaseCurrency(c.total)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                <div className="flex h-40 flex-col items-center justify-center text-center">
-                  <CreditCard className="mb-3 h-8 w-8 text-emerald-400" />
-                  <p className="text-sm font-semibold text-foreground">No payment data</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <ExpenseAnalytics filterQuery={filterQuery} refreshKey={analyticsRefreshKey} />
         </aside>
       </div>
     </div>
