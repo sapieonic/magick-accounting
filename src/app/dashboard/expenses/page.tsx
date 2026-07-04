@@ -143,6 +143,7 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
+  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loadingLookups, setLoadingLookups] = useState(true);
@@ -275,32 +276,9 @@ export default function ExpensesPage() {
     };
   }, [isAdmin]);
 
-  const buildQueryParams = useCallback(
-    (pageNum: number, limit: number, includeSummary: boolean) => {
-      const params = new URLSearchParams({
-        page: String(pageNum),
-        limit: String(limit),
-      });
-      if (includeSummary) params.set("includeSummary", "true");
-
-      filterDepts.forEach((id) => params.append("department", id));
-      filterCats.forEach((id) => params.append("category", id));
-      if (filterUser) params.set("createdBy", filterUser);
-      if (search) params.set("search", search);
-
-      const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-
-      return params;
-    },
-    [filterDepts, filterCats, filterUser, search, datePreset, customFrom, customTo]
-  );
-
-  // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
-  // analytics rail reflects the active filters without refetching on "Load more".
-  const filterQuery = useMemo(() => {
+  const buildFilterParams = useCallback(() => {
     const params = new URLSearchParams();
+
     filterDepts.forEach((id) => params.append("department", id));
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
@@ -310,8 +288,23 @@ export default function ExpensesPage() {
     if (from) params.set("from", from);
     if (to) params.set("to", to);
 
-    return params.toString();
+    return params;
   }, [filterDepts, filterCats, filterUser, search, datePreset, customFrom, customTo]);
+
+  const buildQueryParams = useCallback(
+    (pageNum: number, limit: number, includeSummary: boolean) => {
+      const params = buildFilterParams();
+      params.set("page", String(pageNum));
+      params.set("limit", String(limit));
+      if (includeSummary) params.set("includeSummary", "true");
+      return params;
+    },
+    [buildFilterParams]
+  );
+
+  // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
+  // analytics rail reflects the active filters without refetching on "Load more".
+  const filterQuery = useMemo(() => buildFilterParams().toString(), [buildFilterParams]);
 
   // Commit any deletes still inside their undo window. Called before reloading
   // the list (so the server result matches the UI) and on unmount.
@@ -459,6 +452,7 @@ export default function ExpensesPage() {
       pendingDeletes.current.delete(expense._id);
       try {
         await api.delete(`/api/expenses/${expense._id}`);
+        setAnalyticsRefreshKey((key) => key + 1);
       } catch {
         restore();
         toast("Failed to delete expense", "error");
@@ -518,7 +512,7 @@ export default function ExpensesPage() {
   if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
   return (
-    <div className="animate-fade-in space-y-6">
+    <div className="animate-fade-in flex h-full min-h-0 flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Expenses</h1>
@@ -716,9 +710,12 @@ export default function ExpensesPage() {
       </div>
 
       {/* Split pane: expense list (left) + live analytics rail (right) */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         {/* Left: summary bar + expense list */}
-        <div className={`min-w-0 space-y-6 ${view === "list" ? "" : "hidden"} xl:block`}>
+        <section
+          aria-label="Expenses list"
+          className={`min-w-0 space-y-6 ${view === "list" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
+        >
           {/* Summary bar — sticky so the total stays visible on long lists */}
           <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -758,21 +755,21 @@ export default function ExpensesPage() {
           </div>
 
           {expenses.length === 0 ? (
-        <EmptyState
-          icon={<Receipt className="h-8 w-8" />}
-          title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
-          description={search || hasAnyFilter ? "Try adjusting your filters." : "Create your first expense to get started."}
-          action={
-            !search && !hasAnyFilter ? (
-              <Link href="/dashboard/expenses/new" className="btn-primary">
-                <Plus className="h-4 w-4" />
-                Add Expense
-              </Link>
-            ) : undefined
-          }
-        />
-      ) : (
-        <div className="space-y-2.5">
+            <EmptyState
+              icon={<Receipt className="h-8 w-8" />}
+              title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
+              description={search || hasAnyFilter ? "Try adjusting your filters." : "Create your first expense to get started."}
+              action={
+                !search && !hasAnyFilter ? (
+                  <Link href="/dashboard/expenses/new" className="btn-primary">
+                    <Plus className="h-4 w-4" />
+                    Add Expense
+                  </Link>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className="space-y-2.5">
           {expenses.map((expense) => {
             const isExpanded = expandedId === expense._id;
             const receiptUrl = receiptUrls[expense._id];
@@ -979,14 +976,17 @@ export default function ExpensesPage() {
               </button>
             )}
           </div>
-        </div>
-      )}
-        </div>
+            </div>
+          )}
+        </section>
 
         {/* Right: live analytics rail driven by the same filters as the list */}
-        <div className={`min-w-0 ${view === "insights" ? "" : "hidden"} xl:block`}>
-          <ExpenseAnalytics filterQuery={filterQuery} />
-        </div>
+        <aside
+          aria-label="Expense analytics"
+          className={`min-w-0 ${view === "insights" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
+        >
+          <ExpenseAnalytics filterQuery={filterQuery} refreshKey={analyticsRefreshKey} />
+        </aside>
       </div>
     </div>
   );

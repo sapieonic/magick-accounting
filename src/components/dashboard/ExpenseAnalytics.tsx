@@ -18,6 +18,7 @@ interface ChartData {
 
 interface ExpenseAnalyticsProps {
   filterQuery: string;
+  refreshKey?: number;
 }
 
 const EMPTY_CHARTS: ChartData = {
@@ -27,7 +28,7 @@ const EMPTY_CHARTS: ChartData = {
   departmentSpend: [],
 };
 
-export function ExpenseAnalytics({ filterQuery }: ExpenseAnalyticsProps) {
+export function ExpenseAnalytics({ filterQuery, refreshKey = 0 }: ExpenseAnalyticsProps) {
   const [charts, setCharts] = useState<ChartData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,7 +58,7 @@ export function ExpenseAnalytics({ filterQuery }: ExpenseAnalyticsProps) {
     return () => {
       active = false;
     };
-  }, [filterQuery]);
+  }, [filterQuery, refreshKey]);
 
   return (
     <div className="space-y-4">

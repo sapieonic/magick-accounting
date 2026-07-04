@@ -181,4 +181,43 @@ describe("MultiSelect", () => {
     await user.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
+
+  it("renders the options popover in a high-layer portal", async () => {
+    const user = userEvent.setup();
+    const { container } = renderMultiSelect();
+
+    await user.click(screen.getByRole("button", { name: /pick fruit/i }));
+
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.parentElement).toBe(document.body);
+    expect(listbox).toHaveClass("fixed");
+    expect(listbox.className).toMatch(/z-\[(?:[5-9]\d|[1-9]\d{2,})\]|z-(?:5[0-9]|[6-9][0-9])/);
+    expect(container).not.toContainElement(listbox);
+  });
+
+  it("keeps the portaled popover within a short viewport", async () => {
+    const user = userEvent.setup();
+    const { container } = renderMultiSelect();
+    const triggerWrapper = container.querySelector(".relative") as HTMLDivElement;
+    vi.spyOn(triggerWrapper, "getBoundingClientRect").mockReturnValue({
+      top: 40,
+      bottom: 70,
+      left: 24,
+      right: 224,
+      width: 200,
+      height: 30,
+      x: 24,
+      y: 40,
+      toJSON: () => ({}),
+    } as DOMRect);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(120);
+
+    await user.click(screen.getByRole("button", { name: /pick fruit/i }));
+
+    const listbox = screen.getByRole("listbox");
+    const top = Number.parseFloat(listbox.style.top);
+    const maxHeight = Number.parseFloat(listbox.style.maxHeight);
+    expect(top).toBeGreaterThanOrEqual(12);
+    expect(top + maxHeight).toBeLessThanOrEqual(108);
+  });
 });

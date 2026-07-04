@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { GET } from "./route";
 import { verifyAuth } from "@/lib/auth";
@@ -37,6 +37,10 @@ describe("GET /api/dashboard/charts", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("should return auth error if verifyAuth fails", async () => {
@@ -79,5 +83,27 @@ describe("GET /api/dashboard/charts", () => {
     expect(responseData.departmentSpend).toEqual([
       { _id: "dep1", name: "Engineering", total: 1000, count: 5 }
     ]);
+  });
+
+  it("intersects monthly trend aggregation with active date filters", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-04T12:00:00.000Z"));
+    vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "user-123", role: "admin" } as any);
+    vi.mocked(Expense.aggregate)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await GET({
+      url: "http://localhost/api/dashboard/charts?from=2026-06-15&to=2026-06-20",
+    } as NextRequest);
+
+    const trendPipeline = vi.mocked(Expense.aggregate).mock.calls[0][0] as any[];
+    const trendDateFilter = trendPipeline[0].$match.date;
+
+    expect(trendDateFilter.$gte.toISOString()).toBe("2026-06-15T00:00:00.000Z");
+    expect(trendDateFilter.$lte.toISOString()).toBe("2026-06-20T23:59:59.999Z");
+    expect(trendDateFilter.$lt.toISOString()).toBe("2026-08-01T00:00:00.000Z");
   });
 });
