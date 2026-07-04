@@ -19,6 +19,7 @@ import {
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
+import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
 
 interface Expense {
   _id: string;
@@ -149,6 +150,7 @@ export default function ExpensesPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
+  const [view, setView] = useState<"list" | "insights">("list");
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
@@ -294,6 +296,22 @@ export default function ExpensesPage() {
     },
     [filterDepts, filterCats, filterUser, search, datePreset, customFrom, customTo]
   );
+
+  // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
+  // analytics rail reflects the active filters without refetching on "Load more".
+  const filterQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    filterDepts.forEach((id) => params.append("department", id));
+    filterCats.forEach((id) => params.append("category", id));
+    if (filterUser) params.set("createdBy", filterUser);
+    if (search) params.set("search", search);
+
+    const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+
+    return params.toString();
+  }, [filterDepts, filterCats, filterUser, search, datePreset, customFrom, customTo]);
 
   // Commit any deletes still inside their undo window. Called before reloading
   // the list (so the server result matches the UI) and on unmount.
@@ -512,45 +530,7 @@ export default function ExpensesPage() {
         </Link>
       </div>
 
-      {/* Summary bar — sticky so the total stays visible on long lists */}
-      <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
-            <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                {datePreset === CUSTOM_DATE_PRESET
-                  ? "Custom Range"
-                  : datePreset
-                    ? datePresetOptions.find((o) => o.value === datePreset)?.label
-                    : "All Time"}{" "}
-                Total
-              </p>
-              <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
-                {formatBaseCurrency(summary.totalAmount)}
-              </p>
-            </div>
-            <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-              {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
-            </span>
-            {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
-          </div>
-
-          <button
-            onClick={handleExport}
-            disabled={exporting || expenses.length === 0}
-            className="btn-secondary text-sm"
-            title="Download the currently filtered expenses as CSV"
-          >
-            {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
-            Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
+      {/* Filters — full width so they visibly drive both the list and the analytics rail */}
       <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
         <div className="space-y-3">
           <div className="relative">
@@ -703,7 +683,81 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      {expenses.length === 0 ? (
+      {/* Mobile view toggle — hidden at xl where both panes are always visible */}
+      <div
+        className="flex rounded-xl border border-line bg-surface p-1 xl:hidden"
+        role="group"
+        aria-label="Toggle between expenses and insights"
+      >
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          aria-pressed={view === "list"}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+            view === "list"
+              ? "bg-brand-500 text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Expenses
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("insights")}
+          aria-pressed={view === "insights"}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+            view === "insights"
+              ? "bg-brand-500 text-white shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Insights
+        </button>
+      </div>
+
+      {/* Split pane: expense list (left) + live analytics rail (right) */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        {/* Left: summary bar + expense list */}
+        <div className={`min-w-0 space-y-6 ${view === "list" ? "" : "hidden"} xl:block`}>
+          {/* Summary bar — sticky so the total stays visible on long lists */}
+          <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
+                <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
+                  <TrendingUp className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    {datePreset === CUSTOM_DATE_PRESET
+                      ? "Custom Range"
+                      : datePreset
+                        ? datePresetOptions.find((o) => o.value === datePreset)?.label
+                        : "All Time"}{" "}
+                    Total
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
+                    {formatBaseCurrency(summary.totalAmount)}
+                  </p>
+                </div>
+                <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                  {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
+                </span>
+                {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
+              </div>
+
+              <button
+                onClick={handleExport}
+                disabled={exporting || expenses.length === 0}
+                className="btn-secondary text-sm"
+                title="Download the currently filtered expenses as CSV"
+              >
+                {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          {expenses.length === 0 ? (
         <EmptyState
           icon={<Receipt className="h-8 w-8" />}
           title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
@@ -927,6 +981,13 @@ export default function ExpensesPage() {
           </div>
         </div>
       )}
+        </div>
+
+        {/* Right: live analytics rail driven by the same filters as the list */}
+        <div className={`min-w-0 ${view === "insights" ? "" : "hidden"} xl:block`}>
+          <ExpenseAnalytics filterQuery={filterQuery} />
+        </div>
+      </div>
     </div>
   );
 }
