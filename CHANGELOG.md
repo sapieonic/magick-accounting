@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/sapieonic/magick-accounting/compare/v1.4.0...v1.4.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* stabilize expenses dropdown and analytics layout ([#20](https://github.com/sapieonic/magick-accounting/issues/20)) ([9c1afdf](https://github.com/sapieonic/magick-accounting/commit/9c1afdf273fd46f7ced73bff508a61b4ded1e1fa))
+
 # [1.4.0](https://github.com/sapieonic/magick-accounting/compare/v1.3.1...v1.4.0) (2026-07-04)
 
 
