@@ -9,6 +9,36 @@ import "@/models/Department";
 const TREND_MONTHS = 6;
 const TOP_CATEGORIES = 6;
 
+interface DateRangeFilter {
+  $gte?: Date;
+  $lte?: Date;
+  $lt?: Date;
+}
+
+function getDateBoundary(value: unknown): Date | undefined {
+  return value instanceof Date ? value : undefined;
+}
+
+function buildTrendDateFilter(
+  existingDateFilter: unknown,
+  trendStart: Date,
+  trendEnd: Date
+): DateRangeFilter {
+  const existing =
+    existingDateFilter && typeof existingDateFilter === "object"
+      ? (existingDateFilter as DateRangeFilter)
+      : {};
+  const existingStart = getDateBoundary(existing.$gte);
+  const existingEnd = getDateBoundary(existing.$lte);
+  const existingExclusiveEnd = getDateBoundary(existing.$lt);
+
+  return {
+    $gte: existingStart && existingStart > trendStart ? existingStart : trendStart,
+    ...(existingEnd ? { $lte: existingEnd } : {}),
+    $lt: existingExclusiveEnd && existingExclusiveEnd < trendEnd ? existingExclusiveEnd : trendEnd,
+  };
+}
+
 function buildMonthBuckets(): { key: string; label: string; start: Date; end: Date }[] {
   const now = new Date();
   const buckets: { key: string; label: string; start: Date; end: Date }[] = [];
@@ -35,7 +65,7 @@ export async function GET(req: NextRequest) {
 
   const trendFilter = {
     ...filter,
-    date: { $gte: trendStart, $lt: trendEnd },
+    date: buildTrendDateFilter(filter.date, trendStart, trendEnd),
   };
 
   const [trendRows, categoryRows, paymentSourceRows, departmentSpendRows] = await Promise.all([
