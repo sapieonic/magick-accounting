@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/sapieonic/magick-accounting/compare/v1.4.1...v1.5.0) (2026-07-18)
+
+
+### Features
+
+* add GST amount tracking to expenses ([#21](https://github.com/sapieonic/magick-accounting/issues/21)) ([a98305d](https://github.com/sapieonic/magick-accounting/commit/a98305dcc7687ee62314d990fa05339d4e1f63fd))
+
 ## [1.4.1](https://github.com/sapieonic/magick-accounting/compare/v1.4.0...v1.4.1) (2026-07-04)
 
 
