@@ -57,14 +57,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const newAmount = body.amount !== undefined ? body.amount : expense.amount;
     const newCurrencyId = body.currency || expense.currency;
 
-    // GST is a component of the total. Revalidate it against the effective
-    // amount whenever GST or amount is part of this update.
-    const gstProvided = body.gstAmount !== undefined;
-    const newGstAmount = gstProvided
-      ? normalizeGstAmount(body.gstAmount, newAmount)
-      : normalizeGstAmount(expense.gstAmount, newAmount);
-    if (gstProvided) {
+    // GST is a component of the total, so it must stay within the effective amount.
+    let newGstAmount: number | null;
+    if (body.gstAmount !== undefined) {
+      // Client explicitly set GST: validate and reject if it exceeds the total.
+      newGstAmount = normalizeGstAmount(body.gstAmount, newAmount);
       body.gstAmount = newGstAmount;
+    } else if (expense.gstAmount != null) {
+      // Amount/currency changed without touching GST. Clamp the stored GST down
+      // to the (possibly lower) total rather than rejecting an unrelated edit.
+      newGstAmount = Math.min(expense.gstAmount, newAmount);
+      if (newGstAmount !== expense.gstAmount) body.gstAmount = newGstAmount;
+    } else {
+      newGstAmount = null;
     }
 
     if (newCurrencyId) {

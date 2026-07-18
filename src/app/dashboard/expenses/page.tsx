@@ -870,7 +870,7 @@ export default function ExpensesPage() {
                             </p>
                           )}
                         </div>
-                        {expense.gstAmount != null && (
+                        {expense.gstAmount != null && expense.gstAmount > 0 && (
                           <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GST (incl.)</p>
                             <p className="mt-1 text-base font-bold tabular-nums text-foreground">
