@@ -44,6 +44,7 @@ export default function EditExpensePage() {
   const emptyForm = {
     title: "",
     amount: "",
+    gstAmount: "",
     currency: "",
     category: "",
     department: "",
@@ -92,6 +93,7 @@ export default function EditExpensePage() {
         const loadedForm = {
           title: exp.title,
           amount: exp.amount.toString(),
+          gstAmount: exp.gstAmount != null ? exp.gstAmount.toString() : "",
           currency: exp.currency?._id || "",
           category: exp.category?._id || "",
           department: exp.department?._id || "",
@@ -148,12 +150,20 @@ export default function EditExpensePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const gstAmount = form.gstAmount ? parseFloat(form.gstAmount) : null;
+    if (gstAmount != null && gstAmount > parseFloat(form.amount)) {
+      toast("GST amount cannot exceed the total amount", "error");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       const updateData: Record<string, unknown> = {
         ...form,
         amount: parseFloat(form.amount),
+        gstAmount,
       };
 
       if (newReceipt?.file) {
@@ -252,6 +262,26 @@ export default function EditExpensePage() {
                 className="input-field"
               />
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="gstAmount" className="mb-1.5 block text-sm font-medium text-muted">
+              GST Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"})
+              <span className="ml-1 text-xs font-normal text-muted-foreground">— optional</span>
+            </label>
+            <input
+              id="gstAmount"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.gstAmount}
+              onChange={(e) => setForm({ ...form, gstAmount: e.target.value })}
+              placeholder="0.00"
+              className="input-field tabular-nums"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Tax portion already included in the amount above. Leave blank if not applicable.
+            </p>
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">

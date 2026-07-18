@@ -3,6 +3,7 @@ import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
+import { normalizeGstAmount } from "@/lib/expense";
 import "@/models/Category";
 import "@/models/Department";
 import "@/models/User";
@@ -56,11 +57,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const newAmount = body.amount !== undefined ? body.amount : expense.amount;
     const newCurrencyId = body.currency || expense.currency;
 
+    // GST is a component of the total, so it must stay within the effective amount.
+    let newGstAmount: number | null;
+    if (body.gstAmount !== undefined) {
+      // Client explicitly set GST: validate and reject if it exceeds the total.
+      newGstAmount = normalizeGstAmount(body.gstAmount, newAmount);
+      body.gstAmount = newGstAmount;
+    } else if (expense.gstAmount != null) {
+      // Amount/currency changed without touching GST. Clamp the stored GST down
+      // to the (possibly lower) total rather than rejecting an unrelated edit.
+      newGstAmount = Math.min(expense.gstAmount, newAmount);
+      if (newGstAmount !== expense.gstAmount) body.gstAmount = newGstAmount;
+    } else {
+      newGstAmount = null;
+    }
+
     if (newCurrencyId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const curr: any = await Currency.findById(newCurrencyId).lean();
       if (curr) {
         body.amountInBaseCurrency = newAmount * curr.rateToBase;
+        body.gstAmountInBaseCurrency =
+          newGstAmount != null ? newGstAmount * curr.rateToBase : null;
       }
     }
 

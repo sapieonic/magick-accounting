@@ -38,6 +38,23 @@ export async function POST() {
       }
     }
 
+    // Seed the "Casual" department (non-default) if it doesn't exist yet
+    const existingCasual = await Department.findOne({ name: "Casual" });
+    if (!existingCasual) {
+      let creator = await User.findOne({ role: "master_admin" });
+      if (!creator) {
+        creator = await User.findOne();
+      }
+      if (creator) {
+        await Department.create({
+          name: "Casual",
+          description: "Casual expenses",
+          createdBy: creator._id,
+          isDefault: false,
+        });
+      }
+    }
+
     // Seed default allowed domain from env
     const masterEmail = process.env.MASTER_ADMIN_EMAIL;
     if (masterEmail) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
+import { normalizeGstAmount } from "@/lib/expense";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
 import "@/models/Category";
@@ -48,15 +49,18 @@ export async function POST(req: NextRequest) {
     await connectDB();
     const body = await req.json();
 
-    // Resolve currency and compute amountInBaseCurrency
+    // Validate GST (a component of the total) before touching the DB.
+    const gstAmount = normalizeGstAmount(body.gstAmount, body.amount);
+
+    // Resolve currency and compute the base-currency values at the entry rate.
     let currencyId = body.currency;
-    let amountInBaseCurrency = body.amount;
+    let rateToBase = 1;
 
     if (currencyId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const curr: any = await Currency.findById(currencyId).lean();
       if (curr) {
-        amountInBaseCurrency = body.amount * curr.rateToBase;
+        rateToBase = curr.rateToBase;
       }
     } else {
       // Default to base currency
@@ -69,8 +73,10 @@ export async function POST(req: NextRequest) {
 
     const expense = await Expense.create({
       ...body,
+      gstAmount,
       currency: currencyId,
-      amountInBaseCurrency,
+      amountInBaseCurrency: body.amount * rateToBase,
+      gstAmountInBaseCurrency: gstAmount != null ? gstAmount * rateToBase : null,
       createdBy: authResult._id,
     });
 

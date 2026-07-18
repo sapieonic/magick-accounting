@@ -15,6 +15,7 @@ const PDF_TYPE = "application/pdf";
 interface ExtractedReceipt {
   title?: string | null;
   amount?: number | string | null;
+  gstAmount?: number | string | null;
   currencyCode?: string | null;
   category?: string | null;
   date?: string | null;
@@ -77,7 +78,8 @@ export async function POST(req: NextRequest) {
     const instruction = `You are an assistant that extracts structured expense data from a receipt image.
 Return ONLY a JSON object (no markdown, no commentary) with exactly these keys:
 - "title": a short descriptive title for the expense (merchant name and/or what was purchased)
-- "amount": the total amount paid as a plain number, no currency symbol or thousands separators
+- "amount": the total amount paid (grand total, inclusive of any tax) as a plain number, no currency symbol or thousands separators
+- "gstAmount": the total GST/tax amount included in that total as a plain number (sum CGST + SGST + IGST if shown separately), or null if no GST/tax is shown. It must never be greater than "amount"
 - "currencyCode": the ISO 4217 currency code. Must be one of [${currencyCodes.join(", ")}], or null if it cannot be determined
 - "category": the single best-matching category. Must be exactly one of [${categoryNames.join(", ")}], or null if none clearly fits
 - "date": the receipt/transaction date in YYYY-MM-DD format. Use "${today}" if no date is visible
@@ -115,10 +117,23 @@ If a value cannot be determined, use null (except "date"). Never invent values.`
       typeof parsed.amount === "number"
         ? parsed.amount
         : parseFloat(String(parsed.amount ?? ""));
+    const amount = Number.isFinite(amountNum) && amountNum >= 0 ? amountNum : null;
+
+    // GST is a portion of the total, so only accept it when it's a valid
+    // non-negative number that doesn't exceed the extracted amount.
+    const gstNum =
+      typeof parsed.gstAmount === "number"
+        ? parsed.gstAmount
+        : parseFloat(String(parsed.gstAmount ?? ""));
+    const gstAmount =
+      Number.isFinite(gstNum) && gstNum >= 0 && (amount == null || gstNum <= amount)
+        ? gstNum
+        : null;
 
     return NextResponse.json({
       title: typeof parsed.title === "string" ? parsed.title : "",
-      amount: Number.isFinite(amountNum) && amountNum >= 0 ? amountNum : null,
+      amount,
+      gstAmount,
       date:
         typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)
           ? parsed.date

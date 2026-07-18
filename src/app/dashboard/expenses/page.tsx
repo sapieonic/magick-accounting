@@ -26,6 +26,7 @@ interface Expense {
   title: string;
   amount: number;
   amountInBaseCurrency?: number;
+  gstAmount?: number | null;
   currency?: { _id: string; code: string; name: string; symbol: string; isBase: boolean };
   date: string;
   description: string;
@@ -399,6 +400,7 @@ export default function ExpensesPage() {
         format(new Date(e.date), "yyyy-MM-dd"),
         e.title,
         e.amount,
+        e.gstAmount ?? "",
         e.currency?.code ?? "",
         e.amountInBaseCurrency ?? e.amount,
         e.category?.name ?? "",
@@ -408,7 +410,7 @@ export default function ExpensesPage() {
         e.description ?? "",
       ]);
       const csv = buildCsv(
-        ["Date", "Title", "Amount", "Currency", "Amount (Base)", "Category", "Department", "Paid From", "Submitted By", "Description"],
+        ["Date", "Title", "Amount", "GST", "Currency", "Amount (Base)", "Category", "Department", "Paid From", "Submitted By", "Description"],
         rows
       );
       downloadCsv(`expenses-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
@@ -868,6 +870,14 @@ export default function ExpensesPage() {
                             </p>
                           )}
                         </div>
+                        {expense.gstAmount != null && expense.gstAmount > 0 && (
+                          <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GST (incl.)</p>
+                            <p className="mt-1 text-base font-bold tabular-nums text-foreground">
+                              {formatCurrency(expense.gstAmount, expense.currency?.code)}
+                            </p>
+                          </div>
+                        )}
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Category</p>
                           <span className={`mt-1.5 inline-flex rounded-md border px-2.5 py-0.5 text-xs font-semibold ${catColor}`}>
