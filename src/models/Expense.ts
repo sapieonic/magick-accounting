@@ -7,6 +7,8 @@ export const PAYMENT_SOURCES: PaymentSource[] = ["pocket", "company"];
 export interface IExpense extends Document {
   title: string;
   amount: number;
+  gstAmount?: number;
+  gstAmountInBaseCurrency?: number;
   currency?: mongoose.Types.ObjectId;
   amountInBaseCurrency?: number;
   category: mongoose.Types.ObjectId;
@@ -25,6 +27,9 @@ const ExpenseSchema = new Schema<IExpense>(
   {
     title: { type: String, required: true, trim: true },
     amount: { type: Number, required: true, min: 0 },
+    // GST (tax) portion included in `amount`, in the expense's own currency.
+    gstAmount: { type: Number, default: null, min: 0 },
+    gstAmountInBaseCurrency: { type: Number, default: null, min: 0 },
     currency: { type: Schema.Types.ObjectId, ref: "Currency", default: null },
     amountInBaseCurrency: { type: Number, default: null },
     category: { type: Schema.Types.ObjectId, ref: "Category", required: true },

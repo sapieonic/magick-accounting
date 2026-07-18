@@ -3,6 +3,7 @@ import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
+import { normalizeGstAmount } from "@/lib/expense";
 import "@/models/Category";
 import "@/models/Department";
 import "@/models/User";
@@ -56,11 +57,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const newAmount = body.amount !== undefined ? body.amount : expense.amount;
     const newCurrencyId = body.currency || expense.currency;
 
+    // GST is a component of the total. Revalidate it against the effective
+    // amount whenever GST or amount is part of this update.
+    const gstProvided = body.gstAmount !== undefined;
+    const newGstAmount = gstProvided
+      ? normalizeGstAmount(body.gstAmount, newAmount)
+      : normalizeGstAmount(expense.gstAmount, newAmount);
+    if (gstProvided) {
+      body.gstAmount = newGstAmount;
+    }
+
     if (newCurrencyId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const curr: any = await Currency.findById(newCurrencyId).lean();
       if (curr) {
         body.amountInBaseCurrency = newAmount * curr.rateToBase;
+        body.gstAmountInBaseCurrency =
+          newGstAmount != null ? newGstAmount * curr.rateToBase : null;
       }
     }
 
