@@ -13,6 +13,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import { Users, Shield, ShieldCheck, User as UserIcon, PieChartIcon, CreditCard } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { formatBaseCurrency } from "@/lib/currency";
+import { PAYMENT_SOURCE_COLORS, PAYMENT_SOURCE_LABELS, useChartColors } from "@/components/dashboard/charts/chartTheme";
 
 interface UserRecord {
   _id: string;
@@ -27,10 +28,14 @@ interface UserRecord {
 }
 
 const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#14b8a6"];
+const SOURCE_ROW_HEIGHT = 36;
+const SOURCE_CHART_MIN_HEIGHT = 256;
+const SOURCE_CHART_MAX_HEIGHT = 320;
 
 export default function AdminUsersPage() {
   useTitle("Users");
   const { isAdmin, isMasterAdmin } = useAuth();
+  const chartColors = useChartColors();
   const router = useRouter();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -99,13 +104,17 @@ export default function AdminUsersPage() {
     }))
     .sort((a, b) => (b.company + b.pocket) - (a.company + a.pocket));
 
+  const showBothCharts = pieData.length > 0 && sourceData.length > 0;
+  const sourceChartHeight = Math.max(SOURCE_CHART_MIN_HEIGHT, sourceData.length * SOURCE_ROW_HEIGHT);
+
   const tooltipStyle = {
     borderRadius: "12px",
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    border: "1px solid #e2e8f0",
+    backgroundColor: chartColors.tooltipBg,
+    border: `1px solid ${chartColors.tooltipBorder}`,
     boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
     fontSize: "13px",
-    color: "#0f172a",
+    color: chartColors.tooltipText,
+    backdropFilter: "blur(12px)",
   };
 
   return (
@@ -129,15 +138,15 @@ export default function AdminUsersPage() {
       ) : (
         <div className="space-y-6">
           {(pieData.length > 0 || sourceData.length > 0) && (
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className={showBothCharts ? "grid gap-6 lg:grid-cols-2" : ""}>
               {pieData.length > 0 && (
                 <div className="card p-6">
                   <div className="mb-6 flex items-center gap-2">
                     <PieChartIcon className="h-5 w-5 text-muted-foreground" />
                     <h2 className="text-lg font-semibold text-foreground">Spend by User</h2>
                   </div>
-                  <div className="flex flex-col md:flex-row items-center gap-8">
-                    <div className="h-64 w-full md:w-1/2">
+                  <div className="flex flex-col items-center gap-6">
+                    <div className="h-56 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -162,7 +171,7 @@ export default function AdminUsersPage() {
                           </Pie>
                           <Tooltip
                             contentStyle={tooltipStyle}
-                            itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+                            itemStyle={{ color: chartColors.tooltipText, fontWeight: 600 }}
                             formatter={(value: any, name: any) => {
                               const numericValue = typeof value === "number" ? value : Number(value);
                               return [formatBaseCurrency(numericValue), name];
@@ -171,7 +180,7 @@ export default function AdminUsersPage() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                    <div className="flex-1 w-full max-h-64 overflow-y-auto pr-2">
+                    <div className="w-full max-h-48 overflow-y-auto pr-2">
                       <div className="flex flex-col space-y-3">
                         {pieData.map((entry, i) => (
                           <div key={entry.id} className="flex items-center justify-between text-sm">
@@ -180,7 +189,7 @@ export default function AdminUsersPage() {
                                 className="h-3 w-3 rounded-full shrink-0"
                                 style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
                               />
-                              <span className="font-medium text-foreground truncate max-w-[150px]">{entry.name}</span>
+                              <span className="font-medium text-foreground truncate max-w-[180px]">{entry.name}</span>
                             </div>
                             <span className="font-semibold text-foreground whitespace-nowrap pl-2">
                               {formatBaseCurrency(entry.value || 0)}
@@ -201,56 +210,67 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="mb-4 flex flex-wrap items-center gap-4 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: "#10b981" }} />
-                      <span className="text-muted-foreground">Company Card</span>
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: PAYMENT_SOURCE_COLORS.company }} />
+                      <span className="text-muted-foreground">{PAYMENT_SOURCE_LABELS.company}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: "#f59e0b" }} />
-                      <span className="text-muted-foreground">Out of Pocket</span>
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: PAYMENT_SOURCE_COLORS.pocket }} />
+                      <span className="text-muted-foreground">{PAYMENT_SOURCE_LABELS.pocket}</span>
                     </div>
                   </div>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={sourceData}
-                        layout="vertical"
-                        margin={{ top: 4, right: 12, left: 4, bottom: 0 }}
-                      >
-                        <XAxis
-                          type="number"
-                          tick={{ fontSize: 12, fill: "#94a3b8" }}
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(v: number) =>
-                            v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
-                          }
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          width={88}
-                          tick={{ fontSize: 12, fill: "#64748b" }}
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(name: string) =>
-                            name.length > 12 ? `${name.slice(0, 11)}…` : name
-                          }
-                        />
-                        <Tooltip
-                          cursor={{ fill: "#e2e8f0", opacity: 0.4 }}
-                          contentStyle={tooltipStyle}
-                          formatter={(value: any, name: any) => {
-                            const numericValue = typeof value === "number" ? value : Number(value);
-                            return [
-                              formatBaseCurrency(numericValue),
-                              name === "company" ? "Company Card" : "Out of Pocket",
-                            ];
-                          }}
-                        />
-                        <Bar dataKey="company" stackId="spend" fill="#10b981" radius={[0, 0, 0, 0]} barSize={18} />
-                        <Bar dataKey="pocket" stackId="spend" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={18} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div
+                    className="w-full overflow-y-auto"
+                    style={{ maxHeight: SOURCE_CHART_MAX_HEIGHT }}
+                  >
+                    <div
+                      style={{ height: sourceChartHeight }}
+                      aria-label="Company versus pocket spend by user"
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={sourceData}
+                          layout="vertical"
+                          margin={{ top: 4, right: 12, left: 4, bottom: 0 }}
+                        >
+                          <XAxis
+                            type="number"
+                            tick={{ fontSize: 12, fill: chartColors.axis }}
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(v: number) =>
+                              v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
+                            }
+                          />
+                          <YAxis
+                            type="category"
+                            dataKey="id"
+                            interval={0}
+                            width={88}
+                            tick={{ fontSize: 12, fill: chartColors.axis }}
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(id: string) => {
+                              const name = sourceData.find((row) => row.id === id)?.name ?? id;
+                              return name.length > 12 ? `${name.slice(0, 11)}…` : name;
+                            }}
+                          />
+                          <Tooltip
+                            cursor={{ fill: chartColors.grid, opacity: 0.4 }}
+                            contentStyle={tooltipStyle}
+                            formatter={(value: any, name: any) => {
+                              const numericValue = typeof value === "number" ? value : Number(value);
+                              if (!numericValue) return null;
+                              return [
+                                formatBaseCurrency(numericValue),
+                                name === "company" ? PAYMENT_SOURCE_LABELS.company : PAYMENT_SOURCE_LABELS.pocket,
+                              ];
+                            }}
+                          />
+                          <Bar dataKey="company" stackId="spend" fill={PAYMENT_SOURCE_COLORS.company} barSize={18} />
+                          <Bar dataKey="pocket" stackId="spend" fill={PAYMENT_SOURCE_COLORS.pocket} barSize={18} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </div>
               )}

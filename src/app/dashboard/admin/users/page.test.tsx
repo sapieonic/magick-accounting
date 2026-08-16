@@ -25,6 +25,10 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock("@/contexts/ThemeContext", () => ({
+  useTheme: vi.fn(() => ({ theme: "light" })),
+}));
+
 // Mock useTitle
 vi.mock("@/hooks/useTitle", () => ({
   useTitle: vi.fn(),
@@ -107,6 +111,41 @@ describe("AdminUsersPage", () => {
     expect(barData).toHaveLength(2);
     expect(barData[0]).toMatchObject({ name: "Alice", company: 300, pocket: 200 });
     expect(barData[1]).toMatchObject({ name: "Bob", company: 0, pocket: 300 });
+  });
+
+  it("should hide the payment-source chart when breakdown fields are missing", async () => {
+    vi.mocked(useRouter).mockReturnValue({ replace: vi.fn() } as any);
+    vi.mocked(useAuth).mockReturnValue({ isAdmin: true, isMasterAdmin: true } as any);
+
+    vi.mocked(api.get).mockResolvedValueOnce({
+      users: [
+        { _id: "1", name: "Alice", email: "alice@test.com", role: "admin", totalSpend: 500 },
+      ],
+    });
+
+    render(<AdminUsersPage />);
+
+    expect(await screen.findByText("Spend by User")).toBeInTheDocument();
+    expect(screen.getByTestId("pie-chart")).toBeInTheDocument();
+    expect(screen.queryByText("Company vs Pocket")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bar-chart")).not.toBeInTheDocument();
+  });
+
+  it("should hide both charts when users exist but none have spend", async () => {
+    vi.mocked(useRouter).mockReturnValue({ replace: vi.fn() } as any);
+    vi.mocked(useAuth).mockReturnValue({ isAdmin: true, isMasterAdmin: true } as any);
+
+    vi.mocked(api.get).mockResolvedValueOnce({
+      users: [
+        { _id: "1", name: "Alice", email: "alice@test.com", role: "admin", totalSpend: 0, companySpend: 0, pocketSpend: 0 },
+      ],
+    });
+
+    render(<AdminUsersPage />);
+
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    expect(screen.queryByText("Spend by User")).not.toBeInTheDocument();
+    expect(screen.queryByText("Company vs Pocket")).not.toBeInTheDocument();
   });
 
   it("should display empty state when no users are returned", async () => {

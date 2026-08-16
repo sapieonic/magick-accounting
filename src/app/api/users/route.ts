@@ -4,6 +4,14 @@ import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
 
+interface SpendBreakdown {
+  totalSpend: number;
+  companySpend: number;
+  pocketSpend: number;
+}
+
+const EMPTY_SPEND: SpendBreakdown = { totalSpend: 0, companySpend: 0, pocketSpend: 0 };
+
 export async function GET(req: NextRequest) {
   const authResult = await verifyAuth(req);
   if (authResult instanceof NextResponse) return authResult;
@@ -28,12 +36,6 @@ export async function GET(req: NextRequest) {
     },
   ]);
 
-  interface SpendBreakdown {
-    totalSpend: number;
-    companySpend: number;
-    pocketSpend: number;
-  }
-
   const spendMap = userSpends.reduce((acc, curr) => {
     const userId = String(curr._id.user);
     if (!acc[userId]) {
@@ -49,11 +51,9 @@ export async function GET(req: NextRequest) {
     return acc;
   }, {} as Record<string, SpendBreakdown>);
 
-  const emptySpend: SpendBreakdown = { totalSpend: 0, companySpend: 0, pocketSpend: 0 };
-
   const usersWithSpend = users.map((user: any) => ({
     ...user,
-    ...(spendMap[String(user._id)] || emptySpend),
+    ...(spendMap[String(user._id)] || EMPTY_SPEND),
   }));
 
   return NextResponse.json({ users: usersWithSpend });
