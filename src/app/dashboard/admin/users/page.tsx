@@ -10,8 +10,8 @@ import { InlineLoader } from "@/components/ui/Spinner";
 import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
-import { Users, Shield, ShieldCheck, User as UserIcon, PieChartIcon } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { Users, Shield, ShieldCheck, User as UserIcon, PieChartIcon, CreditCard } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { formatBaseCurrency } from "@/lib/currency";
 
 interface UserRecord {
@@ -22,6 +22,8 @@ interface UserRecord {
   photoURL?: string;
   createdAt: string;
   totalSpend?: number;
+  companySpend?: number;
+  pocketSpend?: number;
 }
 
 const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#14b8a6"];
@@ -87,6 +89,25 @@ export default function AdminUsersPage() {
     .map((u) => ({ id: u._id, name: u.name, value: u.totalSpend }))
     .sort((a, b) => (b.value || 0) - (a.value || 0));
 
+  const sourceData = users
+    .filter((u) => (u.companySpend || 0) + (u.pocketSpend || 0) > 0)
+    .map((u) => ({
+      id: u._id,
+      name: u.name,
+      company: u.companySpend || 0,
+      pocket: u.pocketSpend || 0,
+    }))
+    .sort((a, b) => (b.company + b.pocket) - (a.company + a.pocket));
+
+  const tooltipStyle = {
+    borderRadius: "12px",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+    fontSize: "13px",
+    color: "#0f172a",
+  };
+
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex items-center gap-3">
@@ -107,73 +128,132 @@ export default function AdminUsersPage() {
         />
       ) : (
         <div className="space-y-6">
-          {pieData.length > 0 && (
-            <div className="card p-6">
-              <div className="mb-6 flex items-center gap-2">
-                <PieChartIcon className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg font-semibold text-foreground">Spend by User</h2>
-              </div>
-              <div className="flex flex-col md:flex-row items-center gap-8">
-                <div className="h-64 w-full md:w-1/2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={3}
-                        stroke="none"
-                        cornerRadius={4}
-                      >
+          {(pieData.length > 0 || sourceData.length > 0) && (
+            <div className="grid gap-6 lg:grid-cols-2">
+              {pieData.length > 0 && (
+                <div className="card p-6">
+                  <div className="mb-6 flex items-center gap-2">
+                    <PieChartIcon className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="text-lg font-semibold text-foreground">Spend by User</h2>
+                  </div>
+                  <div className="flex flex-col md:flex-row items-center gap-8">
+                    <div className="h-64 w-full md:w-1/2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pieData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={3}
+                            stroke="none"
+                            cornerRadius={4}
+                          >
+                            {pieData.map((entry, i) => (
+                              <Cell
+                                key={`cell-${entry.id}`}
+                                fill={PIE_COLORS[i % PIE_COLORS.length]}
+                                className="transition-all duration-300 hover:opacity-80"
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={tooltipStyle}
+                            itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+                            formatter={(value: any, name: any) => {
+                              const numericValue = typeof value === "number" ? value : Number(value);
+                              return [formatBaseCurrency(numericValue), name];
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex-1 w-full max-h-64 overflow-y-auto pr-2">
+                      <div className="flex flex-col space-y-3">
                         {pieData.map((entry, i) => (
-                          <Cell
-                            key={`cell-${entry.id}`}
-                            fill={PIE_COLORS[i % PIE_COLORS.length]}
-                            className="transition-all duration-300 hover:opacity-80"
-                          />
+                          <div key={entry.id} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="h-3 w-3 rounded-full shrink-0"
+                                style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
+                              />
+                              <span className="font-medium text-foreground truncate max-w-[150px]">{entry.name}</span>
+                            </div>
+                            <span className="font-semibold text-foreground whitespace-nowrap pl-2">
+                              {formatBaseCurrency(entry.value || 0)}
+                            </span>
+                          </div>
                         ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "12px",
-                          backgroundColor: "rgba(255, 255, 255, 0.9)",
-                          border: "1px solid #e2e8f0",
-                          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-                          fontSize: "13px",
-                          color: "#0f172a",
-                        }}
-                        itemStyle={{ color: "#0f172a", fontWeight: 600 }}
-                        formatter={(value: any, name: any) => {
-                          const numericValue = typeof value === "number" ? value : Number(value);
-                          return [formatBaseCurrency(numericValue), name];
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex-1 w-full max-h-64 overflow-y-auto pr-2">
-                  <div className="flex flex-col space-y-3">
-                    {pieData.map((entry, i) => (
-                      <div key={entry.id} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="h-3 w-3 rounded-full shrink-0"
-                            style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
-                          />
-                          <span className="font-medium text-foreground truncate max-w-[150px]">{entry.name}</span>
-                        </div>
-                        <span className="font-semibold text-foreground whitespace-nowrap pl-2">
-                          {formatBaseCurrency(entry.value || 0)}
-                        </span>
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {sourceData.length > 0 && (
+                <div className="card p-6">
+                  <div className="mb-4 flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="text-lg font-semibold text-foreground">Company vs Pocket</h2>
+                  </div>
+                  <div className="mb-4 flex flex-wrap items-center gap-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: "#10b981" }} />
+                      <span className="text-muted-foreground">Company Card</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: "#f59e0b" }} />
+                      <span className="text-muted-foreground">Out of Pocket</span>
+                    </div>
+                  </div>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={sourceData}
+                        layout="vertical"
+                        margin={{ top: 4, right: 12, left: 4, bottom: 0 }}
+                      >
+                        <XAxis
+                          type="number"
+                          tick={{ fontSize: 12, fill: "#94a3b8" }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v: number) =>
+                            v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${v}`
+                          }
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          width={88}
+                          tick={{ fontSize: 12, fill: "#64748b" }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(name: string) =>
+                            name.length > 12 ? `${name.slice(0, 11)}…` : name
+                          }
+                        />
+                        <Tooltip
+                          cursor={{ fill: "#e2e8f0", opacity: 0.4 }}
+                          contentStyle={tooltipStyle}
+                          formatter={(value: any, name: any) => {
+                            const numericValue = typeof value === "number" ? value : Number(value);
+                            return [
+                              formatBaseCurrency(numericValue),
+                              name === "company" ? "Company Card" : "Out of Pocket",
+                            ];
+                          }}
+                        />
+                        <Bar dataKey="company" stackId="spend" fill="#10b981" radius={[0, 0, 0, 0]} barSize={18} />
+                        <Bar dataKey="pocket" stackId="spend" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={18} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

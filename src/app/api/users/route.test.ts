@@ -78,7 +78,8 @@ describe("GET /api/users", () => {
     lean.mockResolvedValueOnce(mockUsers);
 
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([
-      { _id: "u1", totalSpend: 500 },
+      { _id: { user: "u1", source: "company" }, total: 300 },
+      { _id: { user: "u1", source: "pocket" }, total: 200 },
       // u2 has no spend
     ]);
 
@@ -90,14 +91,18 @@ describe("GET /api/users", () => {
 
     expect(NextResponse.json).toHaveBeenCalledWith({
       users: [
-        { ...mockUsers[0], totalSpend: 500 },
-        { ...mockUsers[1], totalSpend: 0 },
+        { ...mockUsers[0], totalSpend: 500, companySpend: 300, pocketSpend: 200 },
+        { ...mockUsers[1], totalSpend: 0, companySpend: 0, pocketSpend: 0 },
       ],
     });
     
     // Check that we got the mocked result object back from our NextRespose mock
     expect((result as any).data.users).toHaveLength(2);
     expect((result as any).data.users[0].totalSpend).toBe(500);
+    expect((result as any).data.users[0].companySpend).toBe(300);
+    expect((result as any).data.users[0].pocketSpend).toBe(200);
     expect((result as any).data.users[1].totalSpend).toBe(0);
+    expect((result as any).data.users[1].companySpend).toBe(0);
+    expect((result as any).data.users[1].pocketSpend).toBe(0);
   });
 });
