@@ -5,10 +5,14 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import Modal from "@/components/ui/Modal";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
+import AssetPurchaseSection, {
+  AssetDraft,
+} from "@/components/assets/AssetPurchaseSection";
 import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
 
 interface Department {
@@ -30,6 +34,12 @@ interface CurrencyOption {
   isBase: boolean;
 }
 
+interface UserOption {
+  _id: string;
+  name: string;
+  email: string;
+}
+
 // File types the AI auto-fill can read (images + PDF).
 const EXTRACTABLE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
@@ -39,9 +49,12 @@ export default function NewExpensePage() {
   useTitle("New Expense");
   const router = useRouter();
   const { toast } = useToast();
+  const { user, isAdmin } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [assets, setAssets] = useState<AssetDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
@@ -78,7 +91,7 @@ export default function NewExpensePage() {
 
   // Warn before discarding typed-in or extracted data on a full page unload.
   const isDirty = Boolean(
-    form.title || form.amount || form.description || form.category !== "" || receipt
+    form.title || form.amount || form.description || form.category !== "" || receipt || assets.length > 0
   );
 
   useEffect(() => {
@@ -95,6 +108,16 @@ export default function NewExpensePage() {
       return;
     }
     router.push("/dashboard/expenses");
+  };
+
+  const handlePurchaseDateChange = (date: string) => {
+    const previousDate = form.date;
+    setForm((current) => ({ ...current, date }));
+    setAssets((current) =>
+      current.map((asset) =>
+        asset.putToUseDate === previousDate ? { ...asset, putToUseDate: date } : asset
+      )
+    );
   };
 
   useEffect(() => {
@@ -120,6 +143,13 @@ export default function NewExpensePage() {
     }
     loadOptions();
   }, [toast]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get("/api/users")
+      .then((data) => setUsers(data.users || []))
+      .catch(() => toast("Users could not be loaded; assets can still be left unassigned", "info"));
+  }, [isAdmin, toast]);
 
   // Attaches a receipt file and, for images, asks the AI to pre-fill the form.
   const processReceiptFile = async (file: File) => {
@@ -168,8 +198,8 @@ export default function NewExpensePage() {
     }
   };
 
-  const uploadReceipt = async (): Promise<{ key: string; filename: string } | null> => {
-    if (!receipt?.file) return null;
+  const uploadReceipt = async (): Promise<{ key: string; filename: string }> => {
+    if (!receipt?.file) throw new Error("No receipt selected");
 
     setUploadingReceipt(true);
     try {
@@ -178,9 +208,6 @@ export default function NewExpensePage() {
 
       const result = await api.postFormData("/api/upload", formData);
       return { key: result.key, filename: result.filename };
-    } catch {
-      toast("Failed to upload receipt", "error");
-      return null;
     } finally {
       setUploadingReceipt(false);
     }
@@ -199,26 +226,47 @@ export default function NewExpensePage() {
       return;
     }
 
+    const totalAllocated = assets.reduce(
+      (total, asset) => total + (parseFloat(asset.allocatedAmount) || 0),
+      0
+    );
+    const totalGstAllocated = assets.reduce(
+      (total, asset) => total + (parseFloat(asset.allocatedGstAmount) || 0),
+      0
+    );
+    if (totalAllocated > parseFloat(form.amount)) {
+      toast("Asset allocations cannot exceed the expense amount", "error");
+      return;
+    }
+    if (totalGstAllocated > (gstAmount || 0)) {
+      toast("Asset GST allocations cannot exceed the expense GST amount", "error");
+      return;
+    }
+
     setSubmitting(true);
+    let uploadedReceiptKey: string | null = null;
     try {
       let receiptData: { receiptKey?: string; receiptFilename?: string } = {};
       if (receipt?.file) {
         const uploaded = await uploadReceipt();
-        if (uploaded) {
-          receiptData = { receiptKey: uploaded.key, receiptFilename: uploaded.filename };
-        }
+        uploadedReceiptKey = uploaded.key;
+        receiptData = { receiptKey: uploaded.key, receiptFilename: uploaded.filename };
       }
 
       await api.post("/api/expenses", {
         ...form,
         amount: parseFloat(form.amount),
         gstAmount,
+        assets: assets.map(({ id: _id, ...asset }) => asset),
         ...receiptData,
       });
 
-      toast("Expense created");
-      router.push("/dashboard/expenses");
+      toast(assets.length > 0 ? "Expense and company assets created" : "Expense created");
+      router.push(assets.length > 0 ? "/dashboard/assets" : "/dashboard/expenses");
     } catch (err) {
+      if (uploadedReceiptKey) {
+        await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
+      }
       toast(err instanceof Error ? err.message : "Failed to create expense", "error");
     } finally {
       setSubmitting(false);
@@ -294,7 +342,7 @@ export default function NewExpensePage() {
         <h1 className="text-2xl font-bold text-foreground">New Expense</h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="card mx-auto max-w-2xl p-6">
+      <form onSubmit={handleSubmit} className="card mx-auto max-w-4xl p-6">
         {autoFilled && (
           <div className="mb-5 flex items-start gap-3 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 dark:border-brand-500/30 dark:bg-brand-500/10">
             <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" />
@@ -363,7 +411,7 @@ export default function NewExpensePage() {
                 type="date"
                 required
                 value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
+                onChange={(e) => handlePurchaseDateChange(e.target.value)}
                 className="input-field"
               />
             </div>
@@ -456,6 +504,16 @@ export default function NewExpensePage() {
             />
           </div>
 
+          <AssetPurchaseSection
+            assets={assets}
+            onChange={setAssets}
+            purchaseDate={form.date}
+            currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "₹"}
+            users={users}
+            canAssignOthers={isAdmin}
+            currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
+          />
+
           <div>
             <label className="mb-1.5 block text-sm font-medium text-muted">Receipt</label>
             {receipt ? (
@@ -500,7 +558,7 @@ export default function NewExpensePage() {
                 <Spinner size="sm" /> {uploadingReceipt ? "Uploading..." : "Saving..."}
               </>
             ) : (
-              "Create Expense"
+              assets.length > 0 ? "Create Expense & Assets" : "Create Expense"
             )}
           </button>
         </div>

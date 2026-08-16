@@ -3,6 +3,8 @@ import { verifyAuth, requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Department from "@/models/Department";
 import Expense from "@/models/Expense";
+import Asset from "@/models/Asset";
+import AssetAssignment from "@/models/AssetAssignment";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await verifyAuth(req);
@@ -46,10 +48,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Cannot delete the default department" }, { status: 400 });
   }
 
-  const expenseCount = await Expense.countDocuments({ department: id });
+  const [expenseCount, assetCount, assignmentCount] = await Promise.all([
+    Expense.countDocuments({ department: id }),
+    Asset.countDocuments({ department: id }),
+    AssetAssignment.countDocuments({ department: id }),
+  ]);
   if (expenseCount > 0) {
     return NextResponse.json(
       { error: `Cannot delete department with ${expenseCount} expense(s). Move or delete them first.` },
+      { status: 400 }
+    );
+  }
+  if (assetCount > 0 || assignmentCount > 0) {
+    return NextResponse.json(
+      {
+        error: `Cannot delete department while it is referenced by ${assetCount} asset(s) or ${assignmentCount} assignment record(s).`,
+      },
       { status: 400 }
     );
   }

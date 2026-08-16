@@ -25,6 +25,27 @@ Single-tenant by design — one organization per deployment.
 - Search and filter by department, category, or keyword
 - Responsive table view (desktop) and card view (mobile)
 
+### Company Assets
+- Create one or more company assets while recording their purchase expense
+- Share the expense date, currency, GST, and receipt without duplicate entry
+- Track asset tags, serial numbers, assignees, purpose, location, and status
+- Allocate purchase value and recoverable GST per asset
+- Estimate straight-line or written-down-value depreciation
+- Preserve assignment history when assets move between people
+- Convert an existing expense into one or more assets without re-entering the purchase
+- Close assignments and freeze depreciation when an asset is retired, sold, lost, or disposed
+- Reverse mistaken asset entries with an administrator-supplied reason and retained audit event
+
+#### Asset accounting behavior
+
+- The linked Expense is the source of truth for purchase date, currency, invoice total, GST, and receipt.
+- Acquisition currency becomes immutable after an asset is linked. The entry exchange rate is stored on the expense so later currency-rate edits do not rewrite historical values.
+- Each asset stores its allocated invoice amount, allocated GST, recoverable GST, and capitalized cost (`allocated amount - recoverable GST`).
+- Depreciation shown by the register is an estimate calculated using elapsed days on a 365.25-day year. It supports straight-line and written-down-value methods and stops on the effective terminal lifecycle date.
+- These estimates do not post accounting journal entries or lock fiscal periods. Confirm the selected method and percentage with the organization’s accountant before treating the register as statutory books.
+- Regular assignees can see operational asset details. Purchase financials, depreciation values, receipts, prior-custodian data, and audit events are restricted to administrators or the source-expense owner as applicable.
+- Linked expense/asset creation uses MongoDB transactions on replica-set deployments and batch-scoped compensating cleanup for local standalone development. Asset edits and reversals require replica-set transactions so assignment and audit history cannot be partially written.
+
 ### Departments
 - Organize expenses by department
 - Default "General" department created on first run
@@ -168,6 +189,9 @@ src/
 │   │   │   ├── page.tsx                  # Expense list with search/filter
 │   │   │   ├── new/page.tsx              # Create expense form
 │   │   │   └── [id]/edit/page.tsx        # Edit expense form
+│   │   ├── assets/
+│   │   │   ├── page.tsx                  # Company asset register
+│   │   │   └── [id]/page.tsx             # Asset detail, assignment and depreciation
 │   │   ├── departments/page.tsx          # Department management
 │   │   ├── categories/page.tsx           # Category management
 │   │   └── admin/
@@ -180,6 +204,9 @@ src/
 │       ├── expenses/
 │       │   ├── route.ts                  # GET (list) / POST (create)
 │       │   └── [id]/route.ts            # GET / PUT / DELETE
+│       ├── assets/
+│       │   ├── route.ts                 # GET asset register
+│       │   └── [id]/route.ts            # GET / PUT / DELETE correction
 │       ├── departments/
 │       │   ├── route.ts                  # GET / POST
 │       │   └── [id]/route.ts            # PUT / DELETE
@@ -238,6 +265,13 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 | `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID                  |
 | `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense                     |
 | `DELETE` | `/api/expenses/:id`       | Authenticated| Delete expense                     |
+| `GET`    | `/api/assets`             | Authenticated| List visible company assets        |
+| `GET`    | `/api/assets/:id`         | Authenticated| Get asset and assignment history   |
+| `PUT`    | `/api/assets/:id`         | Admin        | Update asset and assignment        |
+| `DELETE` | `/api/assets/:id`         | Admin        | Reverse asset; JSON reason required|
+| `GET`    | `/api/assets/corrections` | Admin        | List paginated asset reversals      |
+| `GET`    | `/api/assets/corrections/:eventId` | Admin | View retained reversal snapshot |
+| `POST`   | `/api/expenses/:id/assets`| Owner/Admin  | Create assets from existing expense|
 | `GET`    | `/api/departments`        | Authenticated| List all departments               |
 | `POST`   | `/api/departments`        | Authenticated| Create department                  |
 | `PUT`    | `/api/departments/:id`    | Admin        | Update department                  |
@@ -264,6 +298,7 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 npm run dev       # Start development server
 npm run build     # Production build
 npm run start     # Start production server
+npm run migrate:assets # Backfill asset allocation/index data before first asset-feature deploy
 npm run lint      # Run ESLint
 ```
 
@@ -285,6 +320,12 @@ The app can be deployed to any platform that supports Next.js:
 - **Docker** — add a Dockerfile with `node:18-alpine`, build, and serve
 
 Set all environment variables from `.env.example` in your deployment platform.
+
+Before the first deployment containing the asset register, take a database backup and run
+`npm run migrate:assets` once against the target MongoDB database. The migration backfills
+allocation counters and batch identifiers, resolves duplicate open assignments by retaining the
+newest as current, and creates the uniqueness indexes required for safe concurrent writes. Run it
+during a maintenance window with expense and asset writes paused.
 
 ## License
 
