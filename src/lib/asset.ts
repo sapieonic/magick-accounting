@@ -75,6 +75,25 @@ export function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export function moneyToCents(value: number | string | null | undefined): number {
+  const parsed = value == null || value === "" ? 0 : Number(value);
+  return Number.isFinite(parsed) ? Math.round((parsed + Number.EPSILON) * 100) : 0;
+}
+
+export function resolveOptionalMoneyUpdate(
+  value: unknown,
+  existingValue: number | null | undefined,
+  label: string
+): number | null {
+  if (value === undefined) return existingValue ?? null;
+  if (value === "" || value === null) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${label} must be a non-negative number`);
+  }
+  return roundMoney(parsed);
+}
+
 export function getEffectiveAssetAllocation(
   persistedAssetTotal: number,
   reservedExpenseTotal: number

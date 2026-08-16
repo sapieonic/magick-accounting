@@ -1,5 +1,7 @@
+import { loadEnvConfig } from "@next/env";
 import mongoose from "mongoose";
 
+loadEnvConfig(process.cwd());
 const uri = process.env.MONGODB_URI;
 if (!uri) throw new Error("MONGODB_URI environment variable is required");
 

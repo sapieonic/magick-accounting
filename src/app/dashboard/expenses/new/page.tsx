@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { moneyToCents } from "@/lib/asset";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -221,24 +222,26 @@ export default function NewExpensePage() {
     }
 
     const gstAmount = form.gstAmount ? parseFloat(form.gstAmount) : null;
-    if (gstAmount != null && gstAmount > parseFloat(form.amount)) {
+    const expenseAmountCents = moneyToCents(form.amount);
+    const gstAmountCents = moneyToCents(gstAmount);
+    if (gstAmount != null && gstAmountCents > expenseAmountCents) {
       toast("GST amount cannot exceed the total amount", "error");
       return;
     }
 
-    const totalAllocated = assets.reduce(
-      (total, asset) => total + (parseFloat(asset.allocatedAmount) || 0),
+    const totalAllocatedCents = assets.reduce(
+      (total, asset) => total + moneyToCents(asset.allocatedAmount),
       0
     );
-    const totalGstAllocated = assets.reduce(
-      (total, asset) => total + (parseFloat(asset.allocatedGstAmount) || 0),
+    const totalGstAllocatedCents = assets.reduce(
+      (total, asset) => total + moneyToCents(asset.allocatedGstAmount),
       0
     );
-    if (totalAllocated > parseFloat(form.amount)) {
+    if (totalAllocatedCents > expenseAmountCents) {
       toast("Asset allocations cannot exceed the expense amount", "error");
       return;
     }
-    if (totalGstAllocated > (gstAmount || 0)) {
+    if (totalGstAllocatedCents > gstAmountCents) {
       toast("Asset GST allocations cannot exceed the expense GST amount", "error");
       return;
     }

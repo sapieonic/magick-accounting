@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
+import { moneyToCents } from "@/lib/asset";
 
 interface UserOption { _id: string; name: string; email: string }
 interface ExistingAsset { allocatedAmount: number; allocatedGstAmount: number }
@@ -67,29 +68,35 @@ export default function AddAssetsToExpensePage() {
   }, [params.id, isAdmin, user?._id, router, toast]);
 
   const remaining = useMemo(() => {
-    const allocated = existingAssets.reduce((total, asset) => total + asset.allocatedAmount, 0);
-    const allocatedGst = existingAssets.reduce(
-      (total, asset) => total + asset.allocatedGstAmount,
+    const allocatedCents = existingAssets.reduce(
+      (total, asset) => total + moneyToCents(asset.allocatedAmount),
+      0
+    );
+    const allocatedGstCents = existingAssets.reduce(
+      (total, asset) => total + moneyToCents(asset.allocatedGstAmount),
       0
     );
     return {
-      amount: Math.max(0, (expense?.amount || 0) - allocated),
-      gst: Math.max(0, (expense?.gstAmount || 0) - allocatedGst),
+      amount: Math.max(0, moneyToCents(expense?.amount) - allocatedCents) / 100,
+      gst: Math.max(0, moneyToCents(expense?.gstAmount) - allocatedGstCents) / 100,
     };
   }, [existingAssets, expense]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!expense || assets.length === 0) return;
-    const allocated = assets.reduce(
-      (total, asset) => total + (Number(asset.allocatedAmount) || 0),
+    const allocatedCents = assets.reduce(
+      (total, asset) => total + moneyToCents(asset.allocatedAmount),
       0
     );
-    const allocatedGst = assets.reduce(
-      (total, asset) => total + (Number(asset.allocatedGstAmount) || 0),
+    const allocatedGstCents = assets.reduce(
+      (total, asset) => total + moneyToCents(asset.allocatedGstAmount),
       0
     );
-    if (allocated > remaining.amount || allocatedGst > remaining.gst) {
+    if (
+      allocatedCents > moneyToCents(remaining.amount) ||
+      allocatedGstCents > moneyToCents(remaining.gst)
+    ) {
       toast("Asset allocations exceed the remaining expense amount or GST", "error");
       return;
     }

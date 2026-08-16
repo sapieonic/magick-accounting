@@ -5,6 +5,7 @@ import {
   assertAssetStatusTransition,
   getDepreciationAsOfDate,
   normalizeDepreciationPolicy,
+  resolveOptionalMoneyUpdate,
 } from "@/lib/asset";
 import { connectDB } from "@/lib/mongodb";
 import { runInTransaction, sessionOptions } from "@/lib/mongodb-transaction";
@@ -171,13 +172,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       lifecycleDate = effectiveLifecycleDate;
     }
 
-    const disposalProceeds =
-      body.disposalProceeds === "" || body.disposalProceeds == null
-        ? null
-        : Number(body.disposalProceeds);
-    if (disposalProceeds != null && (!Number.isFinite(disposalProceeds) || disposalProceeds < 0)) {
-      throw new Error("Disposal proceeds must be a non-negative number");
-    }
+    const disposalProceeds = resolveOptionalMoneyUpdate(
+      body.disposalProceeds,
+      asset.disposalProceeds,
+      "Disposal proceeds"
+    );
 
     const oldAssignee = asset.assignedTo?.toString() || null;
     let newAssignee = oldAssignee;
@@ -227,6 +226,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (String(from ?? "") !== String(to ?? "")) changes[field] = { from, to };
     });
     const assignmentChanged = newAssignee !== oldAssignee;
+    const assignmentDetailsChanged =
+      String(department) !== String(asset.department) ||
+      update.purpose !== asset.purpose ||
+      update.location !== asset.location;
     const wasTerminal = terminalStatuses.has(asset.status);
     const shouldCloseAssignments = assignmentChanged || (isTerminal && !wasTerminal);
     const recordedAt = new Date();
@@ -267,6 +270,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             sessionOptions(session)
           );
         }
+      } else if (newAssignee && assignmentDetailsChanged) {
+        await AssetAssignment.updateOne(
+          { asset: asset._id, returnedAt: null },
+          {
+            $set: {
+              department,
+              purpose: update.purpose,
+              location: update.location,
+            },
+          },
+          sessionOptions(session)
+        );
       }
 
       const updateQuery = Asset.findOneAndUpdate(

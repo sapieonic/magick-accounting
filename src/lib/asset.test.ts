@@ -5,9 +5,11 @@ import {
   assertLinkedExpenseCurrencyUnchanged,
   getDepreciationAsOfDate,
   getEffectiveAssetAllocation,
+  moneyToCents,
   MAX_ASSETS_PER_PURCHASE,
   normalizeAssetPurchases,
   normalizeDepreciationPolicy,
+  resolveOptionalMoneyUpdate,
 } from "@/lib/asset";
 
 beforeEach(() => {
@@ -262,5 +264,25 @@ describe("getEffectiveAssetAllocation", () => {
 
   it("uses persisted assets to self-heal a stale legacy counter", () => {
     expect(getEffectiveAssetAllocation(1200.005, 1000)).toBe(1200.01);
+  });
+});
+
+describe("moneyToCents", () => {
+  it("compares cent allocations without binary floating-point drift", () => {
+    const total = moneyToCents("0.10") + moneyToCents("0.20");
+    expect(total).toBe(moneyToCents("0.30"));
+  });
+});
+
+describe("resolveOptionalMoneyUpdate", () => {
+  it("preserves omitted values and clears explicitly empty values", () => {
+    expect(resolveOptionalMoneyUpdate(undefined, 1250, "Proceeds")).toBe(1250);
+    expect(resolveOptionalMoneyUpdate("", 1250, "Proceeds")).toBeNull();
+    expect(resolveOptionalMoneyUpdate(null, 1250, "Proceeds")).toBeNull();
+  });
+
+  it("normalizes supplied values and rejects invalid money", () => {
+    expect(resolveOptionalMoneyUpdate("19.999", null, "Proceeds")).toBe(20);
+    expect(() => resolveOptionalMoneyUpdate(-1, null, "Proceeds")).toThrow(/non-negative/i);
   });
 });

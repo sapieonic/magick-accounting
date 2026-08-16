@@ -233,14 +233,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     );
   }
 
-  if (expense.receiptKey) {
-    try {
-      await deleteObject(expense.receiptKey);
-    } catch {
-      // Continue with deletion even if S3 cleanup fails
-    }
+  const revision = Number(expense.assetAllocationRevision || 0);
+  const revisionCondition =
+    revision === 0
+      ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
+      : { assetAllocationRevision: revision };
+  const deletion = await Expense.deleteOne({
+    _id: expense._id,
+    $and: [
+      revisionCondition,
+      {
+        $or: [
+          { assetAllocatedAmount: { $exists: false } },
+          { assetAllocatedAmount: { $lte: 0 } },
+        ],
+      },
+    ],
+  });
+  if (deletion.deletedCount !== 1) {
+    return NextResponse.json(
+      { error: "Expense or asset allocation changed; reload and try again" },
+      { status: 409 }
+    );
   }
 
-  await Expense.findByIdAndDelete(id);
+  if (expense.receiptKey) {
+    await deleteObject(expense.receiptKey).catch(() => undefined);
+  }
   return NextResponse.json({ message: "Expense deleted" });
 }
