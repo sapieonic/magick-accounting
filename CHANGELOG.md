@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/sapieonic/magick-accounting/compare/v1.5.0...v1.6.0) (2026-08-16)
+
+
+### Features
+
+* add company vs pocket spend chart on users page ([#22](https://github.com/sapieonic/magick-accounting/issues/22)) ([10ea647](https://github.com/sapieonic/magick-accounting/commit/10ea6475eb1886b1429a924383e6af34de03e74c))
+
 # [1.5.0](https://github.com/sapieonic/magick-accounting/compare/v1.4.1...v1.5.0) (2026-07-18)
 
 
