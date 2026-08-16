@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/sapieonic/magick-accounting/compare/v1.6.0...v1.7.0) (2026-08-16)
+
+
+### Features
+
+* add linked company asset inventory ([#23](https://github.com/sapieonic/magick-accounting/issues/23)) ([a060bf4](https://github.com/sapieonic/magick-accounting/commit/a060bf4365127d95ad7802ee11744c460ed22d61))
+
 # [1.6.0](https://github.com/sapieonic/magick-accounting/compare/v1.5.0...v1.6.0) (2026-08-16)
 
 
