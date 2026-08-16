@@ -12,7 +12,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
 import {
-  Plus, Receipt, Trash2, Pencil, Paperclip, Download,
+  Plus, Receipt, Trash2, Pencil, Paperclip, Download, Package,
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
   Calendar, TrendingUp, User as UserIcon, Tag, X as XIcon,
 } from "lucide-react";
@@ -36,6 +36,7 @@ interface Expense {
   category: { _id: string; name: string };
   department: { _id: string; name: string };
   createdBy: { _id: string; name: string; email: string };
+  linkedAssetCount?: number;
 }
 
 interface Department { _id: string; name: string }
@@ -425,6 +426,10 @@ export default function ExpensesPage() {
   // Optimistically remove the expense and give the user a short undo window
   // before the delete is committed to the server.
   const handleDelete = (expense: Expense) => {
+    if ((expense.linkedAssetCount || 0) > 0) {
+      toast("Linked asset purchases cannot be deleted from Expenses", "error");
+      return;
+    }
     const index = expenses.findIndex((e) => e._id === expense._id);
     if (index === -1) return;
 
@@ -808,6 +813,11 @@ export default function ExpensesPage() {
                         <p className="truncate text-sm font-medium text-foreground">{expense.title}</p>
                         {expense.receiptKey && (
                           <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-blue-400 dark:text-blue-300" />
+                        )}
+                        {(expense.linkedAssetCount || 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+                            <Package className="h-3 w-3" /> {expense.linkedAssetCount}
+                          </span>
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">

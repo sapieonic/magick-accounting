@@ -13,6 +13,7 @@ import {
   Users,
   Shield,
   FileText,
+  Package,
   X,
   PanelLeftClose,
   PanelLeftOpen,
@@ -29,6 +30,7 @@ const COLLAPSED_STORAGE_KEY = "sidebar-collapsed";
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, color: "text-blue-500" },
   { href: "/dashboard/expenses", label: "Expenses", icon: Receipt, color: "text-emerald-500" },
+  { href: "/dashboard/assets", label: "Assets", icon: Package, color: "text-indigo-500" },
   { href: "/dashboard/departments", label: "Departments", icon: Building2, color: "text-violet-500" },
   { href: "/dashboard/categories", label: "Categories", icon: Tag, color: "text-amber-500" },
 ];

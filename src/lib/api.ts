@@ -68,9 +68,13 @@ export const api = {
     return handleResponse(res);
   },
 
-  delete: async (url: string) => {
+  delete: async (url: string, body?: unknown) => {
     const headers = await getAuthHeaders();
-    const res = await fetch(url, { method: "DELETE", headers });
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
     return handleResponse(res);
   },
 };

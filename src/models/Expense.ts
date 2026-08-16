@@ -11,6 +11,10 @@ export interface IExpense extends Document {
   gstAmountInBaseCurrency?: number;
   currency?: mongoose.Types.ObjectId;
   amountInBaseCurrency?: number;
+  exchangeRateToBase?: number;
+  assetAllocatedAmount: number;
+  assetAllocatedGstAmount: number;
+  assetAllocationRevision: number;
   category: mongoose.Types.ObjectId;
   department: mongoose.Types.ObjectId;
   date: Date;
@@ -32,6 +36,10 @@ const ExpenseSchema = new Schema<IExpense>(
     gstAmountInBaseCurrency: { type: Number, default: null, min: 0 },
     currency: { type: Schema.Types.ObjectId, ref: "Currency", default: null },
     amountInBaseCurrency: { type: Number, default: null },
+    exchangeRateToBase: { type: Number, default: null, min: 0 },
+    assetAllocatedAmount: { type: Number, default: 0, min: 0 },
+    assetAllocatedGstAmount: { type: Number, default: 0, min: 0 },
+    assetAllocationRevision: { type: Number, default: 0, min: 0 },
     category: { type: Schema.Types.ObjectId, ref: "Category", required: true },
     department: { type: Schema.Types.ObjectId, ref: "Department", required: true },
     date: { type: Date, required: true },
@@ -54,5 +62,9 @@ ExpenseSchema.index({ department: 1, date: -1 });
 ExpenseSchema.index({ createdBy: 1, date: -1 });
 ExpenseSchema.index({ category: 1, date: -1 });
 ExpenseSchema.index({ currency: 1 });
+ExpenseSchema.index(
+  { receiptKey: 1 },
+  { unique: true, partialFilterExpression: { receiptKey: { $type: "string" } } }
+);
 
 export default mongoose.models.Expense || mongoose.model<IExpense>("Expense", ExpenseSchema);

@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
-import { ArrowLeft, Upload, X as XIcon } from "lucide-react";
+import { ArrowLeft, Package, Upload, X as XIcon } from "lucide-react";
 
 interface Department {
   _id: string;
@@ -29,17 +31,26 @@ interface CurrencyOption {
   isBase: boolean;
 }
 
+interface LinkedAsset {
+  _id: string;
+  assetTag: string;
+  name: string;
+  allocatedAmount: number;
+}
+
 export default function EditExpensePage() {
   useTitle("Edit Expense");
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [linkedAssets, setLinkedAssets] = useState<LinkedAsset[]>([]);
 
   const emptyForm = {
     title: "",
@@ -90,6 +101,7 @@ export default function EditExpensePage() {
         ]);
 
         const exp = expData.expense;
+        setLinkedAssets(expData.assets || []);
         const loadedForm = {
           title: exp.title,
           amount: exp.amount.toString(),
@@ -131,8 +143,8 @@ export default function EditExpensePage() {
     setExistingReceipt(null);
   };
 
-  const uploadReceipt = async (): Promise<{ key: string; filename: string } | null> => {
-    if (!newReceipt?.file) return null;
+  const uploadReceipt = async (): Promise<{ key: string; filename: string }> => {
+    if (!newReceipt?.file) throw new Error("No receipt selected");
     setUploadingReceipt(true);
     try {
       const formData = new FormData();
@@ -140,9 +152,6 @@ export default function EditExpensePage() {
 
       const result = await api.postFormData("/api/upload", formData);
       return { key: result.key, filename: result.filename };
-    } catch {
-      toast("Failed to upload receipt", "error");
-      return null;
     } finally {
       setUploadingReceipt(false);
     }
@@ -158,6 +167,7 @@ export default function EditExpensePage() {
     }
 
     setSubmitting(true);
+    let uploadedReceiptKey: string | null = null;
 
     try {
       const updateData: Record<string, unknown> = {
@@ -168,16 +178,21 @@ export default function EditExpensePage() {
 
       if (newReceipt?.file) {
         const uploaded = await uploadReceipt();
-        if (uploaded) {
-          updateData.receiptKey = uploaded.key;
-          updateData.receiptFilename = uploaded.filename;
-        }
+        uploadedReceiptKey = uploaded.key;
+        updateData.receiptKey = uploaded.key;
+        updateData.receiptFilename = uploaded.filename;
+      } else if (initialHadReceipt && !existingReceipt) {
+        updateData.receiptKey = null;
+        updateData.receiptFilename = null;
       }
 
       await api.put(`/api/expenses/${params.id}`, updateData);
       toast("Expense updated");
       router.push("/dashboard/expenses");
     } catch (err) {
+      if (uploadedReceiptKey) {
+        await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
+      }
       toast(err instanceof Error ? err.message : "Failed to update expense", "error");
     } finally {
       setSubmitting(false);
@@ -185,6 +200,8 @@ export default function EditExpensePage() {
   };
 
   if (loading) return <FormSkeleton />;
+  const hasLinkedAssets = linkedAssets.length > 0;
+  const accountingLocked = hasLinkedAssets && !isAdmin;
 
   return (
     <div className="animate-fade-in">
@@ -201,6 +218,44 @@ export default function EditExpensePage() {
       </div>
 
       <form onSubmit={handleSubmit} className="card mx-auto max-w-2xl p-6">
+        {linkedAssets.length > 0 && (
+          <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
+            <div className="flex items-start gap-3">
+              <Package className="mt-0.5 h-5 w-5 text-indigo-600 dark:text-indigo-300" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">
+                  Linked to {linkedAssets.length} company asset{linkedAssets.length === 1 ? "" : "s"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The expense amount and GST cannot be reduced below their asset allocations.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {linkedAssets.map((asset) => (
+                    <Link
+                      key={asset._id}
+                      href={`/dashboard/assets/${asset._id}`}
+                      className="rounded-md bg-surface px-2 py-1 text-xs font-semibold text-indigo-700 shadow-sm hover:text-indigo-900 dark:text-indigo-300"
+                    >
+                      {asset.assetTag} · {asset.name}
+                    </Link>
+                  ))}
+                </div>
+                {isAdmin && <Link
+                  href={`/dashboard/expenses/${params.id}/assets/new`}
+                  className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 dark:text-indigo-300"
+                >
+                  <Package className="h-3.5 w-3.5" /> Add more assets from this expense
+                </Link>}
+              </div>
+            </div>
+          </div>
+        )}
+        {linkedAssets.length === 0 && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/5">
+            <div><p className="text-sm font-semibold text-foreground">This expense has no linked assets</p><p className="mt-1 text-xs text-muted-foreground">Create inventory records without entering the purchase again.</p></div>
+            <Link href={`/dashboard/expenses/${params.id}/assets/new`} className="btn-secondary shrink-0"><Package className="h-4 w-4" /> Create assets</Link>
+          </div>
+        )}
         <div className="space-y-5">
           <div>
             <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-muted">
@@ -224,6 +279,7 @@ export default function EditExpensePage() {
               <select
                 id="currency"
                 required
+                disabled={hasLinkedAssets}
                 value={form.currency}
                 onChange={(e) => setForm({ ...form, currency: e.target.value })}
                 className="input-field"
@@ -242,6 +298,7 @@ export default function EditExpensePage() {
                 id="amount"
                 type="number"
                 required
+                disabled={accountingLocked}
                 min="0"
                 step="0.01"
                 value={form.amount}
@@ -257,6 +314,7 @@ export default function EditExpensePage() {
                 id="date"
                 type="date"
                 required
+                disabled={accountingLocked}
                 value={form.date}
                 onChange={(e) => setForm({ ...form, date: e.target.value })}
                 className="input-field"
@@ -273,6 +331,7 @@ export default function EditExpensePage() {
               id="gstAmount"
               type="number"
               min="0"
+              disabled={accountingLocked}
               step="0.01"
               value={form.gstAmount}
               onChange={(e) => setForm({ ...form, gstAmount: e.target.value })}
@@ -292,6 +351,7 @@ export default function EditExpensePage() {
               <select
                 id="category"
                 required
+                disabled={accountingLocked}
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 className="input-field"
@@ -309,6 +369,7 @@ export default function EditExpensePage() {
               <select
                 id="department"
                 required
+                disabled={accountingLocked}
                 value={form.department}
                 onChange={(e) => setForm({ ...form, department: e.target.value })}
                 className="input-field"
@@ -328,6 +389,7 @@ export default function EditExpensePage() {
             <select
               id="paymentSource"
               required
+              disabled={accountingLocked}
               value={form.paymentSource}
               onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
               className="input-field"
@@ -360,6 +422,7 @@ export default function EditExpensePage() {
                 </span>
                 <button
                   type="button"
+                  disabled={accountingLocked}
                   onClick={() => { setNewReceipt(null); setExistingReceipt(null); }}
                   className="cursor-pointer rounded p-1 text-muted-foreground hover:text-muted"
                   aria-label="Remove receipt"
@@ -368,7 +431,7 @@ export default function EditExpensePage() {
                 </button>
               </div>
             ) : (
-              <ReceiptDropzone onFile={handleReceiptFile} acceptPaste />
+              <ReceiptDropzone onFile={handleReceiptFile} acceptPaste disabled={accountingLocked} />
             )}
           </div>
         </div>

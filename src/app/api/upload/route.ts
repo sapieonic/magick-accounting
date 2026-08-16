@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
-import { uploadObject, getDownloadUrl } from "@/lib/s3";
+import { uploadObject, getDownloadUrl, deleteObject } from "@/lib/s3";
+import { connectDB } from "@/lib/mongodb";
+import Expense from "@/models/Expense";
 
 function generateId(): string {
   const bytes = new Uint8Array(16);
@@ -60,9 +62,45 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    await connectDB();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const expense: any = await Expense.findOne({ receiptKey: key }).select("createdBy").lean();
+    if (!expense) {
+      return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
+    }
+    if (authResult.role === "user" && String(expense.createdBy) !== authResult._id) {
+      return NextResponse.json({ error: "Not authorized to access this receipt" }, { status: 403 });
+    }
     const downloadUrl = await getDownloadUrl(key);
     return NextResponse.json({ downloadUrl });
   } catch {
     return NextResponse.json({ error: "Failed to generate download URL" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const authResult = await verifyAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
+
+  const key = new URL(req.url).searchParams.get("key");
+  if (!key) return NextResponse.json({ error: "key parameter is required" }, { status: 400 });
+
+  // This endpoint only cleans up an upload that has not yet been attached to
+  // an expense. A user may clean up only their own upload prefix.
+  const expectedPrefix = `receipts/${authResult._id}/`;
+  if (!key.startsWith(expectedPrefix)) {
+    return NextResponse.json({ error: "Not authorized to delete this upload" }, { status: 403 });
+  }
+
+  await connectDB();
+  if (await Expense.exists({ receiptKey: key })) {
+    return NextResponse.json({ error: "Attached receipts cannot be deleted directly" }, { status: 409 });
+  }
+
+  try {
+    await deleteObject(key);
+    return NextResponse.json({ message: "Upload deleted" });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete upload" }, { status: 500 });
   }
 }
