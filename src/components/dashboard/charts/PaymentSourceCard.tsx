@@ -2,7 +2,7 @@
 
 import { CreditCard } from "lucide-react";
 import { formatBaseCurrency } from "@/lib/currency";
-import { useChartColors } from "./chartTheme";
+import { PAYMENT_SOURCE_COLORS, PAYMENT_SOURCE_LABELS, useChartColors } from "./chartTheme";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
 interface PaymentSourceDatum {
@@ -51,7 +51,7 @@ export function PaymentSourceCard({ data, dense = false }: PaymentSourceCardProp
                     {data.map((entry, i) => (
                       <Cell
                         key={i}
-                        fill={entry.name === "company" ? "#10b981" : "#f59e0b"}
+                        fill={entry.name === "company" ? PAYMENT_SOURCE_COLORS.company : PAYMENT_SOURCE_COLORS.pocket}
                         className="transition-all duration-300 hover:opacity-80"
                       />
                     ))}
@@ -68,7 +68,7 @@ export function PaymentSourceCard({ data, dense = false }: PaymentSourceCardProp
                     }}
                     formatter={(value: any, _name: any, item: any) => {
                       const numericValue = typeof value === "number" ? value : Number(value);
-                      return [<span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>, item.payload.name === "company" ? "Company Card" : "Out of Pocket"];
+                      return [<span key="val" className="font-bold">{formatBaseCurrency(numericValue)}</span>, item.payload.name === "company" ? PAYMENT_SOURCE_LABELS.company : PAYMENT_SOURCE_LABELS.pocket];
                     }}
                   />
                 </PieChart>
@@ -84,10 +84,10 @@ export function PaymentSourceCard({ data, dense = false }: PaymentSourceCardProp
                   >
                     <span
                       className="h-3 w-3 flex-shrink-0 rounded-full"
-                      style={{ background: isCompany ? "#10b981" : "#f59e0b" }}
+                      style={{ background: isCompany ? PAYMENT_SOURCE_COLORS.company : PAYMENT_SOURCE_COLORS.pocket }}
                     />
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
-                      {isCompany ? "Company Card" : "Out of Pocket"}
+                      {isCompany ? PAYMENT_SOURCE_LABELS.company : PAYMENT_SOURCE_LABELS.pocket}
                     </span>
                     <span className="font-display text-sm font-bold tabular-nums text-foreground">
                       {formatBaseCurrency(c.total)}

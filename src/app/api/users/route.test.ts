@@ -78,7 +78,8 @@ describe("GET /api/users", () => {
     lean.mockResolvedValueOnce(mockUsers);
 
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([
-      { _id: "u1", totalSpend: 500 },
+      { _id: { user: "u1", source: "company" }, total: 300 },
+      { _id: { user: "u1", source: "pocket" }, total: 200 },
       // u2 has no spend
     ]);
 
@@ -86,18 +87,86 @@ describe("GET /api/users", () => {
 
     expect(connectDB).toHaveBeenCalled();
     expect(User.find).toHaveBeenCalled();
-    expect(Expense.aggregate).toHaveBeenCalled();
+    expect(Expense.aggregate).toHaveBeenCalledWith([
+      expect.objectContaining({
+        $group: expect.objectContaining({
+          _id: {
+            user: "$createdBy",
+            source: { $cond: [{ $eq: ["$paymentSource", "company"] }, "company", "pocket"] },
+          },
+        }),
+      }),
+    ]);
 
     expect(NextResponse.json).toHaveBeenCalledWith({
       users: [
-        { ...mockUsers[0], totalSpend: 500 },
-        { ...mockUsers[1], totalSpend: 0 },
+        { ...mockUsers[0], totalSpend: 500, companySpend: 300, pocketSpend: 200 },
+        { ...mockUsers[1], totalSpend: 0, companySpend: 0, pocketSpend: 0 },
       ],
     });
     
     // Check that we got the mocked result object back from our NextRespose mock
     expect((result as any).data.users).toHaveLength(2);
     expect((result as any).data.users[0].totalSpend).toBe(500);
+    expect((result as any).data.users[0].companySpend).toBe(300);
+    expect((result as any).data.users[0].pocketSpend).toBe(200);
     expect((result as any).data.users[1].totalSpend).toBe(0);
+    expect((result as any).data.users[1].companySpend).toBe(0);
+    expect((result as any).data.users[1].pocketSpend).toBe(0);
+  });
+
+  it("should treat company-only, pocket-only, and unknown sources correctly", async () => {
+    vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "admin-123", role: "admin" } as any);
+    vi.mocked(requireAdmin).mockReturnValueOnce(null);
+
+    const mockUsers = [
+      { _id: "u1", name: "Company Only" },
+      { _id: "u2", name: "Pocket Only" },
+      { _id: "u3", name: "Unknown Source" },
+    ];
+
+    const UserMock = await import("@/models/User");
+    const { lean } = (UserMock as any).__mockChain;
+    lean.mockResolvedValueOnce(mockUsers);
+
+    vi.mocked(Expense.aggregate).mockResolvedValueOnce([
+      { _id: { user: "u1", source: "company" }, total: 150 },
+      { _id: { user: "u2", source: "pocket" }, total: 80 },
+      { _id: { user: "u3", source: "unknown" }, total: 25 },
+    ]);
+
+    await GET(mockReq);
+
+    expect(NextResponse.json).toHaveBeenCalledWith({
+      users: [
+        { ...mockUsers[0], totalSpend: 150, companySpend: 150, pocketSpend: 0 },
+        { ...mockUsers[1], totalSpend: 80, companySpend: 0, pocketSpend: 80 },
+        { ...mockUsers[2], totalSpend: 25, companySpend: 0, pocketSpend: 25 },
+      ],
+    });
+  });
+
+  it("should match ObjectId-like user ids when joining spend", async () => {
+    vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "admin-123", role: "admin" } as any);
+    vi.mocked(requireAdmin).mockReturnValueOnce(null);
+
+    const userId = { toString: () => "507f1f77bcf86cd799439011" };
+    const mockUsers = [{ _id: userId, name: "ObjectId User" }];
+
+    const UserMock = await import("@/models/User");
+    const { lean } = (UserMock as any).__mockChain;
+    lean.mockResolvedValueOnce(mockUsers);
+
+    vi.mocked(Expense.aggregate).mockResolvedValueOnce([
+      { _id: { user: { toString: () => "507f1f77bcf86cd799439011" }, source: "company" }, total: 90 },
+    ]);
+
+    await GET(mockReq);
+
+    expect(NextResponse.json).toHaveBeenCalledWith({
+      users: [
+        { ...mockUsers[0], totalSpend: 90, companySpend: 90, pocketSpend: 0 },
+      ],
+    });
   });
 });

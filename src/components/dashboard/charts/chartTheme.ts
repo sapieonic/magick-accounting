@@ -12,6 +12,16 @@ export const PIE_COLORS = [
   "#ec4899", // pink
 ];
 
+export const PAYMENT_SOURCE_COLORS = {
+  company: "#10b981",
+  pocket: "#f59e0b",
+} as const;
+
+export const PAYMENT_SOURCE_LABELS = {
+  company: "Company Card",
+  pocket: "Out of Pocket",
+} as const;
+
 export interface ChartColors {
   grid: string;
   axis: string;

@@ -4,6 +4,14 @@ import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
 
+interface SpendBreakdown {
+  totalSpend: number;
+  companySpend: number;
+  pocketSpend: number;
+}
+
+const EMPTY_SPEND: SpendBreakdown = { totalSpend: 0, companySpend: 0, pocketSpend: 0 };
+
 export async function GET(req: NextRequest) {
   const authResult = await verifyAuth(req);
   if (authResult instanceof NextResponse) return authResult;
@@ -19,20 +27,33 @@ export async function GET(req: NextRequest) {
   const userSpends = await Expense.aggregate([
     {
       $group: {
-        _id: "$createdBy",
-        totalSpend: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+        _id: {
+          user: "$createdBy",
+          source: { $cond: [{ $eq: ["$paymentSource", "company"] }, "company", "pocket"] },
+        },
+        total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
       },
     },
   ]);
 
   const spendMap = userSpends.reduce((acc, curr) => {
-    acc[curr._id.toString()] = curr.totalSpend;
+    const userId = String(curr._id.user);
+    if (!acc[userId]) {
+      acc[userId] = { totalSpend: 0, companySpend: 0, pocketSpend: 0 };
+    }
+    const amount = curr.total || 0;
+    if (curr._id.source === "company") {
+      acc[userId].companySpend += amount;
+    } else {
+      acc[userId].pocketSpend += amount;
+    }
+    acc[userId].totalSpend += amount;
     return acc;
-  }, {} as Record<string, number>);
+  }, {} as Record<string, SpendBreakdown>);
 
   const usersWithSpend = users.map((user: any) => ({
     ...user,
-    totalSpend: spendMap[String(user._id)] || 0,
+    ...(spendMap[String(user._id)] || EMPTY_SPEND),
   }));
 
   return NextResponse.json({ users: usersWithSpend });
