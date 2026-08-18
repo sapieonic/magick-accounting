@@ -263,16 +263,18 @@ describe("parseInvoice", () => {
   });
 
   it("omits an invalid or empty discount", () => {
-    expect(parseInvoice(validBody({ discount: { type: "bogus", value: 10 } }))).toMatchObject({
-      discount: undefined,
-    });
-    expect(parseInvoice(validBody({ discount: { type: "percentage", value: 0 } }))).toMatchObject({
-      discount: undefined,
-    });
-    expect(parseInvoice(validBody({ discount: { type: "fixed", value: -20 } }))).toMatchObject({
-      discount: undefined,
-    });
-    expect(parseInvoice(validBody({}))).toMatchObject({ discount: undefined });
+    for (const discount of [
+      { type: "bogus", value: 10 },
+      { type: "percentage", value: 0 },
+      { type: "fixed", value: -20 },
+      undefined,
+    ]) {
+      const parsed = parseInvoice(
+        discount === undefined ? validBody() : validBody({ discount })
+      );
+      expect(parsed).not.toBeTypeOf("string");
+      expect(parsed).not.toHaveProperty("discount");
+    }
   });
 });
 

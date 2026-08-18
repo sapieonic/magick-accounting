@@ -55,6 +55,7 @@ async function renderInvoiceForm() {
 
   render(<InvoicesPage />);
   await screen.findByRole("heading", { name: "Generate Tax Invoice" });
+  await screen.findByDisplayValue("admin@example.com");
 }
 
 function fillLineItem(rate = "1000") {
@@ -118,8 +119,16 @@ describe("InvoicesPage discounts", () => {
   });
 
   it("includes the discount in the generate-invoice payload", async () => {
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:invoice");
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => "blob:invoice"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
     vi.mocked(api.postBlob).mockResolvedValue(new Blob(["pdf"]));
 
     await renderInvoiceForm();
