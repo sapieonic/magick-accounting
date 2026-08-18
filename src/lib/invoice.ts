@@ -1,5 +1,7 @@
 import type {
+  DiscountType,
   InvoiceData,
+  InvoiceDiscount,
   InvoiceLineItem,
   InvoiceTotals,
   ReceiptData,
@@ -12,6 +14,22 @@ function round2(n: number): number {
 const str = (v: unknown) => String(v ?? "").trim();
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DISCOUNT_TYPES: DiscountType[] = ["percentage", "fixed"];
+
+function parseDiscount(raw: unknown): InvoiceDiscount | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const d = raw as Record<string, unknown>;
+  const type = str(d.type) as DiscountType;
+  if (!DISCOUNT_TYPES.includes(type)) return undefined;
+  const value = num(d.value);
+  if (value <= 0) return undefined;
+  const description = d.description ? str(d.description) : "";
+  return {
+    type,
+    value,
+    ...(description ? { description } : {}),
+  };
+}
 
 /**
  * Validates and normalizes a raw request body into a clean InvoiceData object,
@@ -51,6 +69,7 @@ export function parseInvoice(body: unknown): InvoiceData | string {
   }
 
   const bank = (b.bank ?? {}) as Record<string, unknown>;
+  const discount = parseDiscount(b.discount);
 
   return {
     invoiceNumber,
@@ -72,6 +91,7 @@ export function parseInvoice(body: unknown): InvoiceData | string {
       gstin: str(customer.gstin),
     },
     lineItems,
+    ...(discount ? { discount } : {}),
     bank: {
       accountName: str(bank.accountName),
       accountNumber: str(bank.accountNumber),
@@ -123,8 +143,43 @@ export function lineItemAmount(quantity: number, rate: number): number {
 }
 
 /**
+ * Discount deducted from `subTotal`. Percentage discounts are capped at 100%
+ * and a fixed discount cannot exceed the sub-total.
+ */
+export function computeDiscountAmount(
+  subTotal: number,
+  discount?: InvoiceDiscount
+): number {
+  if (!discount || subTotal <= 0) return 0;
+  const value = Math.max(0, Number(discount.value) || 0);
+  if (value <= 0) return 0;
+
+  let amount = 0;
+  if (discount.type === "percentage") {
+    amount = subTotal * (Math.min(value, 100) / 100);
+  } else if (discount.type === "fixed") {
+    amount = value;
+  }
+
+  return round2(Math.min(amount, subTotal));
+}
+
+/** Label for the discount row on the form and PDF. Empty when there is none. */
+export function formatDiscountLabel(data: InvoiceData, discountAmount: number): string {
+  if (discountAmount <= 0) return "";
+  const d = data.discount;
+  if (d?.description && d.type === "percentage") {
+    return `Discount (${d.description}, ${d.value}%)`;
+  }
+  if (d?.description) return `Discount (${d.description})`;
+  if (d?.type === "percentage") return `Discount (${d.value}%)`;
+  return "Discount";
+}
+
+/**
  * Computes per-item amounts and the grand total for an Indian GST invoice.
- * CGST and SGST are invoice-level rates applied directly to the sub-total.
+ * An optional invoice-level discount is deducted from the sub-total first;
+ * CGST and SGST are then applied to the remaining taxable amount.
  */
 export function computeTotals(data: InvoiceData): InvoiceTotals {
   const perItem = data.lineItems.map((li) => ({
@@ -132,20 +187,24 @@ export function computeTotals(data: InvoiceData): InvoiceTotals {
   }));
 
   const subTotal = round2(perItem.reduce((s, i) => s + i.amount, 0));
+  const discountAmount = computeDiscountAmount(subTotal, data.discount);
+  const taxableAmount = round2(subTotal - discountAmount);
 
   const cgstRate = Math.max(0, Number(data.cgstRate) || 0);
   const sgstRate = Math.max(0, Number(data.sgstRate) || 0);
-  const cgstAmount = round2(subTotal * (cgstRate / 100));
-  const sgstAmount = round2(subTotal * (sgstRate / 100));
+  const cgstAmount = round2(taxableAmount * (cgstRate / 100));
+  const sgstAmount = round2(taxableAmount * (sgstRate / 100));
 
   return {
     perItem,
     subTotal,
+    discountAmount,
+    taxableAmount,
     cgstRate,
     sgstRate,
     cgstAmount,
     sgstAmount,
-    total: round2(subTotal + cgstAmount + sgstAmount),
+    total: round2(taxableAmount + cgstAmount + sgstAmount),
   };
 }
 

@@ -7,6 +7,21 @@ export interface InvoiceLineItem {
   rate: number;
 }
 
+/** How an invoice-level discount is calculated. */
+export type DiscountType = "percentage" | "fixed";
+
+/**
+ * Invoice-level discount applied to the sub-total before GST.
+ * `percentage` uses `value` as a percent (e.g. 10 for 10%);
+ * `fixed` uses `value` as a rupee amount.
+ */
+export interface InvoiceDiscount {
+  type: DiscountType;
+  value: number;
+  /** Optional label shown on the PDF, e.g. "Early payment". */
+  description?: string;
+}
+
 export interface InvoiceSeller {
   name: string;
   /** Multi-line address (free text, newlines allowed). */
@@ -40,13 +55,15 @@ export interface InvoiceData {
   hsnSac?: string;
   /** Place of supply, e.g. "Telangana (36)". */
   placeOfSupply?: string;
-  /** CGST rate as a percentage applied to the invoice sub-total, e.g. 9 for 9%. */
+  /** CGST rate as a percentage applied to the taxable amount, e.g. 9 for 9%. */
   cgstRate: number;
-  /** SGST rate as a percentage applied to the invoice sub-total, e.g. 9 for 9%. */
+  /** SGST rate as a percentage applied to the taxable amount, e.g. 9 for 9%. */
   sgstRate: number;
   seller: InvoiceSeller;
   customer: InvoiceCustomer;
   lineItems: InvoiceLineItem[];
+  /** Optional discount deducted from the sub-total before GST. */
+  discount?: InvoiceDiscount;
   bank?: BankDetails;
 }
 
@@ -91,9 +108,13 @@ export interface LineItemAmounts {
 export interface InvoiceTotals {
   perItem: LineItemAmounts[];
   subTotal: number;
-  /** CGST rate applied to the sub-total (percentage). */
+  /** Discount deducted from the sub-total (0 when none). */
+  discountAmount: number;
+  /** Taxable value after discount. GST is applied to this. */
+  taxableAmount: number;
+  /** CGST rate applied to the taxable amount (percentage). */
   cgstRate: number;
-  /** SGST rate applied to the sub-total (percentage). */
+  /** SGST rate applied to the taxable amount (percentage). */
   sgstRate: number;
   cgstAmount: number;
   sgstAmount: number;

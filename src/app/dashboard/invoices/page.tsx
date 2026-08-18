@@ -8,9 +8,9 @@ import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import Spinner from "@/components/ui/Spinner";
 import { ListPageSkeleton } from "@/components/ui/Skeleton";
-import { computeTotals, formatRupees, lineItemAmount } from "@/lib/invoice";
+import { computeTotals, formatDiscountLabel, formatRupees, lineItemAmount } from "@/lib/invoice";
 import { PAYMENT_METHODS } from "@/types/invoice";
-import type { InvoiceData, ReceiptData } from "@/types/invoice";
+import type { DiscountType, InvoiceData, ReceiptData } from "@/types/invoice";
 import { FileText, Plus, Receipt, Trash2 } from "lucide-react";
 
 interface LineRow {
@@ -44,6 +44,9 @@ export default function InvoicesPage() {
     placeOfSupply: "",
     cgstRate: "9",
     sgstRate: "9",
+    discountType: "none" as "none" | DiscountType,
+    discountValue: "",
+    discountDescription: "",
   });
   const [seller, setSeller] = useState({
     name: process.env.NEXT_PUBLIC_APP_NAME || "",
@@ -127,6 +130,14 @@ export default function InvoicesPage() {
       quantity: parseFloat(li.quantity) || 0,
       rate: parseFloat(li.rate) || 0,
     })),
+    discount:
+      form.discountType !== "none" && parseFloat(form.discountValue) > 0
+        ? {
+            type: form.discountType,
+            value: parseFloat(form.discountValue) || 0,
+            description: form.discountDescription.trim() || undefined,
+          }
+        : undefined,
     bank: { ...bank },
   });
 
@@ -310,11 +321,56 @@ export default function InvoicesPage() {
                 className="input-field tabular-nums"
               />
             </Field>
+            <Field label="Discount type">
+              <select
+                value={form.discountType}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    discountType: e.target.value as "none" | DiscountType,
+                    discountValue: e.target.value === "none" ? "" : form.discountValue,
+                  })
+                }
+                className="input-field"
+                aria-label="Discount type"
+              >
+                <option value="none">None</option>
+                <option value="percentage">Percentage</option>
+                <option value="fixed">Fixed amount (₹)</option>
+              </select>
+            </Field>
+            {form.discountType !== "none" ? (
+              <Field label={form.discountType === "percentage" ? "Discount %" : "Discount amount"}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  max={form.discountType === "percentage" ? "100" : undefined}
+                  value={form.discountValue}
+                  onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+                  placeholder={form.discountType === "percentage" ? "e.g. 10" : "e.g. 500"}
+                  className="input-field tabular-nums"
+                  aria-label="Discount value"
+                />
+              </Field>
+            ) : null}
+            {form.discountType !== "none" ? (
+              <Field label="Discount label">
+                <input
+                  type="text"
+                  value={form.discountDescription}
+                  onChange={(e) => setForm({ ...form, discountDescription: e.target.value })}
+                  placeholder="e.g. Early payment"
+                  className="input-field"
+                />
+              </Field>
+            ) : null}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             HSN/SAC and GST rates default from{" "}
             <span className="font-medium">Settings → Invoice Defaults</span> and apply to the
-            whole invoice — CGST and SGST are charged on the sub-total.
+            whole invoice. A discount (percentage or fixed) is deducted from the sub-total
+            before CGST and SGST.
           </p>
         </Section>
 
@@ -573,6 +629,20 @@ export default function InvoicesPage() {
                 <span className="text-muted-foreground">Sub Total</span>
                 <span className="tabular-nums">{formatRupees(totals.subTotal)}</span>
               </div>
+              {totals.discountAmount > 0 ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    {formatDiscountLabel(buildInvoiceData(), totals.discountAmount)}
+                  </span>
+                  <span className="tabular-nums">-{formatRupees(totals.discountAmount)}</span>
+                </div>
+              ) : null}
+              {totals.discountAmount > 0 ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Taxable Amount</span>
+                  <span className="tabular-nums">{formatRupees(totals.taxableAmount)}</span>
+                </div>
+              ) : null}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">CGST ({totals.cgstRate}%)</span>
                 <span className="tabular-nums">{formatRupees(totals.cgstAmount)}</span>

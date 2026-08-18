@@ -3,6 +3,7 @@ import type { ReceiptData } from "@/types/invoice";
 import {
   computeTotals,
   formatAmount,
+  formatDiscountLabel,
   formatRupees,
   formatInvoiceDate,
   amountInWords,
@@ -113,6 +114,20 @@ export function ReceiptDocument({ data }: { data: ReceiptData }) {
               <Text style={styles.totalLabel}>Sub Total</Text>
               <Text style={styles.totalValue}>{formatAmount(totals.subTotal)}</Text>
             </View>
+            {totals.discountAmount > 0 ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>
+                  {formatDiscountLabel(data, totals.discountAmount)}
+                </Text>
+                <Text style={styles.totalValue}>-{formatAmount(totals.discountAmount)}</Text>
+              </View>
+            ) : null}
+            {totals.discountAmount > 0 ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Taxable Amount</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.taxableAmount)}</Text>
+              </View>
+            ) : null}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>CGST ({totals.cgstRate}%)</Text>
               <Text style={styles.totalValue}>{formatAmount(totals.cgstAmount)}</Text>
