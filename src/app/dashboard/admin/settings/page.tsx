@@ -459,7 +459,8 @@ export default function AdminSettingsPage() {
                 className="input-field tabular-nums"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                CGST and SGST are charged on the invoice sub-total.
+                CGST and SGST are charged on the taxable amount (sub-total minus any
+                discount).
               </p>
             </div>
           </div>

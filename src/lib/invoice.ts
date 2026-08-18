@@ -21,8 +21,9 @@ function parseDiscount(raw: unknown): InvoiceDiscount | undefined {
   const d = raw as Record<string, unknown>;
   const type = str(d.type) as DiscountType;
   if (!DISCOUNT_TYPES.includes(type)) return undefined;
-  const value = num(d.value);
+  let value = num(d.value);
   if (value <= 0) return undefined;
+  if (type === "percentage") value = Math.min(value, 100);
   const description = d.description ? str(d.description) : "";
   return {
     type,
@@ -69,7 +70,13 @@ export function parseInvoice(body: unknown): InvoiceData | string {
   }
 
   const bank = (b.bank ?? {}) as Record<string, unknown>;
-  const discount = parseDiscount(b.discount);
+  let discount: InvoiceDiscount | undefined;
+  if (b.discount != null) {
+    discount = parseDiscount(b.discount);
+    if (!discount) {
+      return "Discount must be a percentage or a positive fixed amount";
+    }
+  }
 
   return {
     invoiceNumber,

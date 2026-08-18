@@ -130,14 +130,17 @@ export default function InvoicesPage() {
       quantity: parseFloat(li.quantity) || 0,
       rate: parseFloat(li.rate) || 0,
     })),
-    discount:
-      form.discountType !== "none" && parseFloat(form.discountValue) > 0
-        ? {
-            type: form.discountType,
-            value: parseFloat(form.discountValue) || 0,
-            description: form.discountDescription.trim() || undefined,
-          }
-        : undefined,
+    discount: (() => {
+      if (form.discountType === "none") return undefined;
+      const raw = parseFloat(form.discountValue) || 0;
+      if (raw <= 0) return undefined;
+      const value = form.discountType === "percentage" ? Math.min(raw, 100) : raw;
+      return {
+        type: form.discountType,
+        value,
+        description: form.discountDescription.trim() || undefined,
+      };
+    })(),
     bank: { ...bank },
   });
 
@@ -154,6 +157,7 @@ export default function InvoicesPage() {
     },
   });
 
+  // Discount type/value live on `form`; seller/customer/bank do not affect totals.
   const totals = useMemo(() => computeTotals(buildInvoiceData()), [form, lineItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateRow = (i: number, patch: Partial<LineRow>) =>
@@ -347,7 +351,14 @@ export default function InvoicesPage() {
                   step="0.01"
                   max={form.discountType === "percentage" ? "100" : undefined}
                   value={form.discountValue}
-                  onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    const capped =
+                      form.discountType === "percentage" && parseFloat(next) > 100
+                        ? "100"
+                        : next;
+                    setForm({ ...form, discountValue: capped });
+                  }}
                   placeholder={form.discountType === "percentage" ? "e.g. 10" : "e.g. 500"}
                   className="input-field tabular-nums"
                   aria-label="Discount value"
@@ -358,9 +369,10 @@ export default function InvoicesPage() {
               <Field label="Discount label">
                 <input
                   type="text"
+                  maxLength={40}
                   value={form.discountDescription}
                   onChange={(e) => setForm({ ...form, discountDescription: e.target.value })}
-                  placeholder="e.g. Early payment"
+                  placeholder="e.g. Volume discount"
                   className="input-field"
                 />
               </Field>

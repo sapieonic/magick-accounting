@@ -8,6 +8,7 @@ import {
   formatInvoiceDate,
   amountInWords,
   parseInvoice,
+  parseReceipt,
 } from "@/lib/invoice";
 import type { InvoiceData } from "@/types/invoice";
 
@@ -262,19 +263,48 @@ describe("parseInvoice", () => {
     }
   });
 
-  it("omits an invalid or empty discount", () => {
+  it("omits a missing discount", () => {
+    const parsed = parseInvoice(validBody());
+    expect(parsed).not.toBeTypeOf("string");
+    expect(parsed).not.toHaveProperty("discount");
+  });
+
+  it("rejects a present but invalid discount", () => {
     for (const discount of [
       { type: "bogus", value: 10 },
       { type: "percentage", value: 0 },
       { type: "fixed", value: -20 },
-      undefined,
     ]) {
-      const parsed = parseInvoice(
-        discount === undefined ? validBody() : validBody({ discount })
+      expect(parseInvoice(validBody({ discount }))).toBe(
+        "Discount must be a percentage or a positive fixed amount"
       );
-      expect(parsed).not.toBeTypeOf("string");
-      expect(parsed).not.toHaveProperty("discount");
     }
+  });
+
+  it("clamps a percentage discount above 100%", () => {
+    const parsed = parseInvoice(validBody({ discount: { type: "percentage", value: 150 } }));
+    expect(parsed).toMatchObject({
+      discount: { type: "percentage", value: 100 },
+    });
+  });
+});
+
+describe("parseReceipt", () => {
+  it("keeps the discount and defaults amount received to the discounted total", () => {
+    const parsed = parseReceipt(
+      validBody({
+        discount: { type: "percentage", value: 10 },
+        receiptNumber: "RCPT-1",
+        payment: { method: "UPI", paidOn: "2024-01-02" },
+      })
+    );
+    expect(parsed).not.toBeTypeOf("string");
+    if (typeof parsed === "string") return;
+    expect(parsed).toMatchObject({
+      discount: { type: "percentage", value: 10 },
+    });
+    // 100 − 10% = 90 taxable, then 9% CGST + 9% SGST → 106.20
+    expect(parsed.payment.amountReceived).toBe(106.2);
   });
 });
 

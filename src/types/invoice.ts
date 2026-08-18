@@ -18,7 +18,7 @@ export type DiscountType = "percentage" | "fixed";
 export interface InvoiceDiscount {
   type: DiscountType;
   value: number;
-  /** Optional label shown on the PDF, e.g. "Early payment". */
+  /** Optional label shown on the PDF, e.g. "Volume discount". */
   description?: string;
 }
 
