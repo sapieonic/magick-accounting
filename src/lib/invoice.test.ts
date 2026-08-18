@@ -3,9 +3,12 @@ import {
   lineItemAmount,
   computeTotals,
   formatAmount,
+  formatDiscountLabel,
   formatRupees,
   formatInvoiceDate,
   amountInWords,
+  parseInvoice,
+  parseReceipt,
 } from "@/lib/invoice";
 import type { InvoiceData } from "@/types/invoice";
 
@@ -106,8 +109,202 @@ describe("computeTotals", () => {
   it("handles an empty line items list", () => {
     const totals = computeTotals(makeInvoice({ lineItems: [] }));
     expect(totals.subTotal).toBe(0);
+    expect(totals.discountAmount).toBe(0);
+    expect(totals.taxableAmount).toBe(0);
     expect(totals.total).toBe(0);
     expect(totals.perItem).toEqual([]);
+  });
+
+  it("leaves taxable amount equal to subtotal when there is no discount", () => {
+    const totals = computeTotals(
+      makeInvoice({
+        lineItems: [{ description: "a", quantity: 1, rate: 100 }],
+      })
+    );
+    expect(totals.discountAmount).toBe(0);
+    expect(totals.taxableAmount).toBe(100);
+  });
+
+  it("applies a percentage discount before GST", () => {
+    const totals = computeTotals(
+      makeInvoice({
+        cgstRate: 9,
+        sgstRate: 9,
+        discount: { type: "percentage", value: 10 },
+        lineItems: [{ description: "a", quantity: 1, rate: 1000 }],
+      })
+    );
+    expect(totals.subTotal).toBe(1000);
+    expect(totals.discountAmount).toBe(100);
+    expect(totals.taxableAmount).toBe(900);
+    expect(totals.cgstAmount).toBe(81);
+    expect(totals.sgstAmount).toBe(81);
+    expect(totals.total).toBe(1062);
+  });
+
+  it("applies a fixed discount before GST", () => {
+    const totals = computeTotals(
+      makeInvoice({
+        cgstRate: 9,
+        sgstRate: 9,
+        discount: { type: "fixed", value: 50 },
+        lineItems: [
+          { description: "a", quantity: 2, rate: 100 },
+          { description: "b", quantity: 1, rate: 50 },
+        ],
+      })
+    );
+    expect(totals.subTotal).toBe(250);
+    expect(totals.discountAmount).toBe(50);
+    expect(totals.taxableAmount).toBe(200);
+    expect(totals.cgstAmount).toBe(18);
+    expect(totals.sgstAmount).toBe(18);
+    expect(totals.total).toBe(236);
+  });
+
+  it("caps a percentage discount at 100%", () => {
+    const totals = computeTotals(
+      makeInvoice({
+        cgstRate: 9,
+        sgstRate: 9,
+        discount: { type: "percentage", value: 150 },
+        lineItems: [{ description: "a", quantity: 1, rate: 100 }],
+      })
+    );
+    expect(totals.discountAmount).toBe(100);
+    expect(totals.taxableAmount).toBe(0);
+    expect(totals.cgstAmount).toBe(0);
+    expect(totals.total).toBe(0);
+  });
+
+  it("caps a fixed discount at the sub-total", () => {
+    const totals = computeTotals(
+      makeInvoice({
+        discount: { type: "fixed", value: 9999 },
+        lineItems: [{ description: "a", quantity: 1, rate: 80 }],
+      })
+    );
+    expect(totals.discountAmount).toBe(80);
+    expect(totals.taxableAmount).toBe(0);
+    expect(totals.total).toBe(0);
+  });
+});
+
+describe("formatDiscountLabel", () => {
+  it("returns empty when there is no discount amount", () => {
+    expect(formatDiscountLabel(makeInvoice(), 0)).toBe("");
+  });
+
+  it("includes the percentage when there is no description", () => {
+    expect(
+      formatDiscountLabel(makeInvoice({ discount: { type: "percentage", value: 10 } }), 100)
+    ).toBe("Discount (10%)");
+  });
+
+  it("includes description and percentage together", () => {
+    expect(
+      formatDiscountLabel(
+        makeInvoice({
+          discount: { type: "percentage", value: 10, description: "Early payment" },
+        }),
+        100
+      )
+    ).toBe("Discount (Early payment, 10%)");
+  });
+
+  it("uses the description for a fixed discount", () => {
+    expect(
+      formatDiscountLabel(
+        makeInvoice({ discount: { type: "fixed", value: 50, description: "Loyalty" } }),
+        50
+      )
+    ).toBe("Discount (Loyalty)");
+  });
+
+  it("falls back to Discount for a plain fixed amount", () => {
+    expect(
+      formatDiscountLabel(makeInvoice({ discount: { type: "fixed", value: 50 } }), 50)
+    ).toBe("Discount");
+  });
+});
+
+function validBody(overrides: Record<string, unknown> = {}) {
+  return {
+    invoiceNumber: "INV-1",
+    invoiceDate: "2024-01-01",
+    cgstRate: 9,
+    sgstRate: 9,
+    seller: { name: "Seller" },
+    customer: { name: "Customer" },
+    lineItems: [{ description: "Widget", quantity: 1, rate: 100 }],
+    ...overrides,
+  };
+}
+
+describe("parseInvoice", () => {
+  it("parses a percentage discount with a description", () => {
+    const parsed = parseInvoice(
+      validBody({
+        discount: { type: "percentage", value: 12.5, description: "  Early payment  " },
+      })
+    );
+    expect(parsed).toMatchObject({
+      discount: { type: "percentage", value: 12.5, description: "Early payment" },
+    });
+  });
+
+  it("parses a fixed discount", () => {
+    const parsed = parseInvoice(validBody({ discount: { type: "fixed", value: 75 } }));
+    expect(parsed).toMatchObject({
+      discount: { type: "fixed", value: 75 },
+    });
+    if (typeof parsed !== "string") {
+      expect(parsed.discount).not.toHaveProperty("description");
+    }
+  });
+
+  it("omits a missing discount", () => {
+    const parsed = parseInvoice(validBody());
+    expect(parsed).not.toBeTypeOf("string");
+    expect(parsed).not.toHaveProperty("discount");
+  });
+
+  it("rejects a present but invalid discount", () => {
+    for (const discount of [
+      { type: "bogus", value: 10 },
+      { type: "percentage", value: 0 },
+      { type: "fixed", value: -20 },
+    ]) {
+      expect(parseInvoice(validBody({ discount }))).toBe(
+        "Discount must be a percentage or a positive fixed amount"
+      );
+    }
+  });
+
+  it("clamps a percentage discount above 100%", () => {
+    const parsed = parseInvoice(validBody({ discount: { type: "percentage", value: 150 } }));
+    expect(parsed).toMatchObject({
+      discount: { type: "percentage", value: 100 },
+    });
+  });
+});
+
+describe("parseReceipt", () => {
+  it("keeps the discount and defaults amount received to the discounted total", () => {
+    const parsed = parseReceipt(
+      validBody({
+        discount: { type: "percentage", value: 10 },
+        receiptNumber: "RCPT-1",
+        payment: { method: "UPI", paidOn: "2024-01-02" },
+      })
+    );
+    expect(parsed).not.toBeTypeOf("string");
+    if (typeof parsed === "string") return;
+    expect(parsed).toMatchObject({
+      discount: { type: "percentage", value: 10 },
+    });
+    // 100 − 10% = 90 taxable, then 9% CGST + 9% SGST → 106.20
+    expect(parsed.payment.amountReceived).toBe(106.2);
   });
 });
 

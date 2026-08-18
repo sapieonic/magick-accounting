@@ -8,9 +8,9 @@ export interface IInvoiceSettings extends Document {
   sellerAddress: string;
   sellerGstin: string;
   hsnSac: string;
-  /** CGST rate (%) applied to every invoice sub-total. */
+  /** CGST rate (%) applied to the taxable amount of every invoice. */
   cgstRate: number;
-  /** SGST rate (%) applied to every invoice sub-total. */
+  /** SGST rate (%) applied to the taxable amount of every invoice. */
   sgstRate: number;
   bankAccountName: string;
   bankAccountNumber: string;
