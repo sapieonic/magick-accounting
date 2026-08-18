@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/sapieonic/magick-accounting/compare/v1.7.0...v1.8.0) (2026-08-18)
+
+
+### Features
+
+* add percentage and fixed discounts to invoices ([#24](https://github.com/sapieonic/magick-accounting/issues/24)) ([1cc4618](https://github.com/sapieonic/magick-accounting/commit/1cc46185bca38fd67b036740017c31bdcda52870))
+
 # [1.7.0](https://github.com/sapieonic/magick-accounting/compare/v1.6.0...v1.7.0) (2026-08-16)
 
 
