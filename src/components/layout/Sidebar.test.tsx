@@ -27,6 +27,14 @@ describe("Sidebar", () => {
     expect(screen.getAllByText("Accounting portal").length).toBeGreaterThan(0);
   });
 
+  it("widens the expanded desktop rail so the lockup wordmark is not clipped", () => {
+    const { container } = render(<Sidebar open={false} onClose={() => {}} />);
+    const aside = container.querySelector("aside");
+
+    expect(aside?.className).toMatch(/\bw-72\b/);
+    expect(aside?.className).not.toMatch(/\bw-64\b/);
+  });
+
   it("should render the app version from package.json", () => {
     render(<Sidebar open={false} onClose={() => {}} />);
     

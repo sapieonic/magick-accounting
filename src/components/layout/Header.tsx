@@ -54,7 +54,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <BrandLogo size="sm" className="lg:hidden" />
+        <BrandLogo size="sm" truncate className="lg:hidden" />
       </div>
 
       <div className="flex items-center gap-2">

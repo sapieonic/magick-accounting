@@ -106,7 +106,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       <div
         className={clsx(
           "flex h-20 items-center gap-3",
-          iconOnly ? "justify-center px-0" : "px-6"
+          iconOnly ? "justify-center px-0" : "px-4"
         )}
       >
         <BrandLogo compact={iconOnly} size="md" />
@@ -156,7 +156,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       <aside
         className={clsx(
           "relative hidden flex-shrink-0 border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
-          collapsed ? "w-[72px]" : "w-64"
+          // w-72 matches the mobile overlay and leaves room for the MagickVoice
+          // lockup (mark + two-line wordmark) without clipping the label.
+          collapsed ? "w-[72px]" : "w-72"
         )}
       >
         {sidebarContent(collapsed)}

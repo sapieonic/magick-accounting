@@ -5,6 +5,8 @@ interface BrandLogoProps {
   compact?: boolean;
   /** Light type for dark surfaces such as the sign-in hero. */
   variant?: "default" | "onDark";
+  /** Ellipsize the wordmark when the parent is narrower than the lockup. */
+  truncate?: boolean;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
@@ -36,6 +38,7 @@ const SIZE = {
 export default function BrandLogo({
   compact = false,
   variant = "default",
+  truncate = false,
   size = "md",
   className,
 }: BrandLogoProps) {
@@ -43,7 +46,7 @@ export default function BrandLogo({
   const onDark = variant === "onDark";
 
   return (
-    <div className={clsx("flex min-w-0 items-center", s.gap, className)}>
+    <div className={clsx("flex items-center", truncate && "min-w-0", s.gap, className)}>
       <div className={clsx("relative flex flex-shrink-0 items-center justify-center", s.mark)}>
         <img
           src="/logo.png"
@@ -61,10 +64,11 @@ export default function BrandLogo({
         </span>
       </div>
       {!compact && (
-        <div className="min-w-0 leading-tight">
+        <div className={clsx("leading-tight", truncate && "min-w-0")}>
           <p
             className={clsx(
-              "font-heading truncate font-bold tracking-tight",
+              "font-heading font-bold tracking-tight",
+              truncate ? "truncate" : "whitespace-nowrap",
               s.name,
               onDark ? "text-white" : "text-foreground"
             )}
@@ -73,7 +77,8 @@ export default function BrandLogo({
           </p>
           <p
             className={clsx(
-              "truncate font-medium",
+              truncate ? "truncate" : "whitespace-nowrap",
+              "font-medium",
               s.tagline,
               onDark ? "text-white/55" : "text-muted-foreground"
             )}
