@@ -15,8 +15,8 @@ import {
   FileText,
   Package,
   X,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import BrandLogo from "@/components/layout/BrandLogo";
 import pkg from "../../../package.json";
@@ -155,7 +155,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Desktop sidebar */}
       <aside
         className={clsx(
-          "relative hidden flex-shrink-0 border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
+          // z-40 keeps the hanging collapse control above the header (z-30),
+          // which would otherwise paint over the right half of the button.
+          "relative z-40 hidden flex-shrink-0 overflow-visible border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
           // w-72 matches the mobile overlay and leaves room for the MagickVoice
           // lockup (mark + two-line wordmark) without clipping the label.
           collapsed ? "w-[72px]" : "w-72"
@@ -163,15 +165,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       >
         {sidebarContent(collapsed)}
         <button
+          type="button"
           onClick={toggleCollapsed}
-          className="absolute -right-3 top-[1.55rem] z-10 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-muted-foreground shadow-sm transition-colors hover:text-brand-600 dark:hover:text-brand-400"
+          className="absolute -right-3.5 top-[1.625rem] flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-muted shadow-md transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
-            <PanelLeftOpen className="h-3.5 w-3.5" />
+            <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
           ) : (
-            <PanelLeftClose className="h-3.5 w-3.5" />
+            <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
           )}
         </button>
       </aside>

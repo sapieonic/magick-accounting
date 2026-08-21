@@ -16,6 +16,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 describe("Sidebar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(usePathname).mockReturnValue("/dashboard");
     vi.mocked(useAuth).mockReturnValue({ isAdmin: true, isMasterAdmin: true } as any);
   });
@@ -40,6 +41,16 @@ describe("Sidebar", () => {
     
     // The version is rendered in the footer when the sidebar is NOT collapsed (iconOnly is false)
     expect(screen.getByText(`v${pkg.version}`)).toBeInTheDocument();
+  });
+
+  it("keeps the collapse control above the main column", () => {
+    const { container } = render(<Sidebar open={false} onClose={() => {}} />);
+    const aside = container.querySelector("aside");
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar", hidden: true });
+
+    expect(aside?.className).toMatch(/\bz-40\b/);
+    expect(collapse.className).toMatch(/-right-3/);
+    expect(collapse.className).toMatch(/shadow-md/);
   });
 
   it("should collapse sidebar on mobile when close button is clicked", () => {
