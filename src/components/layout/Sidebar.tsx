@@ -155,9 +155,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Desktop sidebar */}
       <div
         className={clsx(
-          // Wrapper has no backdrop-filter so the hanging chevron is not clipped.
-          // z-40 keeps it above the header (z-30).
-          "relative z-40 hidden h-full flex-shrink-0 transition-[width] duration-200 ease-in-out lg:block",
+          // Overflow stays visible so the divider chevron can hang over the
+          // border. z-40 keeps the control above the header (z-30). Backdrop
+          // blur lives on the inner aside so it cannot clip this button.
+          "relative z-40 hidden h-full flex-shrink-0 overflow-visible transition-[width] duration-200 ease-in-out lg:block",
           collapsed ? "w-[72px]" : "w-72"
         )}
       >
@@ -167,19 +168,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <button
           type="button"
           onClick={toggleCollapsed}
-          className={clsx(
-            "absolute z-20 flex cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-foreground shadow-md transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400",
-            // Keep the control inside the rail. The dashboard shell uses
-            // overflow-hidden, which clips any handle that hangs off the flex item.
-            collapsed ? "right-1.5 top-6 h-6 w-6" : "right-2 top-[1.625rem] h-7 w-7"
-          )}
+          className="absolute -right-3 top-7 z-50 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-background text-foreground shadow-md ring-2 ring-background transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
             <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
           ) : (
-            <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
+            <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
           )}
         </button>
       </div>

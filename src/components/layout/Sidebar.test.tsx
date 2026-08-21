@@ -43,13 +43,15 @@ describe("Sidebar", () => {
     expect(screen.getByText(`v${pkg.version}`)).toBeInTheDocument();
   });
 
-  it("keeps the collapse control above the main column", () => {
+  it("hangs a full collapse control on the sidebar divider", () => {
     const { container } = render(<Sidebar open={false} onClose={() => {}} />);
     const rail = container.querySelector("aside")?.parentElement;
     const collapse = screen.getByRole("button", { name: "Collapse sidebar", hidden: true });
 
     expect(rail?.className).toMatch(/\bz-40\b/);
-    expect(collapse.className).toMatch(/\bright-2\b/);
+    expect(rail?.className).toMatch(/\boverflow-visible\b/);
+    expect(collapse.className).toMatch(/-right-3/);
+    expect(collapse.className).toMatch(/ring-2/);
     expect(collapse.className).toMatch(/shadow-md/);
     expect(collapse.parentElement).toBe(rail);
   });
