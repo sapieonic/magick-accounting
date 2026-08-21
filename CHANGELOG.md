@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/sapieonic/magick-accounting/compare/v1.8.0...v1.9.0) (2026-08-21)
+
+
+### Features
+
+* use MagickVoice Accounting portal lockup as page logo ([#25](https://github.com/sapieonic/magick-accounting/issues/25)) ([5be6d8f](https://github.com/sapieonic/magick-accounting/commit/5be6d8f9e86cd4eba58a4eb1df4a77ba0fdc30f5))
+
 # [1.8.0](https://github.com/sapieonic/magick-accounting/compare/v1.7.0...v1.8.0) (2026-08-18)
 
 
