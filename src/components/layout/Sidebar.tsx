@@ -167,12 +167,17 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <button
           type="button"
           onClick={toggleCollapsed}
-          className="absolute -right-3.5 top-[1.625rem] z-20 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-muted shadow-md transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400"
+          className={clsx(
+            "absolute z-20 flex cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-foreground shadow-md transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400",
+            // Keep the control inside the rail. The dashboard shell uses
+            // overflow-hidden, which clips any handle that hangs off the flex item.
+            collapsed ? "right-1.5 top-6 h-6 w-6" : "right-2 top-[1.625rem] h-7 w-7"
+          )}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
-            <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
           ) : (
             <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
           )}
