@@ -10,6 +10,14 @@ describe("BrandLogo", () => {
     expect(screen.getByText("Accounting portal")).toBeInTheDocument();
   });
 
+  it("does not paint an opaque background behind the transparent mark", () => {
+    const { container } = render(<BrandLogo />);
+    const mark = container.querySelector('img[src="/logo.png"]')?.parentElement;
+
+    expect(mark).toBeTruthy();
+    expect(mark?.className).not.toMatch(/bg-/);
+  });
+
   it("hides the wordmark in compact mode", () => {
     render(<BrandLogo compact />);
 

@@ -44,12 +44,7 @@ export default function BrandLogo({
 
   return (
     <div className={clsx("flex min-w-0 items-center", s.gap, className)}>
-      <div
-        className={clsx(
-          "relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#080112] shadow-soft ring-1 ring-white/10",
-          s.mark
-        )}
-      >
+      <div className={clsx("relative flex flex-shrink-0 items-center justify-center", s.mark)}>
         <img
           src="/logo.png"
           alt={compact ? "MagickVoice Accounting portal" : ""}
