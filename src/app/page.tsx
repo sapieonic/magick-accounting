@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import Spinner from "@/components/ui/Spinner";
-import { LogIn, Receipt, Shield, Building2 } from "lucide-react";
+import BrandLogo from "@/components/layout/BrandLogo";
+import { Receipt, Shield, Building2 } from "lucide-react";
 
 export default function LoginPage() {
   const { user, loading, error, signInWithGoogle } = useAuth();
@@ -46,12 +47,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white p-1.5 shadow-lg ring-1 ring-white/30 backdrop-blur-md">
-              <img src="/logo.png" alt="Magick Accounting logo" className="h-9 w-auto" />
-            </div>
-            <span className="font-heading text-2xl font-bold tracking-tight">Magick Accounting</span>
-          </div>
+          <BrandLogo size="lg" variant="onDark" />
         </div>
 
         <div className="relative z-10 space-y-12">
@@ -84,12 +80,7 @@ export default function LoginPage() {
       <div className="bg-ledger flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <div className="mb-12 lg:hidden">
-            <div className="flex items-center gap-4">
-              <img src="/logo.png" alt="Magick Accounting logo" className="h-12 w-auto" />
-              <span className="font-heading text-2xl font-bold tracking-tight text-foreground">
-                Magick Accounting
-              </span>
-            </div>
+            <BrandLogo size="lg" />
           </div>
 
           <div className="mb-10">

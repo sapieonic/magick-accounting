@@ -15,9 +15,10 @@ import {
   FileText,
   Package,
   X,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import BrandLogo from "@/components/layout/BrandLogo";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
@@ -99,27 +100,38 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     </Link>
   );
 
+  const collapseControl = (iconOnly: boolean) => (
+    <button
+      type="button"
+      onClick={toggleCollapsed}
+      className={clsx(
+        "flex shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-background text-foreground shadow-sm transition-colors hover:border-brand-300 hover:bg-subtle hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400",
+        iconOnly ? "h-7 w-7" : "ml-auto h-7 w-7"
+      )}
+      aria-label={iconOnly ? "Expand sidebar" : "Collapse sidebar"}
+      title={iconOnly ? "Expand sidebar" : "Collapse sidebar"}
+    >
+      {iconOnly ? (
+        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
+      ) : (
+        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
+      )}
+    </button>
+  );
+
   // `iconOnly` controls the compact desktop rail; the mobile overlay always shows full labels.
-  const sidebarContent = (iconOnly: boolean) => (
+  const sidebarContent = (iconOnly: boolean, showCollapse = false) => (
     <div className="flex h-full flex-col">
       <div
         className={clsx(
-          "flex h-20 items-center gap-3",
-          iconOnly ? "justify-center px-0" : "px-6"
+          "flex gap-2",
+          iconOnly
+            ? "flex-col items-center px-2 py-3"
+            : "h-20 items-center px-3"
         )}
       >
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-soft shadow-brand-500/20 ring-1 ring-brand-100 dark:bg-brand-950 dark:ring-brand-500/20">
-          <img
-            src="/logo.png"
-            alt="Magick Accounting logo"
-            className="h-9 w-auto flex-shrink-0 drop-shadow-sm"
-          />
-        </div>
-        {!iconOnly && (
-          <span className="font-heading truncate text-lg font-bold tracking-tight text-foreground">
-            {process.env.NEXT_PUBLIC_APP_NAME || "Magick Accounting"}
-          </span>
-        )}
+        <BrandLogo compact={iconOnly} size="md" />
+        {showCollapse && collapseControl(iconOnly)}
       </div>
 
       <nav className={clsx("flex-1 space-y-1 py-4", iconOnly ? "px-2" : "px-3")}>
@@ -165,23 +177,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Desktop sidebar */}
       <aside
         className={clsx(
-          "relative hidden flex-shrink-0 border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
-          collapsed ? "w-[72px]" : "w-64"
+          "relative hidden h-full flex-shrink-0 overflow-hidden border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
+          collapsed ? "w-[72px]" : "w-72"
         )}
       >
-        {sidebarContent(collapsed)}
-        <button
-          onClick={toggleCollapsed}
-          className="absolute -right-3 top-[1.55rem] z-10 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-muted-foreground shadow-sm transition-colors hover:text-brand-600 dark:hover:text-brand-400"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-3.5 w-3.5" />
-          ) : (
-            <PanelLeftClose className="h-3.5 w-3.5" />
-          )}
-        </button>
+        {sidebarContent(collapsed, true)}
       </aside>
 
       {/* Mobile sidebar overlay */}
