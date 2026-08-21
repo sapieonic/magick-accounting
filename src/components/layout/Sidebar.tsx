@@ -153,21 +153,21 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside
+      <div
         className={clsx(
-          // z-40 keeps the hanging collapse control above the header (z-30),
-          // which would otherwise paint over the right half of the button.
-          "relative z-40 hidden flex-shrink-0 overflow-visible border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
-          // w-72 matches the mobile overlay and leaves room for the MagickVoice
-          // lockup (mark + two-line wordmark) without clipping the label.
+          // Wrapper has no backdrop-filter so the hanging chevron is not clipped.
+          // z-40 keeps it above the header (z-30).
+          "relative z-40 hidden h-full flex-shrink-0 transition-[width] duration-200 ease-in-out lg:block",
           collapsed ? "w-[72px]" : "w-72"
         )}
       >
-        {sidebarContent(collapsed)}
+        <aside className="h-full overflow-hidden border-r border-line bg-surface/80 backdrop-blur-xl">
+          {sidebarContent(collapsed)}
+        </aside>
         <button
           type="button"
           onClick={toggleCollapsed}
-          className="absolute -right-3.5 top-[1.625rem] flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-muted shadow-md transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400"
+          className="absolute -right-3.5 top-[1.625rem] z-20 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-muted shadow-md transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
@@ -177,7 +177,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
           )}
         </button>
-      </aside>
+      </div>
 
       {/* Mobile sidebar overlay */}
       {open && (

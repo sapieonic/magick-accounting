@@ -30,10 +30,10 @@ describe("Sidebar", () => {
 
   it("widens the expanded desktop rail so the lockup wordmark is not clipped", () => {
     const { container } = render(<Sidebar open={false} onClose={() => {}} />);
-    const aside = container.querySelector("aside");
+    const rail = container.querySelector("aside")?.parentElement;
 
-    expect(aside?.className).toMatch(/\bw-72\b/);
-    expect(aside?.className).not.toMatch(/\bw-64\b/);
+    expect(rail?.className).toMatch(/\bw-72\b/);
+    expect(rail?.className).not.toMatch(/\bw-64\b/);
   });
 
   it("should render the app version from package.json", () => {
@@ -45,12 +45,13 @@ describe("Sidebar", () => {
 
   it("keeps the collapse control above the main column", () => {
     const { container } = render(<Sidebar open={false} onClose={() => {}} />);
-    const aside = container.querySelector("aside");
+    const rail = container.querySelector("aside")?.parentElement;
     const collapse = screen.getByRole("button", { name: "Collapse sidebar", hidden: true });
 
-    expect(aside?.className).toMatch(/\bz-40\b/);
+    expect(rail?.className).toMatch(/\bz-40\b/);
     expect(collapse.className).toMatch(/-right-3/);
     expect(collapse.className).toMatch(/shadow-md/);
+    expect(collapse.parentElement).toBe(rail);
   });
 
   it("should collapse sidebar on mobile when close button is clicked", () => {
