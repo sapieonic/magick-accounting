@@ -30,9 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null;
 
   return (
-    // Do not clip overflow on this shell: the sidebar collapse chevron hangs
-    // over the rail divider. The main column still clips its own scroll.
-    <div className="flex h-dvh bg-background">
+    <div className="flex h-dvh overflow-hidden bg-background">
       <CommandPalette />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

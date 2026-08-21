@@ -100,16 +100,38 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     </Link>
   );
 
+  const collapseControl = (iconOnly: boolean) => (
+    <button
+      type="button"
+      onClick={toggleCollapsed}
+      className={clsx(
+        "flex shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-background text-foreground shadow-sm transition-colors hover:border-brand-300 hover:bg-subtle hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400",
+        iconOnly ? "h-7 w-7" : "ml-auto h-7 w-7"
+      )}
+      aria-label={iconOnly ? "Expand sidebar" : "Collapse sidebar"}
+      title={iconOnly ? "Expand sidebar" : "Collapse sidebar"}
+    >
+      {iconOnly ? (
+        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
+      ) : (
+        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
+      )}
+    </button>
+  );
+
   // `iconOnly` controls the compact desktop rail; the mobile overlay always shows full labels.
-  const sidebarContent = (iconOnly: boolean) => (
+  const sidebarContent = (iconOnly: boolean, showCollapse = false) => (
     <div className="flex h-full flex-col">
       <div
         className={clsx(
-          "flex h-20 items-center gap-3",
-          iconOnly ? "justify-center px-0" : "px-4"
+          "flex gap-2",
+          iconOnly
+            ? "flex-col items-center px-2 py-3"
+            : "h-20 items-center px-3"
         )}
       >
         <BrandLogo compact={iconOnly} size="md" />
+        {showCollapse && collapseControl(iconOnly)}
       </div>
 
       <nav className={clsx("flex-1 space-y-1 py-4", iconOnly ? "px-2" : "px-3")}>
@@ -153,32 +175,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <div
+      <aside
         className={clsx(
-          // Overflow stays visible so the divider chevron can hang over the
-          // border. z-40 keeps the control above the header (z-30). Backdrop
-          // blur lives on the inner aside so it cannot clip this button.
-          "relative z-40 hidden h-full flex-shrink-0 overflow-visible transition-[width] duration-200 ease-in-out lg:block",
+          "relative hidden h-full flex-shrink-0 overflow-hidden border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
           collapsed ? "w-[72px]" : "w-72"
         )}
       >
-        <aside className="h-full overflow-hidden border-r border-line bg-surface/80 backdrop-blur-xl">
-          {sidebarContent(collapsed)}
-        </aside>
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          className="absolute -right-3 top-7 z-50 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-background text-foreground shadow-md ring-2 ring-background transition-colors hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
-          ) : (
-            <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
-          )}
-        </button>
-      </div>
+        {sidebarContent(collapsed, true)}
+      </aside>
 
       {/* Mobile sidebar overlay */}
       {open && (

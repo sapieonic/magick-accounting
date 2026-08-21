@@ -30,7 +30,7 @@ describe("Sidebar", () => {
 
   it("widens the expanded desktop rail so the lockup wordmark is not clipped", () => {
     const { container } = render(<Sidebar open={false} onClose={() => {}} />);
-    const rail = container.querySelector("aside")?.parentElement;
+    const rail = container.querySelector("aside");
 
     expect(rail?.className).toMatch(/\bw-72\b/);
     expect(rail?.className).not.toMatch(/\bw-64\b/);
@@ -43,17 +43,23 @@ describe("Sidebar", () => {
     expect(screen.getByText(`v${pkg.version}`)).toBeInTheDocument();
   });
 
-  it("hangs a full collapse control on the sidebar divider", () => {
-    const { container } = render(<Sidebar open={false} onClose={() => {}} />);
-    const rail = container.querySelector("aside")?.parentElement;
+  it("keeps the collapse control fully inside the logo row", () => {
+    render(<Sidebar open={false} onClose={() => {}} />);
     const collapse = screen.getByRole("button", { name: "Collapse sidebar", hidden: true });
 
-    expect(rail?.className).toMatch(/\bz-40\b/);
-    expect(rail?.className).toMatch(/\boverflow-visible\b/);
-    expect(collapse.className).toMatch(/-right-3/);
-    expect(collapse.className).toMatch(/ring-2/);
-    expect(collapse.className).toMatch(/shadow-md/);
-    expect(collapse.parentElement).toBe(rail);
+    expect(collapse.className).toMatch(/\bml-auto\b/);
+    expect(collapse.className).toMatch(/rounded-full/);
+    expect(collapse.className).not.toMatch(/-right-/);
+    expect(collapse.parentElement?.className).toMatch(/\bh-20\b/);
+  });
+
+  it("places the expand control below the mark when the rail is collapsed", async () => {
+    localStorage.setItem("sidebar-collapsed", "true");
+    render(<Sidebar open={false} onClose={() => {}} />);
+
+    const expand = await screen.findByRole("button", { name: "Expand sidebar", hidden: true });
+    expect(expand.className).not.toMatch(/\bml-auto\b/);
+    expect(expand.parentElement?.className).toMatch(/flex-col/);
   });
 
   it("should collapse sidebar on mobile when close button is clicked", () => {
