@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Menu, LogOut, ChevronDown, Search } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import BrandLogo from "@/components/layout/BrandLogo";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
 import clsx from "clsx";
 
@@ -45,15 +46,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line/50 bg-surface/80 px-4 backdrop-blur-md lg:px-8">
-      <button
-        onClick={onMenuClick}
-        className="cursor-pointer rounded-xl p-2 text-muted-foreground transition-colors hover:bg-subtle lg:hidden"
-        aria-label="Open navigation menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
-      <div className="lg:flex-1" />
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          onClick={onMenuClick}
+          className="cursor-pointer rounded-xl p-2 text-muted-foreground transition-colors hover:bg-subtle lg:hidden"
+          aria-label="Open navigation menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <BrandLogo size="sm" className="lg:hidden" />
+      </div>
 
       <div className="flex items-center gap-2">
         <button

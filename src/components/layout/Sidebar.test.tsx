@@ -20,6 +20,13 @@ describe("Sidebar", () => {
     vi.mocked(useAuth).mockReturnValue({ isAdmin: true, isMasterAdmin: true } as any);
   });
 
+  it("renders the MagickVoice Accounting portal lockup", () => {
+    render(<Sidebar open={false} onClose={() => {}} />);
+
+    expect(screen.getAllByText("MagickVoice").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Accounting portal").length).toBeGreaterThan(0);
+  });
+
   it("should render the app version from package.json", () => {
     render(<Sidebar open={false} onClose={() => {}} />);
     

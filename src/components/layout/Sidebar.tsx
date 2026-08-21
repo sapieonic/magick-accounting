@@ -18,6 +18,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import BrandLogo from "@/components/layout/BrandLogo";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
@@ -108,18 +109,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           iconOnly ? "justify-center px-0" : "px-6"
         )}
       >
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-soft shadow-brand-500/20 ring-1 ring-brand-100 dark:bg-brand-950 dark:ring-brand-500/20">
-          <img
-            src="/logo.png"
-            alt="Magick Accounting logo"
-            className="h-9 w-auto flex-shrink-0 drop-shadow-sm"
-          />
-        </div>
-        {!iconOnly && (
-          <span className="font-heading truncate text-lg font-bold tracking-tight text-foreground">
-            {process.env.NEXT_PUBLIC_APP_NAME || "Magick Accounting"}
-          </span>
-        )}
+        <BrandLogo compact={iconOnly} size="md" />
       </div>
 
       <nav className={clsx("flex-1 space-y-1 py-4", iconOnly ? "px-2" : "px-3")}>
