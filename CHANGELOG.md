@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/sapieonic/magick-accounting/compare/v1.9.0...v1.10.0) (2026-10-12)
+
+
+### Features
+
+* support split payment (pocket + company) on expenses ([#26](https://github.com/sapieonic/magick-accounting/issues/26)) ([8548a64](https://github.com/sapieonic/magick-accounting/commit/8548a64beb36d77b63e3d5f5a55b552876c796e8))
+
 # [1.9.0](https://github.com/sapieonic/magick-accounting/compare/v1.8.0...v1.9.0) (2026-08-21)
 
 
