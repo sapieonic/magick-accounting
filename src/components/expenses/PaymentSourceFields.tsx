@@ -59,8 +59,9 @@ export default function PaymentSourceFields({
             <input
               id="pocketAmount"
               type="number"
+              required
               disabled={disabled}
-              min="0"
+              min="0.01"
               step="0.01"
               value={pocketAmount}
               onChange={(e) => onPocketAmountChange(e.target.value)}

@@ -53,7 +53,6 @@ export default function EditExpensePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [linkedAssets, setLinkedAssets] = useState<LinkedAsset[]>([]);
-  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const emptyForm = {
     title: "",
@@ -165,14 +164,12 @@ export default function EditExpensePage() {
 
   const splitError =
     form.paymentSource === "split" ? getPaymentSplitError(form.amount, form.pocketAmount) : null;
-  // An empty pocket field only errors after a submit attempt; a filled-in one
-  // errors as soon as it (or the amount, once entered) stops fitting.
-  const visibleSplitError =
-    (form.pocketAmount !== "" && form.amount !== "") || submitAttempted ? splitError : null;
+  // The browser's `required` check covers an empty pocket field; a filled-in
+  // one errors as soon as it (or the amount, once entered) stops fitting.
+  const visibleSplitError = form.pocketAmount !== "" && form.amount !== "" ? splitError : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitAttempted(true);
 
     const gstAmount = form.gstAmount ? parseFloat(form.gstAmount) : null;
     if (gstAmount != null && gstAmount > parseFloat(form.amount)) {

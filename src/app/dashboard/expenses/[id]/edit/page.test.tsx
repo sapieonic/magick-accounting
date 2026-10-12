@@ -115,7 +115,7 @@ describe("EditExpensePage split payment", () => {
     );
   });
 
-  it("blocks submit with an inline error when switching to split without a pocket share", async () => {
+  it("blocks submit when switching to split without a pocket share", async () => {
     const user = userEvent.setup();
     mockExpense({ ...splitExpense, paymentSource: "pocket", pocketAmount: 1000, pocketAmountInBaseCurrency: 1000 });
     render(<EditExpensePage />);
@@ -124,9 +124,15 @@ describe("EditExpensePage split payment", () => {
     expect(screen.getByLabelText(/paid from pocket/i)).toHaveValue(null);
     expect(screen.queryByText(/enter the amount paid from pocket/i)).not.toBeInTheDocument();
 
+    // Browsers stop this via `required`; the handler still guards it (fireEvent
+    // skips native validation).
+    expect(screen.getByLabelText(/paid from pocket/i)).toBeRequired();
     submit();
     expect(api.put).not.toHaveBeenCalled();
-    expect(screen.getByText(/enter the amount paid from pocket/i)).toBeInTheDocument();
+    expect(toastMock).toHaveBeenCalledWith(
+      "Enter the amount paid from pocket for a split payment",
+      "error"
+    );
   });
 
   it("sends the pocket share for split and null otherwise", async () => {

@@ -66,7 +66,6 @@ export default function NewExpensePage() {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
-  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   // Open the AI-upload modal on arrival unless the user opted out earlier.
   useEffect(() => {
@@ -96,7 +95,8 @@ export default function NewExpensePage() {
 
   // Warn before discarding typed-in or extracted data on a full page unload.
   const isDirty = Boolean(
-    form.title || form.amount || form.description || form.category !== "" || receipt || assets.length > 0
+    form.title || form.amount || form.description || form.category !== "" || form.pocketAmount ||
+      receipt || assets.length > 0
   );
 
   useEffect(() => {
@@ -220,14 +220,12 @@ export default function NewExpensePage() {
 
   const splitError =
     form.paymentSource === "split" ? getPaymentSplitError(form.amount, form.pocketAmount) : null;
-  // An empty pocket field only errors after a submit attempt; a filled-in one
-  // errors as soon as it (or the amount, once entered) stops fitting.
-  const visibleSplitError =
-    (form.pocketAmount !== "" && form.amount !== "") || submitAttempted ? splitError : null;
+  // The browser's `required` check covers an empty pocket field; a filled-in
+  // one errors as soon as it (or the amount, once entered) stops fitting.
+  const visibleSplitError = form.pocketAmount !== "" && form.amount !== "" ? splitError : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitAttempted(true);
     if (!form.title || !form.amount || !form.category || !form.department || !form.date) {
       toast("Please fill in all required fields", "error");
       return;

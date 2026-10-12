@@ -86,6 +86,20 @@ describe("NewExpensePage split payment", () => {
     );
   });
 
+  it("treats a typed pocket share as unsaved changes", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<NewExpensePage />);
+    await user.selectOptions(await screen.findByLabelText(/payment source/i), "split");
+    await user.type(screen.getByLabelText(/paid from pocket/i), "120");
+
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
   it("holds back the split error until an amount is entered", async () => {
     const user = userEvent.setup();
     render(<NewExpensePage />);
