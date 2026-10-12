@@ -14,6 +14,8 @@ import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import AssetPurchaseSection, {
   AssetDraft,
 } from "@/components/assets/AssetPurchaseSection";
+import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
+import { getPaymentSplitError } from "@/lib/expense";
 import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
 
 interface Department {
@@ -64,6 +66,7 @@ export default function NewExpensePage() {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   // Open the AI-upload modal on arrival unless the user opted out earlier.
   useEffect(() => {
@@ -82,6 +85,7 @@ export default function NewExpensePage() {
     date: new Date().toISOString().split("T")[0],
     description: "",
     paymentSource: "pocket",
+    pocketAmount: "",
   });
 
   const [receipt, setReceipt] = useState<{
@@ -214,8 +218,16 @@ export default function NewExpensePage() {
     }
   };
 
+  const splitError =
+    form.paymentSource === "split" ? getPaymentSplitError(form.amount, form.pocketAmount) : null;
+  // An empty pocket field only errors after a submit attempt; a filled-in one
+  // errors as soon as it (or the amount, once entered) stops fitting.
+  const visibleSplitError =
+    (form.pocketAmount !== "" && form.amount !== "") || submitAttempted ? splitError : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitAttempted(true);
     if (!form.title || !form.amount || !form.category || !form.department || !form.date) {
       toast("Please fill in all required fields", "error");
       return;
@@ -226,6 +238,10 @@ export default function NewExpensePage() {
     const gstAmountCents = moneyToCents(gstAmount);
     if (gstAmount != null && gstAmountCents > expenseAmountCents) {
       toast("GST amount cannot exceed the total amount", "error");
+      return;
+    }
+    if (splitError) {
+      toast(splitError, "error");
       return;
     }
 
@@ -260,6 +276,7 @@ export default function NewExpensePage() {
         ...form,
         amount: parseFloat(form.amount),
         gstAmount,
+        pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
         assets: assets.map(({ id: _id, ...asset }) => asset),
         ...receiptData,
       });
@@ -477,21 +494,15 @@ export default function NewExpensePage() {
             </div>
           </div>
 
-          <div>
-            <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
-              Payment Source <span className="text-red-500 dark:text-red-400">*</span>
-            </label>
-            <select
-              id="paymentSource"
-              required
-              value={form.paymentSource}
-              onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
-              className="input-field"
-            >
-              <option value="pocket">Paid from pocket</option>
-              <option value="company">Paid from company account</option>
-            </select>
-          </div>
+          <PaymentSourceFields
+            paymentSource={form.paymentSource}
+            pocketAmount={form.pocketAmount}
+            amount={form.amount}
+            currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "?"}
+            onPaymentSourceChange={(paymentSource) => setForm({ ...form, paymentSource })}
+            onPocketAmountChange={(pocketAmount) => setForm({ ...form, pocketAmount })}
+            error={visibleSplitError}
+          />
 
           <div>
             <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">

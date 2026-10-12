@@ -4,6 +4,7 @@ import { GET } from "./route";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
+import { companyBaseExpr, pocketBaseExpr } from "@/lib/expense";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -59,8 +60,7 @@ describe("GET /api/dashboard/charts", () => {
       .mockResolvedValueOnce([{ _id: { y: 2026, m: 6 }, total: 1000, count: 5 }]) // trend
       .mockResolvedValueOnce([{ _id: "cat1", name: "Software", total: 800, count: 3 }]) // categories
       .mockResolvedValueOnce([ // payment sources
-        { name: "company", total: 600, count: 2 },
-        { name: "pocket", total: 400, count: 3 },
+        { _id: null, pocketTotal: 400, pocketCount: 3, companyTotal: 600, companyCount: 2 },
       ])
       .mockResolvedValueOnce([ // departments
         { _id: "dep1", name: "Engineering", total: 1000, count: 5 }
@@ -83,6 +83,54 @@ describe("GET /api/dashboard/charts", () => {
     expect(responseData.departmentSpend).toEqual([
       { _id: "dep1", name: "Engineering", total: 1000, count: 5 }
     ]);
+  });
+
+  async function getPaymentSources(row?: Record<string, unknown>) {
+    vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "user-123", role: "admin" } as any);
+    vi.mocked(Expense.aggregate)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(row ? [row] : [])
+      .mockResolvedValueOnce([]);
+
+    const result = await GET(mockReq);
+    return (result as any).data.paymentSources;
+  }
+
+  it("sums pocket and company shares so a split expense counts on both sides", async () => {
+    // Two expenses: one split (60 pocket / 40 company), one wholly pocket (50).
+    const paymentSources = await getPaymentSources({
+      _id: null,
+      pocketTotal: 110,
+      pocketCount: 2,
+      companyTotal: 40,
+      companyCount: 1,
+    });
+
+    expect(paymentSources).toEqual([
+      { name: "pocket", total: 110, count: 2 },
+      { name: "company", total: 40, count: 1 },
+    ]);
+    const paymentSourcePipeline = vi.mocked(Expense.aggregate).mock.calls[2][0] as any[];
+    expect(paymentSourcePipeline[1]).toEqual({
+      $project: { paymentSource: 1, pocket: pocketBaseExpr, company: companyBaseExpr },
+    });
+  });
+
+  it("omits a payment side with no expenses", async () => {
+    const paymentSources = await getPaymentSources({
+      _id: null,
+      pocketTotal: 0,
+      pocketCount: 0,
+      companyTotal: 250,
+      companyCount: 3,
+    });
+
+    expect(paymentSources).toEqual([{ name: "company", total: 250, count: 3 }]);
+  });
+
+  it("returns no payment sources when nothing matches the filter", async () => {
+    expect(await getPaymentSources()).toEqual([]);
   });
 
   it("intersects monthly trend aggregation with active date filters", async () => {

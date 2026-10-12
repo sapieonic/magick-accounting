@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ExpensesPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { downloadCsv } from "@/lib/csv";
 
 const toastMock = vi.fn();
 
@@ -39,6 +40,11 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+vi.mock("@/lib/csv", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/csv")>()),
+  downloadCsv: vi.fn(),
+}));
+
 vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: any) => <div data-testid="responsive-container">{children}</div>,
   AreaChart: ({ data }: any) => <div data-testid="area-chart" data-chart-data={JSON.stringify(data)} />,
@@ -72,9 +78,24 @@ const expense = {
   createdBy: { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com" },
 };
 
+const splitExpense = {
+  ...expense,
+  _id: "expense-2",
+  title: "Team offsite hotel",
+  amount: 100,
+  amountInBaseCurrency: 8350,
+  currency: { _id: "currency-2", code: "USD", name: "US Dollar", symbol: "$", isBase: false },
+  paymentSource: "split",
+  pocketAmount: 40,
+  pocketAmountInBaseCurrency: 3340,
+};
+
+let listedExpenses: Record<string, unknown>[] = [expense];
+
 describe("ExpensesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listedExpenses = [expense];
     vi.mocked(useAuth).mockReturnValue({ isAdmin: true } as any);
     vi.mocked(api.delete).mockResolvedValue({});
     vi.mocked(api.get).mockImplementation((url: string) => {
@@ -91,8 +112,8 @@ describe("ExpensesPage", () => {
       }
       if (url.startsWith("/api/expenses")) {
         return Promise.resolve({
-          expenses: [expense],
-          pagination: { page: 1, limit: 25, total: 1, pages: 1 },
+          expenses: listedExpenses,
+          pagination: { page: 1, limit: 25, total: listedExpenses.length, pages: 1 },
           summary: { totalAmount: 5678.76, totalExpenses: 1 },
         });
       }
@@ -154,5 +175,34 @@ describe("ExpensesPage", () => {
       url.startsWith("/api/dashboard/charts")
     ).length;
     expect(analyticsCalls).toBeGreaterThan(initialAnalyticsCalls);
+  });
+
+  it("shows the pocket and company shares of a split expense in its own currency", async () => {
+    listedExpenses = [expense, splitExpense];
+    render(<ExpensesPage />);
+
+    fireEvent.click(await screen.findByText("Team offsite hotel"));
+    expect(await screen.findByText("Split · $40.00 pocket / $60.00 company")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("AWS India Cloud Services"));
+    expect(await screen.findByText("Company account")).toBeInTheDocument();
+  });
+
+  it("exports pocket and company base-currency columns", async () => {
+    listedExpenses = [expense, splitExpense];
+    render(<ExpensesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
+
+    const [header, companyRow, splitRow] = vi.mocked(downloadCsv).mock.calls[0][1].split("\r\n");
+    expect(header).toBe(
+      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base)"
+    );
+    expect(companyRow).toMatch(/,0,5678\.76$/);
+    expect(companyRow).toContain(",Company account,");
+    expect(splitRow).toContain(",USD,8350,");
+    expect(splitRow).toMatch(/,3340,5010$/);
+    expect(splitRow).toContain(",Split,");
   });
 });

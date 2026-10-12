@@ -10,6 +10,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
+import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
+import { getPaymentSplitError } from "@/lib/expense";
 import { ArrowLeft, Package, Upload, X as XIcon } from "lucide-react";
 
 interface Department {
@@ -51,6 +53,7 @@ export default function EditExpensePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [linkedAssets, setLinkedAssets] = useState<LinkedAsset[]>([]);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const emptyForm = {
     title: "",
@@ -62,6 +65,7 @@ export default function EditExpensePage() {
     date: "",
     description: "",
     paymentSource: "pocket",
+    pocketAmount: "",
   };
   const [form, setForm] = useState(emptyForm);
   const [initialForm, setInitialForm] = useState(emptyForm);
@@ -112,6 +116,8 @@ export default function EditExpensePage() {
           date: new Date(exp.date).toISOString().split("T")[0],
           description: exp.description || "",
           paymentSource: exp.paymentSource || "pocket",
+          pocketAmount:
+            exp.paymentSource === "split" && exp.pocketAmount != null ? exp.pocketAmount.toString() : "",
         };
         setForm(loadedForm);
         setInitialForm(loadedForm);
@@ -157,12 +163,24 @@ export default function EditExpensePage() {
     }
   };
 
+  const splitError =
+    form.paymentSource === "split" ? getPaymentSplitError(form.amount, form.pocketAmount) : null;
+  // An empty pocket field only errors after a submit attempt; a filled-in one
+  // errors as soon as it (or the amount, once entered) stops fitting.
+  const visibleSplitError =
+    (form.pocketAmount !== "" && form.amount !== "") || submitAttempted ? splitError : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitAttempted(true);
 
     const gstAmount = form.gstAmount ? parseFloat(form.gstAmount) : null;
     if (gstAmount != null && gstAmount > parseFloat(form.amount)) {
       toast("GST amount cannot exceed the total amount", "error");
+      return;
+    }
+    if (splitError) {
+      toast(splitError, "error");
       return;
     }
 
@@ -174,6 +192,7 @@ export default function EditExpensePage() {
         ...form,
         amount: parseFloat(form.amount),
         gstAmount,
+        pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
       };
 
       if (newReceipt?.file) {
@@ -382,22 +401,16 @@ export default function EditExpensePage() {
             </div>
           </div>
 
-          <div>
-            <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
-              Payment Source <span className="text-red-500 dark:text-red-400">*</span>
-            </label>
-            <select
-              id="paymentSource"
-              required
-              disabled={accountingLocked}
-              value={form.paymentSource}
-              onChange={(e) => setForm({ ...form, paymentSource: e.target.value })}
-              className="input-field"
-            >
-              <option value="pocket">Paid from pocket</option>
-              <option value="company">Paid from company account</option>
-            </select>
-          </div>
+          <PaymentSourceFields
+            paymentSource={form.paymentSource}
+            pocketAmount={form.pocketAmount}
+            amount={form.amount}
+            currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "?"}
+            onPaymentSourceChange={(paymentSource) => setForm({ ...form, paymentSource })}
+            onPocketAmountChange={(pocketAmount) => setForm({ ...form, pocketAmount })}
+            error={visibleSplitError}
+            disabled={accountingLocked}
+          />
 
           <div>
             <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">

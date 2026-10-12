@@ -19,6 +19,8 @@ import {
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
+import { EXPENSE_CSV_HEADERS, expenseCsvRow, paymentSourceLabel } from "@/lib/expense-csv";
+import { getPaymentBreakdown, type PaymentSource } from "@/lib/expense";
 import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
 
 interface Expense {
@@ -30,7 +32,9 @@ interface Expense {
   currency?: { _id: string; code: string; name: string; symbol: string; isBase: boolean };
   date: string;
   description: string;
-  paymentSource?: "pocket" | "company";
+  paymentSource?: PaymentSource;
+  pocketAmount?: number | null;
+  pocketAmountInBaseCurrency?: number | null;
   receiptKey?: string;
   receiptFilename?: string;
   category: { _id: string; name: string };
@@ -67,8 +71,11 @@ function getCategoryColor(name: string): string {
   return CATEGORY_COLORS[name] || "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30";
 }
 
-function paymentSourceLabel(source?: "pocket" | "company"): string {
-  return source === "company" ? "Company account" : "Pocket";
+function paymentSourceDetail(expense: Expense): string {
+  if (expense.paymentSource !== "split") return paymentSourceLabel(expense.paymentSource);
+  const { pocket, company } = getPaymentBreakdown(expense);
+  const code = expense.currency?.code;
+  return `Split · ${formatCurrency(pocket, code)} pocket / ${formatCurrency(company, code)} company`;
 }
 
 function isImageFile(filename?: string): boolean {
@@ -397,23 +404,8 @@ export default function ExpensesPage() {
     try {
       const params = buildQueryParams(1, EXPORT_LIMIT, false);
       const data = await api.get(`/api/expenses?${params.toString()}`);
-      const rows = (data.expenses as Expense[]).map((e) => [
-        format(new Date(e.date), "yyyy-MM-dd"),
-        e.title,
-        e.amount,
-        e.gstAmount ?? "",
-        e.currency?.code ?? "",
-        e.amountInBaseCurrency ?? e.amount,
-        e.category?.name ?? "",
-        e.department?.name ?? "",
-        paymentSourceLabel(e.paymentSource),
-        e.createdBy?.name ?? "",
-        e.description ?? "",
-      ]);
-      const csv = buildCsv(
-        ["Date", "Title", "Amount", "GST", "Currency", "Amount (Base)", "Category", "Department", "Paid From", "Submitted By", "Description"],
-        rows
-      );
+      const rows = (data.expenses as Expense[]).map(expenseCsvRow);
+      const csv = buildCsv(EXPENSE_CSV_HEADERS, rows);
       downloadCsv(`expenses-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
       toast(`Exported ${rows.length} expense${rows.length !== 1 ? "s" : ""}`);
     } catch {
@@ -900,7 +892,7 @@ export default function ExpensesPage() {
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Paid from</p>
-                          <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceLabel(expense.paymentSource)}</p>
+                          <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceDetail(expense)}</p>
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Submitted by</p>
