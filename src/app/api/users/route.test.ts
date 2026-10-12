@@ -5,6 +5,7 @@ import { verifyAuth, requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
+import { baseTotalExpr, companyBaseExpr, pocketBaseExpr } from "@/lib/expense";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -78,8 +79,7 @@ describe("GET /api/users", () => {
     lean.mockResolvedValueOnce(mockUsers);
 
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([
-      { _id: { user: "u1", source: "company" }, total: 300 },
-      { _id: { user: "u1", source: "pocket" }, total: 200 },
+      { _id: "u1", totalSpend: 500, companySpend: 300, pocketSpend: 200 },
       // u2 has no spend
     ]);
 
@@ -88,14 +88,14 @@ describe("GET /api/users", () => {
     expect(connectDB).toHaveBeenCalled();
     expect(User.find).toHaveBeenCalled();
     expect(Expense.aggregate).toHaveBeenCalledWith([
-      expect.objectContaining({
-        $group: expect.objectContaining({
-          _id: {
-            user: "$createdBy",
-            source: { $cond: [{ $eq: ["$paymentSource", "company"] }, "company", "pocket"] },
-          },
-        }),
-      }),
+      {
+        $group: {
+          _id: "$createdBy",
+          totalSpend: { $sum: baseTotalExpr },
+          companySpend: { $sum: companyBaseExpr },
+          pocketSpend: { $sum: pocketBaseExpr },
+        },
+      },
     ]);
 
     expect(NextResponse.json).toHaveBeenCalledWith({
@@ -115,14 +115,14 @@ describe("GET /api/users", () => {
     expect((result as any).data.users[1].pocketSpend).toBe(0);
   });
 
-  it("should treat company-only, pocket-only, and unknown sources correctly", async () => {
+  it("should pass through split spend and default missing sums to zero", async () => {
     vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "admin-123", role: "admin" } as any);
     vi.mocked(requireAdmin).mockReturnValueOnce(null);
 
     const mockUsers = [
-      { _id: "u1", name: "Company Only" },
-      { _id: "u2", name: "Pocket Only" },
-      { _id: "u3", name: "Unknown Source" },
+      { _id: "u1", name: "Split Payer" },
+      { _id: "u2", name: "Company Only" },
+      { _id: "u3", name: "Partial Row" },
     ];
 
     const UserMock = await import("@/models/User");
@@ -130,17 +130,17 @@ describe("GET /api/users", () => {
     lean.mockResolvedValueOnce(mockUsers);
 
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([
-      { _id: { user: "u1", source: "company" }, total: 150 },
-      { _id: { user: "u2", source: "pocket" }, total: 80 },
-      { _id: { user: "u3", source: "unknown" }, total: 25 },
+      { _id: "u1", totalSpend: 150, companySpend: 90, pocketSpend: 60 },
+      { _id: "u2", totalSpend: 80, companySpend: 80, pocketSpend: 0 },
+      { _id: "u3", totalSpend: 25, companySpend: null, pocketSpend: 25 },
     ]);
 
     await GET(mockReq);
 
     expect(NextResponse.json).toHaveBeenCalledWith({
       users: [
-        { ...mockUsers[0], totalSpend: 150, companySpend: 150, pocketSpend: 0 },
-        { ...mockUsers[1], totalSpend: 80, companySpend: 0, pocketSpend: 80 },
+        { ...mockUsers[0], totalSpend: 150, companySpend: 90, pocketSpend: 60 },
+        { ...mockUsers[1], totalSpend: 80, companySpend: 80, pocketSpend: 0 },
         { ...mockUsers[2], totalSpend: 25, companySpend: 0, pocketSpend: 25 },
       ],
     });
@@ -158,7 +158,12 @@ describe("GET /api/users", () => {
     lean.mockResolvedValueOnce(mockUsers);
 
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([
-      { _id: { user: { toString: () => "507f1f77bcf86cd799439011" }, source: "company" }, total: 90 },
+      {
+        _id: { toString: () => "507f1f77bcf86cd799439011" },
+        totalSpend: 90,
+        companySpend: 90,
+        pocketSpend: 0,
+      },
     ]);
 
     await GET(mockReq);

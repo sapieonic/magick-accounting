@@ -4,7 +4,12 @@ import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
 import Asset from "@/models/Asset";
-import { normalizeGstAmount } from "@/lib/expense";
+import {
+  getPaymentBreakdown,
+  normalizeGstAmount,
+  normalizePaymentSplit,
+  pocketAmountInBase,
+} from "@/lib/expense";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
 import mongoose from "mongoose";
@@ -104,6 +109,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       newGstAmount = null;
     }
 
+    // Unlike GST, a stored split pocket amount is never clamped: lowering the
+    // total below it is rejected so money owed to the user can't shrink silently.
+    // The stored pocket amount only carries over when the expense is already a
+    // split; switching to split has to send one.
+    const paymentSplit = normalizePaymentSplit(
+      body.paymentSource ?? expense.paymentSource,
+      body.pocketAmount !== undefined
+        ? body.pocketAmount
+        : expense.paymentSource === "split"
+          ? expense.pocketAmount
+          : undefined,
+      newAmount
+    );
+
     const allocatedAmount = Math.max(
       Number(expense.assetAllocatedAmount || 0),
       linkedAssets.reduce((total, asset) => total + asset.allocatedAmount, 0)
@@ -136,7 +155,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       newDate.getTime() !== expense.date.getTime() ||
       (body.category !== undefined && String(body.category) !== expense.category.toString()) ||
       (body.department !== undefined && String(body.department) !== expense.department.toString()) ||
-      (body.paymentSource !== undefined && body.paymentSource !== expense.paymentSource) ||
+      paymentSplit.paymentSource !== expense.paymentSource ||
+      paymentSplit.pocketAmount !== getPaymentBreakdown(expense).pocket ||
       (body.receiptKey !== undefined && body.receiptKey !== (expense.receiptKey || null));
     if (hasLinkedAssets && authResult.role === "user" && changedProtectedField) {
       return NextResponse.json(
@@ -156,12 +176,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       effectiveRateToBase = curr.rateToBase;
     }
 
+    const newAmountInBaseCurrency = roundMoney(newAmount * effectiveRateToBase);
     const update = {
       title: body.title !== undefined ? body.title : expense.title,
       amount: newAmount,
       gstAmount: newGstAmount,
       currency: newCurrencyId,
-      amountInBaseCurrency: roundMoney(newAmount * effectiveRateToBase),
+      amountInBaseCurrency: newAmountInBaseCurrency,
       gstAmountInBaseCurrency:
         newGstAmount != null ? roundMoney(newGstAmount * effectiveRateToBase) : null,
       exchangeRateToBase: effectiveRateToBase,
@@ -169,8 +190,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       department: body.department !== undefined ? body.department : expense.department,
       date: newDate,
       description: body.description !== undefined ? body.description : expense.description,
-      paymentSource:
-        body.paymentSource !== undefined ? body.paymentSource : expense.paymentSource,
+      paymentSource: paymentSplit.paymentSource,
+      pocketAmount: paymentSplit.pocketAmount,
+      pocketAmountInBaseCurrency: pocketAmountInBase(
+        paymentSplit,
+        newAmountInBaseCurrency,
+        effectiveRateToBase
+      ),
       receiptKey: requestedReceiptKey,
       receiptFilename:
         body.receiptFilename !== undefined ? body.receiptFilename : expense.receiptFilename,

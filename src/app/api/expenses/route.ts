@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
-import { normalizeGstAmount } from "@/lib/expense";
+import { normalizeGstAmount, normalizePaymentSplit, pocketAmountInBase } from "@/lib/expense";
 import { roundMoney } from "@/lib/asset";
 import {
   AssetCreationReservation,
@@ -89,12 +89,13 @@ export async function POST(req: NextRequest) {
       throw new Error("Receipt is already attached to another expense");
     }
 
-    // Validate GST (a component of the total) before touching the DB.
+    // Validate GST and the payment split (both parts of the total) before touching the DB.
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount < 0) {
       throw new Error("Expense amount must be a non-negative number");
     }
     const gstAmount = normalizeGstAmount(body.gstAmount, amount);
+    const paymentSplit = normalizePaymentSplit(body.paymentSource, body.pocketAmount, amount);
     const purchaseDate = new Date(body.date);
     if (Number.isNaN(purchaseDate.getTime())) throw new Error("Expense date is invalid");
 
@@ -116,6 +117,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const amountInBaseCurrency = roundMoney(amount * rateToBase);
+
     await ensureAssetIndexes();
     const result = await runInTransaction(async (session, transactional) => {
       reservation.transactional = transactional;
@@ -126,7 +129,7 @@ export async function POST(req: NextRequest) {
             amount,
             gstAmount,
             currency: currencyId,
-            amountInBaseCurrency: roundMoney(amount * rateToBase),
+            amountInBaseCurrency,
             gstAmountInBaseCurrency:
               gstAmount != null ? roundMoney(gstAmount * rateToBase) : null,
             exchangeRateToBase: rateToBase,
@@ -134,7 +137,13 @@ export async function POST(req: NextRequest) {
             department: body.department,
             date: purchaseDate,
             description: body.description || "",
-            paymentSource: body.paymentSource,
+            paymentSource: paymentSplit.paymentSource,
+            pocketAmount: paymentSplit.pocketAmount,
+            pocketAmountInBaseCurrency: pocketAmountInBase(
+              paymentSplit,
+              amountInBaseCurrency,
+              rateToBase
+            ),
             receiptKey: body.receiptKey || undefined,
             receiptFilename: body.receiptKey ? body.receiptFilename : undefined,
             createdBy: authResult._id,

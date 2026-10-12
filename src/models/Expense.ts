@@ -1,8 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
-
-export type PaymentSource = "pocket" | "company";
-
-export const PAYMENT_SOURCES: PaymentSource[] = ["pocket", "company"];
+import { PAYMENT_SOURCES, type PaymentSource } from "@/lib/expense";
 
 export interface IExpense extends Document {
   title: string;
@@ -20,6 +17,8 @@ export interface IExpense extends Document {
   date: Date;
   description: string;
   paymentSource: PaymentSource;
+  pocketAmount?: number | null;
+  pocketAmountInBaseCurrency?: number | null;
   receiptKey?: string;
   receiptFilename?: string;
   createdBy: mongoose.Types.ObjectId;
@@ -50,6 +49,11 @@ const ExpenseSchema = new Schema<IExpense>(
       default: "pocket",
       required: true,
     },
+    // Portion paid out of the user's pocket, in the expense's own currency.
+    // The company share is always derived as `amount - pocketAmount`.
+    // Absent on legacy docs; see `pocketBaseExpr` in src/lib/expense.ts.
+    pocketAmount: { type: Number, default: null, min: 0 },
+    pocketAmountInBaseCurrency: { type: Number, default: null, min: 0 },
     receiptKey: { type: String },
     receiptFilename: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },

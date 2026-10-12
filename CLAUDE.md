@@ -9,13 +9,14 @@ Magick Accounting is a single-tenant expense management app (one organization pe
 ## Commands
 
 - `npm run dev` — start dev server at http://localhost:3000
-- `npm run build` — production build **and type check**. This is the baseline validation (no test suite exists). Run it after changes.
+- `npm run build` — production build **and type check**. Run it after changes.
+- `npm test` — Vitest. `npm run test:backend` runs `src/**/*.test.ts` in Node; `npm run test:ui` runs `src/**/*.test.tsx` in jsdom with Testing Library.
 - `npm run start` — serve the production build
 - `npm run seed` — run `src/scripts/seed.ts` via ts-node to seed default data
 - `npm run lint` — `next lint`; no ESLint config is committed, so this opens setup
 - `npx serverless deploy --stage prod` — provision the S3 receipts bucket from `serverless.yaml`
 
-There is no automated test suite. Validate manually: auth, expense CRUD, role checks, receipt upload, AI auto-fill, invoice generation.
+Beyond the tests, validate manually in the app: auth, expense CRUD, role checks, receipt upload, AI auto-fill, invoice generation.
 
 ## Architecture
 
@@ -28,6 +29,8 @@ There is no automated test suite. Validate manually: auth, expense CRUD, role ch
 **Expense queries:** `src/lib/expense-query.ts` centralizes filtering. `buildExpenseFilter` scopes `user` role to their own expenses (admins see all), parses department/category/date/search params, and escapes regex input. Reuse it rather than building filters ad hoc.
 
 **Currency:** Base currency is INR. Each expense stores `amount` + `currency` ref + `amountInBaseCurrency` (converted at entry time using the exchange rate then). Editing a currency's rate does **not** retroactively change existing expenses. Aggregations sum `amountInBaseCurrency` (falling back to `amount`). Format with `formatCurrency` / `formatBaseCurrency` from `src/lib/currency.ts`.
+
+**Payment source:** `paymentSource` is `pocket`, `company` or `split`. Expenses store `pocketAmount` + `pocketAmountInBaseCurrency`; the company share is always derived as total − pocket. `normalizePaymentSplit` in `src/lib/expense.ts` validates it (a split pocket must be > 0 and < total, and is rejected rather than clamped on edit). Aggregations use `pocketBaseExpr` / `companyBaseExpr`, which fall back for legacy docs without the pocket fields, so don't bucket by `paymentSource` directly.
 
 **Receipts (S3):** `src/lib/s3.ts` lazily resolves the bucket region via `GetBucketLocation` and caches the client. Uploads happen server-side through `/api/upload`; downloads use 1-hour presigned URLs. Expenses store `receiptKey` + `receiptFilename`.
 
