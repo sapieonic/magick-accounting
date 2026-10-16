@@ -57,6 +57,14 @@ export interface PaymentSplit {
 
 const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
 
+/** Far more than any real invoice needs; keeps a bogus request from fanning out. */
+export const MAX_PAYMENT_ENTRIES = 50;
+
+/** Payer ids are compared and stored lowercased, matching how MongoDB prints ObjectIds. */
+function normalizePayerId(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
 function formatMoney(cents: number): string {
   return (cents / 100).toFixed(2);
 }
@@ -72,12 +80,15 @@ export function getPaymentEntriesError(amount: number | string, rawPayments: unk
   if (!Array.isArray(rawPayments) || rawPayments.length < 2) {
     return "Add at least two payments when several people paid";
   }
+  if (rawPayments.length > MAX_PAYMENT_ENTRIES) {
+    return `An expense can have at most ${MAX_PAYMENT_ENTRIES} payments`;
+  }
 
   const seen = new Set<string>();
   let totalCents = 0;
   for (const raw of rawPayments) {
     const entry = (raw ?? {}) as Record<string, unknown>;
-    const paidBy = typeof entry.paidBy === "string" ? entry.paidBy.trim() : "";
+    const paidBy = normalizePayerId(entry.paidBy);
     if (!paidBy) return "Choose who made each payment";
     if (!OBJECT_ID_PATTERN.test(paidBy)) return "A payer is invalid";
     if (!(PAYMENT_ENTRY_SOURCES as unknown[]).includes(entry.source)) {
@@ -156,7 +167,7 @@ export function normalizePaymentSplit(
     const error = getPaymentEntriesError(amount, rawPayments);
     if (error) throw new Error(error);
     const payments = (rawPayments as Record<string, unknown>[]).map((entry) => ({
-      paidBy: String(entry.paidBy).trim(),
+      paidBy: normalizePayerId(entry.paidBy),
       amount: roundMoney(Number(entry.amount)),
       source: entry.source as PaymentEntrySource,
     }));
@@ -193,16 +204,15 @@ export function pocketAmountInBase(
   return roundMoney(split.pocketAmount * rateToBase);
 }
 
+/** Same payers, sources and amounts (in paise), in any order. */
 export function paymentEntriesEqual(a: PaymentEntry[], b: PaymentEntry[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      (entry, index) =>
-        entry.paidBy === b[index].paidBy &&
-        entry.source === b[index].source &&
-        moneyToCents(entry.amount) === moneyToCents(b[index].amount)
-    )
-  );
+  const keys = (entries: PaymentEntry[]) =>
+    entries
+      .map((entry) => `${normalizePayerId(entry.paidBy)}:${entry.source}:${moneyToCents(entry.amount)}`)
+      .sort();
+  const left = keys(a);
+  const right = keys(b);
+  return left.length === right.length && left.every((key, index) => key === right[index]);
 }
 
 /**

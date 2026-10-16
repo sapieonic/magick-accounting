@@ -189,6 +189,7 @@ function PayerRows({
   disabled,
 }: PayerRowsProps) {
   const enteredCents = payments.reduce((total, entry) => total + moneyToCents(entry.amount), 0);
+  const errorId = error ? "payments-error" : undefined;
   const remainingCents = moneyToCents(amount) - enteredCents;
 
   const update = (key: string, fields: Partial<PaymentDraft>) =>
@@ -225,6 +226,7 @@ function PayerRows({
             >
               <select
                 aria-label={`Payer ${position}`}
+                aria-describedby={errorId}
                 required
                 value={entry.paidBy}
                 onChange={(e) => update(entry.key, { paidBy: e.target.value })}
@@ -239,6 +241,8 @@ function PayerRows({
               </select>
               <input
                 aria-label={`Amount for payment ${position} (${currencySymbol})`}
+                aria-describedby={errorId}
+                aria-invalid={error ? true : undefined}
                 type="number"
                 required
                 min="0.01"
@@ -298,7 +302,7 @@ function PayerRows({
       </div>
 
       {error && (
-        <p role="alert" className="text-xs text-red-500 dark:text-red-400">
+        <p id="payments-error" className="text-xs text-red-500 dark:text-red-400">
           {error}
         </p>
       )}

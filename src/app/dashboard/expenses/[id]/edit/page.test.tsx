@@ -211,3 +211,27 @@ describe("EditExpensePage paid by several people", () => {
     );
   });
 });
+
+describe("EditExpensePage unsaved changes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "66c1884c0853f8a76a4da201" }, isAdmin: true } as any);
+    mockExpense({ ...splitExpense, paymentSource: "pocket", pocketAmount: 1000, pocketAmountInBaseCurrency: 1000 });
+  });
+
+  it("doesn't count trying several payers and switching back as a change", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<EditExpensePage />);
+
+    const source = await screen.findByLabelText(/payment source/i);
+    await user.selectOptions(source, "multiple");
+    expect(screen.getByLabelText("Payer 1")).toBeInTheDocument();
+    await user.selectOptions(source, "pocket");
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith("/dashboard/expenses");
+    confirmSpy.mockRestore();
+  });
+});

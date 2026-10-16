@@ -1,15 +1,19 @@
 import { describe, it, expect } from "vitest";
+import { Aggregator } from "mingo";
+import "mingo/init/system";
 import {
   buildPaymentFields,
   companyBaseExpr,
   getPaymentBreakdown,
   getPaymentEntriesError,
+  MAX_PAYMENT_ENTRIES,
   paymentEntriesEqual,
   paymentEntriesInBase,
   normalizeGstAmount,
   normalizePaymentSplit,
   pocketAmountInBase,
   pocketBaseExpr,
+  spendByPayerPipeline,
 } from "@/lib/expense";
 
 describe("normalizeGstAmount", () => {
@@ -303,5 +307,82 @@ describe("payments shared between people", () => {
     expect(paymentEntriesEqual(entries, [{ ...entries[0], amount: 0.1 + 0.2 }])).toBe(true);
     expect(paymentEntriesEqual(entries, [{ ...entries[0], source: "company" }])).toBe(false);
     expect(paymentEntriesEqual(entries, [])).toBe(false);
+  });
+
+  it("caps the number of payments", () => {
+    const payments = Array.from({ length: MAX_PAYMENT_ENTRIES + 1 }, (_, index) => ({
+      paidBy: index.toString(16).padStart(24, "0"),
+      amount: 1,
+      source: "pocket",
+    }));
+    expect(getPaymentEntriesError(MAX_PAYMENT_ENTRIES + 1, payments)).toMatch(/at most 50 payments/i);
+  });
+
+  it("treats payer ids case-insensitively and stores them lowercased", () => {
+    const upper = asha.toUpperCase();
+    expect(
+      getPaymentEntriesError(100, [
+        { paidBy: upper, amount: 50, source: "pocket" },
+        { paidBy: asha, amount: 50, source: "pocket" },
+      ])
+    ).toMatch(/only one pocket and one company/i);
+    expect(
+      normalizePaymentSplit("multiple", undefined, 100, [
+        { paidBy: upper, amount: 50, source: "pocket" },
+        { paidBy: ravi, amount: 50, source: "company" },
+      ]).payments?.[0].paidBy
+    ).toBe(asha);
+  });
+
+  it("ignores order and id case when comparing payment lists", () => {
+    const stored = [
+      { paidBy: asha, amount: 60, source: "pocket" as const },
+      { paidBy: ravi, amount: 40, source: "company" as const },
+    ];
+    expect(paymentEntriesEqual([stored[1], { ...stored[0], paidBy: asha.toUpperCase() }], stored)).toBe(true);
+  });
+});
+
+describe("spendByPayerPipeline", () => {
+  it("credits each payer of a shared expense and the submitter of any other", () => {
+    const expenses = [
+      { createdBy: "A", amount: 100, amountInBaseCurrency: 100, paymentSource: "pocket", pocketAmountInBaseCurrency: 100, payments: [] },
+      // Legacy doc: no pocket fields and no payments.
+      { createdBy: "A", amount: 50, paymentSource: "company" },
+      {
+        createdBy: "A",
+        amount: 100,
+        amountInBaseCurrency: 100,
+        paymentSource: "split",
+        pocketAmountInBaseCurrency: 30,
+        payments: [],
+      },
+      {
+        createdBy: "A",
+        amount: 100,
+        amountInBaseCurrency: 100,
+        paymentSource: "multiple",
+        pocketAmountInBaseCurrency: 60,
+        payments: [
+          { paidBy: "B", amountInBaseCurrency: 60, source: "pocket" },
+          { paidBy: "C", amountInBaseCurrency: 25, source: "company" },
+          { paidBy: "B", amountInBaseCurrency: 15, source: "company" },
+        ],
+      },
+    ];
+
+    const rows = new Aggregator(spendByPayerPipeline).run(expenses) as {
+      _id: string;
+      totalSpend: number;
+      pocketSpend: number;
+      companySpend: number;
+    }[];
+    const byUser = Object.fromEntries(rows.map(({ _id, ...spend }) => [_id, spend]));
+
+    expect(byUser).toEqual({
+      A: { totalSpend: 250, pocketSpend: 130, companySpend: 120 },
+      B: { totalSpend: 75, pocketSpend: 60, companySpend: 15 },
+      C: { totalSpend: 25, pocketSpend: 0, companySpend: 25 },
+    });
   });
 });

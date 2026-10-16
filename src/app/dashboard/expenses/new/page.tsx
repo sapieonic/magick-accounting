@@ -103,7 +103,12 @@ export default function NewExpensePage() {
   // Warn before discarding typed-in or extracted data on a full page unload.
   const isDirty = Boolean(
     form.title || form.amount || form.description || form.category !== "" || form.pocketAmount ||
-      form.payments.some((entry) => entry.amount !== "") || receipt || assets.length > 0
+      form.payments.some(
+        (entry) =>
+          entry.amount !== "" || entry.source !== "pocket" || (entry.paidBy && entry.paidBy !== user?._id)
+      ) ||
+      receipt ||
+      assets.length > 0
   );
 
   useEffect(() => {

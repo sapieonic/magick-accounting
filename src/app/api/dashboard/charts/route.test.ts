@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Aggregator } from "mingo";
+import "mingo/init/system";
 import { NextRequest, NextResponse } from "next/server";
 import { GET } from "./route";
 import { verifyAuth } from "@/lib/auth";
@@ -121,6 +123,36 @@ describe("GET /api/dashboard/charts", () => {
         hasCompanyEntry: { $in: ["company", { $ifNull: ["$payments.source", []] }] },
       },
     });
+  });
+
+  it("counts a shared expense on each side it has a payment", async () => {
+    await getPaymentSources();
+    const [, ...pipeline] = vi.mocked(Expense.aggregate).mock.calls[2][0] as any[];
+    const shared = (sources: string[]) => ({
+      amount: 100,
+      amountInBaseCurrency: 100,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: (100 * sources.filter((source) => source === "pocket").length) / sources.length,
+      payments: sources.map((source) => ({ source, amountInBaseCurrency: 100 / sources.length })),
+    });
+
+    const [totals] = new Aggregator(pipeline).run([
+      { amount: 100, amountInBaseCurrency: 100, paymentSource: "pocket", pocketAmountInBaseCurrency: 100 },
+      // Legacy company doc without pocket fields or payments.
+      { amount: 40, paymentSource: "company" },
+      { amount: 100, amountInBaseCurrency: 100, paymentSource: "split", pocketAmountInBaseCurrency: 30 },
+      shared(["company", "company"]),
+      shared(["pocket", "company"]),
+    ]) as any[];
+
+    expect(totals).toEqual(
+      expect.objectContaining({
+        pocketTotal: 180,
+        pocketCount: 3,
+        companyTotal: 260,
+        companyCount: 4,
+      })
+    );
   });
 
   it("omits a payment side with no expenses", async () => {

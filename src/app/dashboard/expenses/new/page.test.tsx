@@ -208,4 +208,31 @@ describe("NewExpensePage paid by several people", () => {
       })
     );
   });
+
+  it("treats a picked payer or toggled source as unsaved changes", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<NewExpensePage />);
+
+    await user.selectOptions(await screen.findByLabelText(/payment source/i), "multiple");
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByLabelText("Payer 2"), ravi._id);
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    confirmSpy.mockRestore();
+  });
+
+  it("ties the payments error to the payer inputs", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+    await fillPayers(user, "300", "100");
+
+    const message = "Payments add up to 400.00 but the total amount is 500.00";
+    expect(screen.getByLabelText(/amount for payment 1/i)).toHaveAccessibleDescription(message);
+    expect(screen.getByLabelText(/amount for payment 1/i)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Payer 2")).toHaveAccessibleDescription(message);
+  });
 });

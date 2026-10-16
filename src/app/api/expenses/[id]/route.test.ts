@@ -405,6 +405,30 @@ describe("PUT /api/expenses/:id payment split", () => {
       );
     });
 
+    it("lets a user resave an asset-linked expense with the same payers in any order", async () => {
+      mockStoredMultiple();
+      linkAsset();
+      vi.mocked(verifyAuth).mockResolvedValue({
+        _id: "owner-id",
+        email: "owner@example.com",
+        name: "Owner",
+        role: "user",
+      });
+
+      const response = await put({
+        title: "Team lunch",
+        amount: 100,
+        paymentSource: "multiple",
+        payments: [
+          { paidBy: ravi.toUpperCase(), amount: 40, source: "company" },
+          { paidBy: asha, amount: 60, source: "pocket" },
+        ],
+      });
+
+      expect(response.status).toBe(200);
+      expect(storedUpdate().$set).toEqual(expect.objectContaining({ title: "Team lunch", pocketAmount: 60 }));
+    });
+
     it("requires an admin when a user changes the payers of an asset-linked expense", async () => {
       mockStoredMultiple();
       linkAsset();

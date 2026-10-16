@@ -87,8 +87,14 @@ export default function EditExpensePage() {
   const [newReceipt, setNewReceipt] = useState<{ file: File; filename: string } | null>(null);
 
   // Warn before discarding unsaved edits on a full page unload.
+  // Payer rows only count while "several people" is chosen, so trying that
+  // option and switching back isn't an unsaved change.
+  const effectiveForm = (value: typeof form) => ({
+    ...value,
+    payments: paymentDraftsToPayload(value.paymentSource, value.payments),
+  });
   const isDirty =
-    JSON.stringify(form) !== JSON.stringify(initialForm) ||
+    JSON.stringify(effectiveForm(form)) !== JSON.stringify(effectiveForm(initialForm)) ||
     newReceipt !== null ||
     (initialHadReceipt && !existingReceipt && !newReceipt);
 

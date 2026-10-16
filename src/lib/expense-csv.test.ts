@@ -95,7 +95,7 @@ describe("expenseCsvRow", () => {
     expect(column(row, "Pocket (Base)")).toBe(600);
     expect(column(row, "Company (Base)")).toBe(400);
     expect(column(row, "Payments")).toBe(
-      "Asha: 600 (Pocket); ravi@example.com: 400 (Company account)"
+      "Asha: 600.00 (Pocket); ravi@example.com: 400.00 (Company account)"
     );
   });
 

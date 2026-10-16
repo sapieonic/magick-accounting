@@ -221,7 +221,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate("department", "name")
       .populate("currency", "code name symbol rateToBase isBase")
       .populate("createdBy", "name email photoURL")
-    .populate("payments.paidBy", "name email")
+      .populate("payments.paidBy", "name email")
       .lean();
     if (!updated) {
       throw new Error("Expense changed while you were editing it; reload and try again");

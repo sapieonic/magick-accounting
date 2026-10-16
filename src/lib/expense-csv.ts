@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { getPaymentBreakdown, PaymentSplitFields } from "@/lib/expense";
 
-export interface ExpensePaymentSource {
+export interface ExpensePaymentEntry {
   paidBy?: { name?: string; email?: string } | null;
   amount: number;
   source: string;
@@ -16,7 +16,7 @@ export interface ExpenseCsvSource extends PaymentSplitFields {
   department?: { name: string };
   createdBy?: { name: string };
   description?: string;
-  payments?: ExpensePaymentSource[];
+  payments?: ExpensePaymentEntry[];
 }
 
 export const EXPENSE_CSV_HEADERS = [
@@ -33,14 +33,17 @@ export function paymentSourceLabel(source?: string | null): string {
   return "Pocket";
 }
 
-export function payerName(entry: ExpensePaymentSource): string {
+export function payerName(entry: ExpensePaymentEntry): string {
   return entry.paidBy?.name || entry.paidBy?.email || "Unknown user";
 }
 
-/** Each payer's part in the expense's own currency, e.g. "Asha: 600 (Pocket); Ravi: 400 (Company account)". */
-export function describePayments(payments: ExpensePaymentSource[] | undefined): string {
+/**
+ * Each payer's part in the expense's own currency (the row's Currency column),
+ * e.g. "Asha: 600.00 (Pocket); Ravi: 400.00 (Company account)".
+ */
+export function describePayments(payments: ExpensePaymentEntry[] | undefined): string {
   return (payments ?? [])
-    .map((entry) => `${payerName(entry)}: ${entry.amount} (${paymentSourceLabel(entry.source)})`)
+    .map((entry) => `${payerName(entry)}: ${entry.amount.toFixed(2)} (${paymentSourceLabel(entry.source)})`)
     .join("; ");
 }
 

@@ -24,7 +24,7 @@ import {
   expenseCsvRow,
   payerName,
   paymentSourceLabel,
-  type ExpensePaymentSource,
+  type ExpensePaymentEntry,
 } from "@/lib/expense-csv";
 import { getPaymentBreakdown, type PaymentSource } from "@/lib/expense";
 import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
@@ -41,7 +41,7 @@ interface Expense {
   paymentSource?: PaymentSource;
   pocketAmount?: number | null;
   pocketAmountInBaseCurrency?: number | null;
-  payments?: ExpensePaymentSource[];
+  payments?: ExpensePaymentEntry[];
   receiptKey?: string;
   receiptFilename?: string;
   category: { _id: string; name: string };
