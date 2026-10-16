@@ -7,7 +7,8 @@ vi.mock("@/models/Expense", () => ({
   default: { aggregate: vi.fn() },
 }));
 
-import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
+import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
+import { paidByFilter, payerSpendPipeline } from "@/lib/expense";
 import Expense from "@/models/Expense";
 
 const USER_ID = "507f1f77bcf86cd799439011";
@@ -268,5 +269,54 @@ describe("getExpenseSummary", () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([{ _id: null }] as never);
     const result = await getExpenseSummary({});
     expect(result).toEqual({ totalExpenses: 0, totalAmount: 0 });
+  });
+});
+
+describe("buildExpenseFilter — paidBy", () => {
+  it("lets an admin list the expenses credited to a payer", () => {
+    const filter = buildExpenseFilter(params(`paidBy=${OTHER_ID}`), makeUser("admin"));
+    expect(filter.$and).toEqual([paidByFilter(new mongoose.Types.ObjectId(OTHER_ID))]);
+    expect(parsePaidByParam(params(`paidBy=${OTHER_ID}`), makeUser("master_admin"))?.toString()).toBe(OTHER_ID);
+  });
+
+  it("keeps the search $or alongside the payer filter", () => {
+    const filter = buildExpenseFilter(params(`paidBy=${OTHER_ID}&search=lunch`), makeUser("admin"));
+    expect(filter.$and).toHaveLength(1);
+    expect(filter.$or).toEqual([{ title: /lunch/i }, { description: /lunch/i }]);
+  });
+
+  it("ignores paidBy for role user and for an invalid id", () => {
+    expect(buildExpenseFilter(params(`paidBy=${OTHER_ID}`), makeUser("user"))).not.toHaveProperty("$and");
+    expect(parsePaidByParam(params(`paidBy=${OTHER_ID}`), makeUser("user"))).toBeNull();
+    expect(buildExpenseFilter(params("paidBy=nope"), makeUser("admin"))).not.toHaveProperty("$and");
+  });
+});
+
+describe("getExpenseSummary — payer share", () => {
+  beforeEach(() => {
+    vi.mocked(Expense.aggregate).mockReset();
+  });
+
+  it("adds the payer's own share when a payer is given", async () => {
+    const payer = new mongoose.Types.ObjectId(OTHER_ID);
+    vi.mocked(Expense.aggregate)
+      .mockResolvedValueOnce([{ totalExpenses: 3, totalAmount: 900 }] as never)
+      .mockResolvedValueOnce([{ _id: null, totalSpend: 250, pocketSpend: 200, companySpend: 50 }] as never);
+
+    const filter = { $and: [paidByFilter(payer)] };
+    const result = await getExpenseSummary(filter, payer);
+
+    expect(vi.mocked(Expense.aggregate).mock.calls[1][0]).toEqual(payerSpendPipeline(filter, payer));
+    expect(result).toEqual({
+      totalExpenses: 3,
+      totalAmount: 900,
+      payerSpend: { totalSpend: 250, pocketSpend: 200, companySpend: 50 },
+    });
+  });
+
+  it("reports a zero share when nothing is credited to the payer", async () => {
+    vi.mocked(Expense.aggregate).mockResolvedValueOnce([] as never).mockResolvedValueOnce([] as never);
+    const result = await getExpenseSummary({}, new mongoose.Types.ObjectId(OTHER_ID));
+    expect(result.payerSpend).toEqual({ totalSpend: 0, pocketSpend: 0, companySpend: 0 });
   });
 });

@@ -147,7 +147,8 @@ describe("ExpensesPage", () => {
     expect(listRegion).toHaveClass("xl:min-h-0");
     expect(analyticsRegion).toHaveClass("xl:overflow-y-auto");
     expect(analyticsRegion).toHaveClass("xl:min-h-0");
-    expect(screen.getByText("Monthly Trend")).toBeInTheDocument();
+    // The rail loads its charts separately, so wait for them.
+    expect(await screen.findByText("Monthly Trend")).toBeInTheDocument();
     expect(screen.getByText("Top Categories")).toBeInTheDocument();
   });
 
@@ -204,5 +205,36 @@ describe("ExpensesPage", () => {
     expect(splitRow).toContain(",USD,8350,");
     expect(splitRow).toMatch(/,3340,5010,$/);
     expect(splitRow).toContain(",Split,");
+  });
+
+  it("filters by payer and shows that person's own share", async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.startsWith("/api/expenses")) {
+        const paidBy = new URL(url, "http://localhost").searchParams.get("paidBy");
+        return Promise.resolve({
+          expenses: listedExpenses,
+          pagination: { page: 1, limit: 25, total: listedExpenses.length, pages: 1 },
+          summary: {
+            totalAmount: 5678.76,
+            totalExpenses: 1,
+            ...(paidBy ? { payerSpend: { totalSpend: 1200, pocketSpend: 1000, companySpend: 200 } } : {}),
+          },
+        });
+      }
+      return defaultGet(url);
+    });
+    render(<ExpensesPage />);
+
+    const payerFilter = await screen.findByRole("combobox", { name: /filter by payer/i });
+    await waitFor(() => expect(screen.getByRole("option", { name: "Paid by Manas Nilorout" })).toBeInTheDocument());
+    fireEvent.change(payerFilter, { target: { value: "user-1" } });
+
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/expenses\?.*paidBy=user-1/))
+    );
+    expect(await screen.findByText("₹1,200.00")).toBeInTheDocument();
+    expect(screen.getByText(/₹1,000\.00 pocket/)).toBeInTheDocument();
+    expect(window.location.search).toContain("paidBy=user-1");
   });
 });

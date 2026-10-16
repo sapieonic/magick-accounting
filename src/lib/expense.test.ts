@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Aggregator } from "mingo";
+import { Aggregator, Query } from "mingo";
 import "mingo/init/system";
 import {
   buildPaymentFields,
@@ -11,6 +11,8 @@ import {
   paymentEntriesInBase,
   normalizeGstAmount,
   normalizePaymentSplit,
+  paidByFilter,
+  payerSpendPipeline,
   pocketAmountInBase,
   pocketBaseExpr,
   spendByPayerPipeline,
@@ -384,5 +386,63 @@ describe("spendByPayerPipeline", () => {
       B: { totalSpend: 75, pocketSpend: 60, companySpend: 15 },
       C: { totalSpend: 25, pocketSpend: 0, companySpend: 25 },
     });
+  });
+});
+
+describe("paidByFilter", () => {
+  const expenses = [
+    { _id: 1, createdBy: "A", amount: 100, amountInBaseCurrency: 100, paymentSource: "pocket", pocketAmountInBaseCurrency: 100, payments: [] },
+    { _id: 2, createdBy: "A", amount: 50, paymentSource: "company" },
+    {
+      _id: 3,
+      createdBy: "A",
+      amount: 100,
+      amountInBaseCurrency: 100,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: 60,
+      payments: [
+        { paidBy: "B", amountInBaseCurrency: 60, source: "pocket" },
+        { paidBy: "C", amountInBaseCurrency: 40, source: "company" },
+      ],
+    },
+    // A stray payer list on a single-source expense still counts for its submitter.
+    {
+      _id: 4,
+      createdBy: "C",
+      amount: 80,
+      amountInBaseCurrency: 80,
+      paymentSource: "pocket",
+      pocketAmountInBaseCurrency: 80,
+      payments: [{ paidBy: "B", amountInBaseCurrency: 80, source: "pocket" }],
+    },
+    // A shared expense that lost its payer list falls back to its submitter.
+    { _id: 5, createdBy: "B", amount: 20, amountInBaseCurrency: 20, paymentSource: "multiple", pocketAmountInBaseCurrency: 20, payments: [] },
+  ];
+
+  it("doesn't move a single-source expense with a stray payer list off its submitter", () => {
+    const rows = new Aggregator(spendByPayerPipeline).run(expenses) as { _id: string; totalSpend: number }[];
+    expect(Object.fromEntries(rows.map((row) => [row._id, row.totalSpend]))).toEqual({ A: 150, B: 80, C: 120 });
+  });
+
+  it.each(["A", "B", "C"])("lists exactly the expenses Spend by User credits to %s", (person) => {
+    const listed = new Query(paidByFilter(person))
+      .find(expenses)
+      .all()
+      .map((expense) => (expense as { _id: number })._id)
+      .sort();
+    const credited = (
+      new Aggregator([...spendByPayerPipeline.slice(0, -1), { $match: { "shares.user": person } }]).run(
+        expenses
+      ) as { _id: number }[]
+    )
+      .map((row) => row._id)
+      .sort();
+    expect(listed).toEqual([...new Set(credited)]);
+
+    const [ownShare] = new Aggregator(payerSpendPipeline(paidByFilter(person), person)).run(expenses);
+    const [spendRow] = (new Aggregator(spendByPayerPipeline).run(expenses) as { _id: string }[]).filter(
+      (row) => row._id === person
+    );
+    expect(ownShare).toEqual({ ...spendRow, _id: null });
   });
 });

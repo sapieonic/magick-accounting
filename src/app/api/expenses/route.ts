@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
+import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
 import { assertPayersExist } from "@/lib/expense-server";
 import { roundMoney } from "@/lib/asset";
@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .lean(),
     Expense.countDocuments(filter),
-    includeSummary ? getExpenseSummary(filter) : Promise.resolve(null),
+    includeSummary
+      ? getExpenseSummary(filter, parsePaidByParam(searchParams, authResult))
+      : Promise.resolve(null),
   ]);
 
   const expenseIds = expenses.map((expense) => expense._id);

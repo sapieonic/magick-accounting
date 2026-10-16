@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Expense from "@/models/Expense";
 import type { AuthUser } from "./auth";
+import { paidByFilter, payerSpendPipeline } from "./expense";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -44,6 +45,18 @@ function toObjectIds(searchParams: URLSearchParams, key: string): mongoose.Types
   return ids;
 }
 
+/**
+ * The admin-only `paidBy` param: a person whose credited expenses to list,
+ * matching how Spend by User attributes them. Ignored for role `user`.
+ */
+export function parsePaidByParam(
+  searchParams: URLSearchParams,
+  user: AuthUser
+): mongoose.Types.ObjectId | null {
+  if (user.role === "user") return null;
+  return toObjectId(searchParams.get("paidBy"));
+}
+
 export function buildExpenseFilter(
   searchParams: URLSearchParams,
   user: AuthUser
@@ -57,6 +70,12 @@ export function buildExpenseFilter(
     if (requestedCreatedBy) {
       filter.createdBy = requestedCreatedBy;
     }
+  }
+
+  const paidBy = parsePaidByParam(searchParams, user);
+  if (paidBy) {
+    // `$and` keeps this `$or` apart from the search `$or` below.
+    filter.$and = [paidByFilter(paidBy)];
   }
 
   const departments = toObjectIds(searchParams, "department");
@@ -86,20 +105,42 @@ export function buildExpenseFilter(
   return filter;
 }
 
-export async function getExpenseSummary(filter: Record<string, unknown>) {
-  const [summary] = await Expense.aggregate([
-    { $match: filter },
-    {
-      $group: {
-        _id: null,
-        totalExpenses: { $sum: 1 },
-        totalAmount: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+export interface PayerSpend {
+  totalSpend: number;
+  pocketSpend: number;
+  companySpend: number;
+}
+
+export async function getExpenseSummary(
+  filter: Record<string, unknown>,
+  paidBy: mongoose.Types.ObjectId | null = null
+) {
+  const [[summary], payerRows] = await Promise.all([
+    Expense.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalExpenses: { $sum: 1 },
+          totalAmount: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+        },
       },
-    },
+    ]),
+    paidBy ? Expense.aggregate(payerSpendPipeline(filter, paidBy)) : Promise.resolve(null),
   ]);
+
+  const payerSpend: PayerSpend | null = payerRows
+    ? {
+        totalSpend: payerRows[0]?.totalSpend ?? 0,
+        pocketSpend: payerRows[0]?.pocketSpend ?? 0,
+        companySpend: payerRows[0]?.companySpend ?? 0,
+      }
+    : null;
 
   return {
     totalExpenses: summary?.totalExpenses ?? 0,
     totalAmount: summary?.totalAmount ?? 0,
+    // With a payer filter: that person's own share, as Spend by User counts it.
+    ...(payerSpend ? { payerSpend } : {}),
   };
 }

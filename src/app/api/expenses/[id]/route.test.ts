@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { DELETE, PUT } from "./route";
+import { DELETE, GET, PUT } from "./route";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { deleteObject } from "@/lib/s3";
@@ -76,6 +76,38 @@ describe("DELETE /api/expenses/:id", () => {
 
     expect(response.status).toBe(409);
     expect(deleteObject).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/expenses/:id", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+
+  it("keeps a named payer who didn't submit the expense out", async () => {
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: "payer-id",
+      email: "payer@example.com",
+      name: "Payer",
+      role: "user",
+    });
+    const query = {
+      populate: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue({
+        _id: expenseId,
+        createdBy: { _id: "owner-id" },
+        paymentSource: "multiple",
+        payments: [
+          { paidBy: { _id: "payer-id" }, amount: 60, source: "pocket" },
+          { paidBy: { _id: "owner-id" }, amount: 40, source: "company" },
+        ],
+      }),
+    };
+    vi.mocked(Expense.findById).mockReturnValue(query as never);
+
+    const response = await GET({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+
+    expect(response.status).toBe(403);
+    expect(Asset.find).not.toHaveBeenCalled();
   });
 });
 

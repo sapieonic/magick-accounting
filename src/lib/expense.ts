@@ -273,17 +273,26 @@ export const pocketBaseExpr = {
 
 export const companyBaseExpr = { $subtract: [baseTotalExpr, pocketBaseExpr] };
 
+// A "several people" expense with its payer list; anything else counts wholly
+// against whoever submitted it. Shared by the spend pipeline and the payer
+// filter so Spend by User always matches the expenses listed for that person.
+const sharedPaymentExpr = {
+  $and: [
+    { $eq: ["$paymentSource", "multiple"] },
+    { $gt: [{ $size: { $ifNull: ["$payments", []] } }, 0] },
+  ],
+};
+
 /**
- * Aggregation pipeline totalling base-currency spend per person. An expense
- * paid by several people counts each part against its payer; any other
- * expense counts wholly against whoever submitted it.
+ * Aggregation stages that turn each expense into one `shares` document per
+ * person it is credited to: `{ user, pocket, company }` in base currency.
  */
-export const spendByPayerPipeline = [
+export const payerShareStages = [
   {
     $project: {
       shares: {
         $cond: [
-          { $gt: [{ $size: { $ifNull: ["$payments", []] } }, 0] },
+          sharedPaymentExpr,
           {
             $map: {
               input: "$payments",
@@ -305,15 +314,43 @@ export const spendByPayerPipeline = [
     },
   },
   { $unwind: "$shares" },
-  {
-    $group: {
-      _id: "$shares.user",
-      totalSpend: { $sum: { $add: ["$shares.pocket", "$shares.company"] } },
-      companySpend: { $sum: "$shares.company" },
-      pocketSpend: { $sum: "$shares.pocket" },
-    },
-  },
 ];
+
+const shareTotals = {
+  totalSpend: { $sum: { $add: ["$shares.pocket", "$shares.company"] } },
+  companySpend: { $sum: "$shares.company" },
+  pocketSpend: { $sum: "$shares.pocket" },
+};
+
+/** Aggregation pipeline totalling base-currency spend per person (see `payerShareStages`). */
+export const spendByPayerPipeline = [
+  ...payerShareStages,
+  { $group: { _id: "$shares.user", ...shareTotals } },
+];
+
+/** Pipeline totalling one person's share of the expenses matching `filter`. */
+export function payerSpendPipeline(filter: Record<string, unknown>, payerId: unknown) {
+  return [
+    { $match: filter },
+    ...payerShareStages,
+    { $match: { "shares.user": payerId } },
+    { $group: { _id: null, ...shareTotals } },
+  ];
+}
+
+/**
+ * Query matching the expenses credited to `payerId` by `payerShareStages`:
+ * shared expenses listing them as a payer, and their other submissions.
+ */
+export function paidByFilter(payerId: unknown): Record<string, unknown> {
+  const shared = { paymentSource: "multiple", "payments.0": { $exists: true } };
+  return {
+    $or: [
+      { ...shared, "payments.paidBy": payerId },
+      { createdBy: payerId, $nor: [shared] },
+    ],
+  };
+}
 
 export interface PaymentSplitFields {
   amount: number;
