@@ -162,3 +162,52 @@ describe("EditExpensePage split payment", () => {
     );
   });
 });
+
+describe("EditExpensePage paid by several people", () => {
+  // The lookup mock returns no members, so both payers must come from the stored expense.
+  const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
+  const ravi = { _id: "66c1884c0853f8a76a4da202", name: "Ravi", email: "ravi@example.com" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: true } as any);
+    vi.mocked(api.put).mockResolvedValue({});
+    mockExpense({
+      ...splitExpense,
+      paymentSource: "multiple",
+      pocketAmount: 600,
+      pocketAmountInBaseCurrency: 600,
+      payments: [
+        { paidBy: asha, amount: 600, amountInBaseCurrency: 600, source: "pocket" },
+        { paidBy: ravi, amount: 400, amountInBaseCurrency: 400, source: "company" },
+      ],
+    });
+  });
+
+  it("prefills each stored payer and resends them on save", async () => {
+    const user = userEvent.setup();
+    render(<EditExpensePage />);
+
+    expect(await screen.findByLabelText("Payer 1")).toHaveValue(asha._id);
+    expect(screen.getByLabelText("Payer 2")).toHaveValue(ravi._id);
+    expect(screen.getByLabelText(/amount for payment 2/i)).toHaveValue(400);
+    expect(screen.getByText("Payments match the total")).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText(/^title/i));
+    await user.type(screen.getByLabelText(/^title/i), "Team offsite");
+    submit();
+
+    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({
+        title: "Team offsite",
+        paymentSource: "multiple",
+        payments: [
+          { paidBy: asha._id, amount: 600, source: "pocket" },
+          { paidBy: ravi._id, amount: 400, source: "company" },
+        ],
+      })
+    );
+  });
+});

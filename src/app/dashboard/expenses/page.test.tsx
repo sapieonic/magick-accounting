@@ -197,12 +197,12 @@ describe("ExpensesPage", () => {
 
     const [header, companyRow, splitRow] = vi.mocked(downloadCsv).mock.calls[0][1].split("\r\n");
     expect(header).toBe(
-      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base)"
+      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base),Payments"
     );
-    expect(companyRow).toMatch(/,0,5678\.76$/);
+    expect(companyRow).toMatch(/,0,5678\.76,$/);
     expect(companyRow).toContain(",Company account,");
     expect(splitRow).toContain(",USD,8350,");
-    expect(splitRow).toMatch(/,3340,5010$/);
+    expect(splitRow).toMatch(/,3340,5010,$/);
     expect(splitRow).toContain(",Split,");
   });
 });

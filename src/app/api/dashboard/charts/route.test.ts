@@ -113,7 +113,13 @@ describe("GET /api/dashboard/charts", () => {
     ]);
     const paymentSourcePipeline = vi.mocked(Expense.aggregate).mock.calls[2][0] as any[];
     expect(paymentSourcePipeline[1]).toEqual({
-      $project: { paymentSource: 1, pocket: pocketBaseExpr, company: companyBaseExpr },
+      $project: {
+        paymentSource: 1,
+        pocket: pocketBaseExpr,
+        company: companyBaseExpr,
+        hasPocketEntry: { $in: ["pocket", { $ifNull: ["$payments.source", []] }] },
+        hasCompanyEntry: { $in: ["company", { $ifNull: ["$payments.source", []] }] },
+      },
     });
   });
 

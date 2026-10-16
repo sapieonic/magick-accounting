@@ -14,8 +14,13 @@ import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import AssetPurchaseSection, {
   AssetDraft,
 } from "@/components/assets/AssetPurchaseSection";
-import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
-import { getPaymentSplitError } from "@/lib/expense";
+import PaymentSourceFields, {
+  newPaymentDraft,
+  paymentDraftsToPayload,
+  type PayerOption,
+  type PaymentDraft,
+} from "@/components/expenses/PaymentSourceFields";
+import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
 import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
 
 interface Department {
@@ -57,6 +62,7 @@ export default function NewExpensePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [members, setMembers] = useState<PayerOption[]>([]);
   const [assets, setAssets] = useState<AssetDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -85,6 +91,7 @@ export default function NewExpensePage() {
     description: "",
     paymentSource: "pocket",
     pocketAmount: "",
+    payments: [] as PaymentDraft[],
   });
 
   const [receipt, setReceipt] = useState<{
@@ -96,7 +103,7 @@ export default function NewExpensePage() {
   // Warn before discarding typed-in or extracted data on a full page unload.
   const isDirty = Boolean(
     form.title || form.amount || form.description || form.category !== "" || form.pocketAmount ||
-      receipt || assets.length > 0
+      form.payments.some((entry) => entry.amount !== "") || receipt || assets.length > 0
   );
 
   useEffect(() => {
@@ -128,10 +135,11 @@ export default function NewExpensePage() {
   useEffect(() => {
     async function loadOptions() {
       try {
-        const data = await api.get("/api/lookups?include=departments,categories,currencies");
+        const data = await api.get("/api/lookups?include=departments,categories,currencies,members");
         setDepartments(data.departments);
         setCategories(data.categories);
         setCurrencies(data.currencies);
+        setMembers(data.members || []);
 
         const defaultDept = data.departments.find((d: Department) => d.isDefault);
         const baseCurrency = data.currencies.find((c: CurrencyOption) => c.isBase);
@@ -223,6 +231,16 @@ export default function NewExpensePage() {
   // The browser's `required` check covers an empty pocket field; a filled-in
   // one errors as soon as it (or the amount, once entered) stops fitting.
   const visibleSplitError = form.pocketAmount !== "" && form.amount !== "" ? splitError : null;
+  const paymentsError =
+    form.paymentSource === "multiple"
+      ? getPaymentEntriesError(form.amount, paymentDraftsToPayload("multiple", form.payments))
+      : null;
+  // As above: blank payer rows are left to `required`; once every row is
+  // filled in, a mismatch with the total shows inline.
+  const visiblePaymentsError =
+    form.amount !== "" && form.payments.every((entry) => entry.paidBy && entry.amount !== "")
+      ? paymentsError
+      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,6 +258,10 @@ export default function NewExpensePage() {
     }
     if (splitError) {
       toast(splitError, "error");
+      return;
+    }
+    if (paymentsError) {
+      toast(paymentsError, "error");
       return;
     }
 
@@ -275,6 +297,7 @@ export default function NewExpensePage() {
         amount: parseFloat(form.amount),
         gstAmount,
         pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
+        payments: paymentDraftsToPayload(form.paymentSource, form.payments),
         assets: assets.map(({ id: _id, ...asset }) => asset),
         ...receiptData,
       });
@@ -497,9 +520,14 @@ export default function NewExpensePage() {
             pocketAmount={form.pocketAmount}
             amount={form.amount}
             currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "?"}
-            onPaymentSourceChange={(paymentSource) => setForm({ ...form, paymentSource })}
-            onPocketAmountChange={(pocketAmount) => setForm({ ...form, pocketAmount })}
+            onPaymentSourceChange={(paymentSource) => setForm((prev) => ({ ...prev, paymentSource }))}
+            onPocketAmountChange={(pocketAmount) => setForm((prev) => ({ ...prev, pocketAmount }))}
             error={visibleSplitError}
+            payments={form.payments}
+            onPaymentsChange={(payments) => setForm((prev) => ({ ...prev, payments }))}
+            members={members}
+            defaultPayerId={user?._id}
+            paymentsError={visiblePaymentsError}
           />
 
           <div>

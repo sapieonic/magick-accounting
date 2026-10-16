@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { getPaymentSplitError } from "@/lib/expense";
-import PaymentSourceFields from "./PaymentSourceFields";
+import PaymentSourceFields, { paymentDraftsToPayload, type PaymentDraft } from "./PaymentSourceFields";
 
 function Harness({ amount = "1000", error = null }: { amount?: string; error?: string | null }) {
   const [paymentSource, setPaymentSource] = useState("pocket");
@@ -17,6 +17,33 @@ function Harness({ amount = "1000", error = null }: { amount?: string; error?: s
       onPaymentSourceChange={setPaymentSource}
       onPocketAmountChange={setPocketAmount}
       error={error}
+    />
+  );
+}
+
+const MEMBERS = [
+  { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" },
+  { _id: "66c1884c0853f8a76a4da202", name: "Ravi", email: "ravi@example.com" },
+];
+
+let latestPayments: PaymentDraft[] = [];
+
+function PayersHarness({ amount = "1000" }: { amount?: string }) {
+  const [paymentSource, setPaymentSource] = useState("pocket");
+  const [payments, setPayments] = useState<PaymentDraft[]>([]);
+  latestPayments = payments;
+  return (
+    <PaymentSourceFields
+      paymentSource={paymentSource}
+      pocketAmount=""
+      amount={amount}
+      currencySymbol="₹"
+      onPaymentSourceChange={setPaymentSource}
+      onPocketAmountChange={() => undefined}
+      payments={payments}
+      onPaymentsChange={setPayments}
+      members={MEMBERS}
+      defaultPayerId={MEMBERS[0]._id}
     />
   );
 }
@@ -79,5 +106,63 @@ describe("PaymentSourceFields", () => {
     expect(pocket).toHaveAccessibleDescription(
       "Pocket amount must be more than 0 and less than the total amount"
     );
+  });
+
+  it("only offers several payers when the page handles payer rows", () => {
+    render(<Harness />);
+    expect(screen.queryByRole("option", { name: /several people/i })).not.toBeInTheDocument();
+  });
+
+  it("starts two payer rows, the first for the current user", async () => {
+    const user = userEvent.setup();
+    render(<PayersHarness />);
+
+    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+
+    expect(screen.getByLabelText("Payer 1")).toHaveValue(MEMBERS[0]._id);
+    expect(screen.getByLabelText("Payer 2")).toHaveValue("");
+    expect(screen.getByRole("button", { name: /remove payment 1/i })).toBeDisabled();
+    expect(screen.getByText("₹1000.00 left to assign")).toBeInTheDocument();
+  });
+
+  it("records each payer's amount and pocket/company toggle", async () => {
+    const user = userEvent.setup();
+    render(<PayersHarness />);
+
+    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.type(screen.getByLabelText(/amount for payment 1/i), "600");
+    await user.selectOptions(screen.getByLabelText("Payer 2"), MEMBERS[1]._id);
+    await user.type(screen.getByLabelText(/amount for payment 2/i), "400");
+
+    const secondSource = screen.getByRole("group", { name: /payment 2 paid from/i });
+    const companyButton = within(secondSource).getByRole("button", { name: "Company" });
+    expect(companyButton).toHaveAttribute("aria-pressed", "false");
+    await user.click(companyButton);
+    expect(companyButton).toHaveAttribute("aria-pressed", "true");
+
+    expect(screen.getByText("Payments match the total")).toBeInTheDocument();
+    expect(paymentDraftsToPayload("multiple", latestPayments)).toEqual([
+      { paidBy: MEMBERS[0]._id, amount: 600, source: "pocket" },
+      { paidBy: MEMBERS[1]._id, amount: 400, source: "company" },
+    ]);
+  });
+
+  it("adds a payment pre-filled with what's left and removes extra rows", async () => {
+    const user = userEvent.setup();
+    render(<PayersHarness />);
+
+    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.type(screen.getByLabelText(/amount for payment 1/i), "300");
+    await user.type(screen.getByLabelText(/amount for payment 2/i), "200");
+    await user.click(screen.getByRole("button", { name: /add payment/i }));
+
+    expect(screen.getByLabelText(/amount for payment 3/i)).toHaveValue(500);
+    await user.click(screen.getByRole("button", { name: /remove payment 1/i }));
+    expect(screen.queryByLabelText(/amount for payment 3/i)).not.toBeInTheDocument();
+    expect(screen.getByText("₹300.00 left to assign")).toBeInTheDocument();
+  });
+
+  it("drops the payer list from the payload for other sources", () => {
+    expect(paymentDraftsToPayload("split", [])).toBeUndefined();
   });
 });

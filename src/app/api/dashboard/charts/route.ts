@@ -128,18 +128,52 @@ export async function GET(req: NextRequest) {
     ]),
     // A split expense contributes its share to both sides, so the per-side
     // counts can add up to more than the number of expenses. Counts go by
-    // source rather than share, so zero-amount expenses are still counted.
+    // source rather than share, so zero-amount expenses are still counted;
+    // an expense paid by several people counts on each side it has a payment.
     Expense.aggregate([
       { $match: filter },
-      { $project: { paymentSource: 1, pocket: pocketBaseExpr, company: companyBaseExpr } },
+      {
+        $project: {
+          paymentSource: 1,
+          pocket: pocketBaseExpr,
+          company: companyBaseExpr,
+          hasPocketEntry: { $in: ["pocket", { $ifNull: ["$payments.source", []] }] },
+          hasCompanyEntry: { $in: ["company", { $ifNull: ["$payments.source", []] }] },
+        },
+      },
       {
         $group: {
           _id: null,
           pocketTotal: { $sum: "$pocket" },
-          pocketCount: { $sum: { $cond: [{ $ne: ["$paymentSource", "company"] }, 1, 0] } },
+          pocketCount: {
+            $sum: {
+              $cond: [
+                {
+                  $cond: [
+                    { $eq: ["$paymentSource", "multiple"] },
+                    "$hasPocketEntry",
+                    { $ne: ["$paymentSource", "company"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
           companyTotal: { $sum: "$company" },
           companyCount: {
-            $sum: { $cond: [{ $in: ["$paymentSource", ["company", "split"]] }, 1, 0] },
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$paymentSource", ["company", "split"]] },
+                    { $and: [{ $eq: ["$paymentSource", "multiple"] }, "$hasCompanyEntry"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
           },
         },
       },

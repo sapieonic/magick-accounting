@@ -3,7 +3,7 @@ import { verifyAuth, requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
-import { baseTotalExpr, companyBaseExpr, pocketBaseExpr } from "@/lib/expense";
+import { spendByPayerPipeline } from "@/lib/expense";
 
 interface SpendBreakdown {
   totalSpend: number;
@@ -25,16 +25,7 @@ export async function GET(req: NextRequest) {
     .sort({ role: 1, name: 1 })
     .lean();
 
-  const userSpends = await Expense.aggregate([
-    {
-      $group: {
-        _id: "$createdBy",
-        totalSpend: { $sum: baseTotalExpr },
-        companySpend: { $sum: companyBaseExpr },
-        pocketSpend: { $sum: pocketBaseExpr },
-      },
-    },
-  ]);
+  const userSpends = await Expense.aggregate(spendByPayerPipeline);
 
   const spendMap = new Map<string, SpendBreakdown>(
     userSpends.map((row) => [

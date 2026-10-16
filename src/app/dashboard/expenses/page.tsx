@@ -19,7 +19,13 @@ import {
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { EXPENSE_CSV_HEADERS, expenseCsvRow, paymentSourceLabel } from "@/lib/expense-csv";
+import {
+  EXPENSE_CSV_HEADERS,
+  expenseCsvRow,
+  payerName,
+  paymentSourceLabel,
+  type ExpensePaymentSource,
+} from "@/lib/expense-csv";
 import { getPaymentBreakdown, type PaymentSource } from "@/lib/expense";
 import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
 
@@ -35,6 +41,7 @@ interface Expense {
   paymentSource?: PaymentSource;
   pocketAmount?: number | null;
   pocketAmountInBaseCurrency?: number | null;
+  payments?: ExpensePaymentSource[];
   receiptKey?: string;
   receiptFilename?: string;
   category: { _id: string; name: string };
@@ -892,7 +899,21 @@ export default function ExpensesPage() {
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Paid from</p>
-                          <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceDetail(expense)}</p>
+                          {expense.paymentSource === "multiple" && expense.payments?.length ? (
+                            <ul className="mt-1 space-y-0.5 text-sm text-foreground">
+                              {expense.payments.map((entry, index) => (
+                                <li key={index}>
+                                  <span className="font-medium">{payerName(entry)}</span>{" "}
+                                  <span className="tabular-nums">{formatCurrency(entry.amount, expense.currency?.code)}</span>{" "}
+                                  <span className="text-xs text-muted-foreground">
+                                    · {entry.source === "company" ? "company" : "pocket"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceDetail(expense)}</p>
+                          )}
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Submitted by</p>

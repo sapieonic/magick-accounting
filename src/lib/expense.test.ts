@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildPaymentFields,
   companyBaseExpr,
   getPaymentBreakdown,
+  getPaymentEntriesError,
+  paymentEntriesEqual,
+  paymentEntriesInBase,
   normalizeGstAmount,
   normalizePaymentSplit,
   pocketAmountInBase,
@@ -182,5 +186,122 @@ describe("getPaymentBreakdown", () => {
       pocketBase: 50,
       companyBase: 0,
     });
+  });
+});
+
+describe("payments shared between people", () => {
+  const asha = "66c1884c0853f8a76a4da201";
+  const ravi = "66c1884c0853f8a76a4da202";
+
+  it("accepts two or more payments that add up to the total", () => {
+    expect(
+      getPaymentEntriesError("1000", [
+        { paidBy: asha, amount: "600", source: "pocket" },
+        { paidBy: ravi, amount: 400, source: "company" },
+      ])
+    ).toBeNull();
+  });
+
+  it("lets one person pay part from pocket and part from the company", () => {
+    expect(
+      getPaymentEntriesError(100, [
+        { paidBy: asha, amount: 30, source: "pocket" },
+        { paidBy: asha, amount: 70, source: "company" },
+      ])
+    ).toBeNull();
+  });
+
+  it("rejects an invalid list of payments", () => {
+    const valid = { paidBy: ravi, amount: 50, source: "pocket" };
+    expect(getPaymentEntriesError(100, undefined)).toMatch(/at least two payments/i);
+    expect(getPaymentEntriesError(100, [valid])).toMatch(/at least two payments/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, paidBy: "" }, valid])).toMatch(/choose who/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, paidBy: "nope" }, valid])).toMatch(/payer is invalid/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, source: "card" }, { ...valid, paidBy: asha }])).toMatch(
+      /pocket or the company account/i
+    );
+    expect(getPaymentEntriesError(100, [valid, valid])).toMatch(/only one pocket and one company/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, amount: null }, { ...valid, paidBy: asha }])).toMatch(
+      /enter an amount/i
+    );
+    expect(getPaymentEntriesError(100, [{ ...valid, amount: 0 }, { ...valid, paidBy: asha, amount: 100 }])).toMatch(
+      /more than 0/i
+    );
+  });
+
+  it("requires the payments to add up exactly to the total, compared in paise", () => {
+    expect(
+      getPaymentEntriesError("0.3", [
+        { paidBy: asha, amount: 0.1, source: "pocket" },
+        { paidBy: ravi, amount: 0.2, source: "pocket" },
+      ])
+    ).toBeNull();
+    expect(
+      getPaymentEntriesError(100, [
+        { paidBy: asha, amount: 60, source: "pocket" },
+        { paidBy: ravi, amount: 50, source: "pocket" },
+      ])
+    ).toBe("Payments add up to 110.00 but the total amount is 100.00");
+  });
+
+  it("normalizes the payments and sums the pocket entries", () => {
+    expect(
+      normalizePaymentSplit("multiple", 999, 100, [
+        { paidBy: ` ${asha} `, amount: "20.004", source: "pocket" },
+        { paidBy: ravi, amount: "30", source: "pocket" },
+        { paidBy: asha, amount: 50, source: "company" },
+      ])
+    ).toEqual({
+      paymentSource: "multiple",
+      pocketAmount: 50,
+      payments: [
+        { paidBy: asha, amount: 20, source: "pocket" },
+        { paidBy: ravi, amount: 30, source: "pocket" },
+        { paidBy: asha, amount: 50, source: "company" },
+      ],
+    });
+  });
+
+  it("converts each part so the base amounts add up to the base total", () => {
+    const parts = paymentEntriesInBase(
+      [
+        { paidBy: asha, amount: 0.01, source: "pocket" },
+        { paidBy: ravi, amount: 0.01, source: "pocket" },
+        { paidBy: asha, amount: 0.01, source: "company" },
+      ],
+      0.01,
+      0.4
+    );
+    expect(parts.map((part) => part.amountInBaseCurrency)).toEqual([0, 0.01, 0]);
+    expect(parts.every((part) => part.amountInBaseCurrency >= 0)).toBe(true);
+  });
+
+  it("builds the stored fields, clearing payers for other sources", () => {
+    const split = normalizePaymentSplit("multiple", undefined, 100, [
+      { paidBy: asha, amount: 40, source: "pocket" },
+      { paidBy: ravi, amount: 60, source: "company" },
+    ]);
+    expect(buildPaymentFields(split, 8300, 83)).toEqual({
+      paymentSource: "multiple",
+      pocketAmount: 40,
+      pocketAmountInBaseCurrency: 3320,
+      payments: [
+        { paidBy: asha, amount: 40, source: "pocket", amountInBaseCurrency: 3320 },
+        { paidBy: ravi, amount: 60, source: "company", amountInBaseCurrency: 4980 },
+      ],
+    });
+    expect(buildPaymentFields(normalizePaymentSplit("company", undefined, 100), 8300, 83)).toEqual({
+      paymentSource: "company",
+      pocketAmount: 0,
+      pocketAmountInBaseCurrency: 0,
+      payments: [],
+    });
+  });
+
+  it("compares payment lists by payer, source and amount in paise", () => {
+    const entries = [{ paidBy: asha, amount: 0.3, source: "pocket" as const }];
+    expect(paymentEntriesEqual(entries, [{ ...entries[0], amount: 0.1 + 0.2 }])).toBe(true);
+    expect(paymentEntriesEqual(entries, [{ ...entries[0], source: "company" }])).toBe(false);
+    expect(paymentEntriesEqual(entries, [])).toBe(false);
   });
 });

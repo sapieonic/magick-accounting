@@ -7,6 +7,7 @@ import { deleteObject } from "@/lib/s3";
 import Expense from "@/models/Expense";
 import Asset from "@/models/Asset";
 import Currency from "@/models/Currency";
+import User from "@/models/User";
 
 vi.mock("@/lib/auth", () => ({ verifyAuth: vi.fn() }));
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
@@ -20,7 +21,7 @@ vi.mock("@/models/Asset", () => ({
 vi.mock("@/models/Currency", () => ({ default: { findById: vi.fn() } }));
 vi.mock("@/models/Category", () => ({ default: {} }));
 vi.mock("@/models/Department", () => ({ default: {} }));
-vi.mock("@/models/User", () => ({ default: {} }));
+vi.mock("@/models/User", () => ({ default: { countDocuments: vi.fn() } }));
 
 describe("DELETE /api/expenses/:id", () => {
   const expenseId = "66c1884c0853f8a76a4da111";
@@ -316,5 +317,113 @@ describe("PUT /api/expenses/:id payment split", () => {
         pocketAmountInBaseCurrency: 3320,
       })
     );
+  });
+
+  describe("paid by several people", () => {
+    const asha = "66c1884c0853f8a76a4da201";
+    const ravi = "66c1884c0853f8a76a4da202";
+
+    function mockStoredMultiple(overrides: Record<string, unknown> = {}) {
+      mockStoredExpense({
+        paymentSource: "multiple",
+        pocketAmount: 60,
+        pocketAmountInBaseCurrency: 4980,
+        payments: [
+          { paidBy: objectIdLike(asha), amount: 60, amountInBaseCurrency: 4980, source: "pocket" },
+          { paidBy: objectIdLike(ravi), amount: 40, amountInBaseCurrency: 3320, source: "company" },
+        ],
+        ...overrides,
+      });
+    }
+
+    beforeEach(() => {
+      vi.mocked(User.countDocuments).mockResolvedValue(2 as never);
+    });
+
+    it("switches to several payers and stores each part", async () => {
+      const response = await put({
+        paymentSource: "multiple",
+        payments: [
+          { paidBy: asha, amount: 25, source: "company" },
+          { paidBy: ravi, amount: 75, source: "pocket" },
+        ],
+      });
+
+      expect(response.status).toBe(200);
+      expect(storedUpdate().$set).toEqual(
+        expect.objectContaining({
+          paymentSource: "multiple",
+          pocketAmount: 75,
+          pocketAmountInBaseCurrency: 6225,
+          payments: [
+            { paidBy: asha, amount: 25, source: "company", amountInBaseCurrency: 2075 },
+            { paidBy: ravi, amount: 75, source: "pocket", amountInBaseCurrency: 6225 },
+          ],
+        })
+      );
+    });
+
+    it("keeps the stored payers when only unrelated fields change", async () => {
+      mockStoredMultiple();
+
+      const response = await put({ title: "Team lunch" });
+
+      expect(response.status).toBe(200);
+      expect(storedUpdate().$set).toEqual(
+        expect.objectContaining({
+          title: "Team lunch",
+          paymentSource: "multiple",
+          pocketAmount: 60,
+          payments: [
+            { paidBy: asha, amount: 60, source: "pocket", amountInBaseCurrency: 4980 },
+            { paidBy: ravi, amount: 40, source: "company", amountInBaseCurrency: 3320 },
+          ],
+        })
+      );
+    });
+
+    it("rejects changing the amount without updating the payers", async () => {
+      mockStoredMultiple();
+
+      const response = await put({ amount: 120 });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "Payments add up to 100.00 but the total amount is 120.00",
+      });
+      expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("clears the payers when switching back to a single source", async () => {
+      mockStoredMultiple();
+
+      const response = await put({ paymentSource: "company" });
+
+      expect(response.status).toBe(200);
+      expect(storedUpdate().$set).toEqual(
+        expect.objectContaining({ paymentSource: "company", pocketAmount: 0, payments: [] })
+      );
+    });
+
+    it("requires an admin when a user changes the payers of an asset-linked expense", async () => {
+      mockStoredMultiple();
+      linkAsset();
+      vi.mocked(verifyAuth).mockResolvedValue({
+        _id: "owner-id",
+        email: "owner@example.com",
+        name: "Owner",
+        role: "user",
+      });
+
+      const response = await put({
+        payments: [
+          { paidBy: asha, amount: 60, source: "company" },
+          { paidBy: ravi, amount: 40, source: "company" },
+        ],
+      });
+
+      expect(response.status).toBe(403);
+      expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+    });
   });
 });

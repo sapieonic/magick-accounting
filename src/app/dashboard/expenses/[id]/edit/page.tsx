@@ -10,8 +10,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
-import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
-import { getPaymentSplitError } from "@/lib/expense";
+import PaymentSourceFields, {
+  newPaymentDraft,
+  paymentDraftsToPayload,
+  type PayerOption,
+  type PaymentDraft,
+} from "@/components/expenses/PaymentSourceFields";
+import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
 import { ArrowLeft, Package, Upload, X as XIcon } from "lucide-react";
 
 interface Department {
@@ -33,6 +38,12 @@ interface CurrencyOption {
   isBase: boolean;
 }
 
+interface StoredPayment {
+  paidBy: PayerOption | null;
+  amount: number;
+  source: PaymentDraft["source"];
+}
+
 interface LinkedAsset {
   _id: string;
   assetTag: string;
@@ -45,10 +56,11 @@ export default function EditExpensePage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
+  const [members, setMembers] = useState<PayerOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
@@ -65,6 +77,7 @@ export default function EditExpensePage() {
     description: "",
     paymentSource: "pocket",
     pocketAmount: "",
+    payments: [] as PaymentDraft[],
   };
   const [form, setForm] = useState(emptyForm);
   const [initialForm, setInitialForm] = useState(emptyForm);
@@ -100,10 +113,12 @@ export default function EditExpensePage() {
       try {
         const [expData, lookupData] = await Promise.all([
           api.get(`/api/expenses/${params.id}`),
-          api.get("/api/lookups?include=departments,categories,currencies"),
+          api.get("/api/lookups?include=departments,categories,currencies,members"),
         ]);
 
         const exp = expData.expense;
+        const storedPayments: StoredPayment[] =
+          exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
         const loadedForm = {
           title: exp.title,
@@ -117,6 +132,13 @@ export default function EditExpensePage() {
           paymentSource: exp.paymentSource || "pocket",
           pocketAmount:
             exp.paymentSource === "split" && exp.pocketAmount != null ? exp.pocketAmount.toString() : "",
+          payments: storedPayments.map((entry) =>
+            newPaymentDraft({
+              paidBy: entry.paidBy?._id ?? "",
+              amount: entry.amount.toString(),
+              source: entry.source,
+            })
+          ),
         };
         setForm(loadedForm);
         setInitialForm(loadedForm);
@@ -129,6 +151,14 @@ export default function EditExpensePage() {
         setDepartments(lookupData.departments);
         setCategories(lookupData.categories);
         setCurrencies(lookupData.currencies);
+        // Keep current payers selectable even if they no longer appear in the member list.
+        const payerOptions = new Map<string, PayerOption>(
+          (lookupData.members || []).map((member: PayerOption) => [member._id, member])
+        );
+        for (const { paidBy } of storedPayments) {
+          if (paidBy?._id && !payerOptions.has(paidBy._id)) payerOptions.set(paidBy._id, paidBy);
+        }
+        setMembers([...payerOptions.values()]);
       } catch {
         toast("Failed to load expense", "error");
         router.push("/dashboard/expenses");
@@ -167,6 +197,16 @@ export default function EditExpensePage() {
   // The browser's `required` check covers an empty pocket field; a filled-in
   // one errors as soon as it (or the amount, once entered) stops fitting.
   const visibleSplitError = form.pocketAmount !== "" && form.amount !== "" ? splitError : null;
+  const paymentsError =
+    form.paymentSource === "multiple"
+      ? getPaymentEntriesError(form.amount, paymentDraftsToPayload("multiple", form.payments))
+      : null;
+  // As above: blank payer rows are left to `required`; once every row is
+  // filled in, a mismatch with the total shows inline.
+  const visiblePaymentsError =
+    form.amount !== "" && form.payments.every((entry) => entry.paidBy && entry.amount !== "")
+      ? paymentsError
+      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +220,10 @@ export default function EditExpensePage() {
       toast(splitError, "error");
       return;
     }
+    if (paymentsError) {
+      toast(paymentsError, "error");
+      return;
+    }
 
     setSubmitting(true);
     let uploadedReceiptKey: string | null = null;
@@ -190,6 +234,7 @@ export default function EditExpensePage() {
         amount: parseFloat(form.amount),
         gstAmount,
         pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
+        payments: paymentDraftsToPayload(form.paymentSource, form.payments),
       };
 
       if (newReceipt?.file) {
@@ -403,10 +448,15 @@ export default function EditExpensePage() {
             pocketAmount={form.pocketAmount}
             amount={form.amount}
             currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "?"}
-            onPaymentSourceChange={(paymentSource) => setForm({ ...form, paymentSource })}
-            onPocketAmountChange={(pocketAmount) => setForm({ ...form, pocketAmount })}
+            onPaymentSourceChange={(paymentSource) => setForm((prev) => ({ ...prev, paymentSource }))}
+            onPocketAmountChange={(pocketAmount) => setForm((prev) => ({ ...prev, pocketAmount }))}
             error={visibleSplitError}
             disabled={accountingLocked}
+            payments={form.payments}
+            onPaymentsChange={(payments) => setForm((prev) => ({ ...prev, payments }))}
+            members={members}
+            defaultPayerId={user?._id}
+            paymentsError={visiblePaymentsError}
           />
 
           <div>
