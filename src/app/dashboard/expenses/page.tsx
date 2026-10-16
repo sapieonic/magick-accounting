@@ -14,12 +14,18 @@ import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
 import {
   Plus, Receipt, Trash2, Pencil, Paperclip, Download, Package,
   Search, Filter, ChevronDown, FileText, Image as ImageIcon,
-  Calendar, TrendingUp, User as UserIcon, Tag, X as XIcon,
+  Calendar, TrendingUp, User as UserIcon, Tag, Wallet, X as XIcon,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
 import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { EXPENSE_CSV_HEADERS, expenseCsvRow, paymentSourceLabel } from "@/lib/expense-csv";
+import {
+  EXPENSE_CSV_HEADERS,
+  expenseCsvRow,
+  payerName,
+  paymentSourceLabel,
+  type ExpensePaymentEntry,
+} from "@/lib/expense-csv";
 import { getPaymentBreakdown, type PaymentSource } from "@/lib/expense";
 import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
 
@@ -35,6 +41,7 @@ interface Expense {
   paymentSource?: PaymentSource;
   pocketAmount?: number | null;
   pocketAmountInBaseCurrency?: number | null;
+  payments?: ExpensePaymentEntry[];
   receiptKey?: string;
   receiptFilename?: string;
   category: { _id: string; name: string };
@@ -49,6 +56,8 @@ interface UserOption { _id: string; name: string; email: string }
 interface ExpenseSummary {
   totalAmount: number;
   totalExpenses: number;
+  /** The "Paid by" person's own share of the listed expenses. */
+  payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -148,6 +157,7 @@ export default function ExpensesPage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [filterUser, setFilterUser] = useState("");
+  const [filterPayer, setFilterPayer] = useState("");
   const [urlSynced, setUrlSynced] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -170,7 +180,11 @@ export default function ExpensesPage() {
   const hasDateFilter =
     datePreset === CUSTOM_DATE_PRESET ? Boolean(customFrom || customTo) : Boolean(datePreset);
   const hasAnyFilter =
-    filterDepts.length > 0 || filterCats.length > 0 || hasDateFilter || Boolean(filterUser);
+    filterDepts.length > 0 ||
+    filterCats.length > 0 ||
+    hasDateFilter ||
+    Boolean(filterUser) ||
+    Boolean(filterPayer);
 
   // Restore filter state from the URL on first mount so filtered views are
   // shareable and survive refresh / back navigation.
@@ -185,6 +199,7 @@ export default function ExpensesPage() {
     setFilterDepts(depts);
     setFilterCats(cats);
     setFilterUser(params.get("createdBy") ?? "");
+    setFilterPayer(params.get("paidBy") ?? "");
 
     const month = params.get("month") ?? "";
     const from = params.get("from") ?? "";
@@ -216,6 +231,7 @@ export default function ExpensesPage() {
     filterDepts.forEach((id) => params.append("department", id));
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
+    if (filterPayer) params.set("paidBy", filterPayer);
     if (datePreset === CUSTOM_DATE_PRESET) {
       params.set("month", CUSTOM_DATE_PRESET);
       if (customFrom) params.set("from", customFrom);
@@ -228,7 +244,7 @@ export default function ExpensesPage() {
     const query = params.toString();
     const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(null, "", url);
-  }, [urlSynced, filterDepts, filterCats, filterUser, datePreset, customFrom, customTo, search]);
+  }, [urlSynced, filterDepts, filterCats, filterUser, filterPayer, datePreset, customFrom, customTo, search]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -291,6 +307,7 @@ export default function ExpensesPage() {
     filterDepts.forEach((id) => params.append("department", id));
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
+    if (filterPayer) params.set("paidBy", filterPayer);
     if (search) params.set("search", search);
 
     const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
@@ -298,7 +315,7 @@ export default function ExpensesPage() {
     if (to) params.set("to", to);
 
     return params;
-  }, [filterDepts, filterCats, filterUser, search, datePreset, customFrom, customTo]);
+  }, [filterDepts, filterCats, filterUser, filterPayer, search, datePreset, customFrom, customTo]);
 
   const buildQueryParams = useCallback(
     (pageNum: number, limit: number, includeSummary: boolean) => {
@@ -427,6 +444,7 @@ export default function ExpensesPage() {
 
     setExpenses((prev) => prev.filter((e) => e._id !== expense._id));
     setSummary((prev) => ({
+      ...prev,
       totalAmount: prev.totalAmount - (expense.amountInBaseCurrency ?? expense.amount),
       totalExpenses: Math.max(0, prev.totalExpenses - 1),
     }));
@@ -440,6 +458,7 @@ export default function ExpensesPage() {
         return next;
       });
       setSummary((prev) => ({
+        ...prev,
         totalAmount: prev.totalAmount + (expense.amountInBaseCurrency ?? expense.amount),
         totalExpenses: prev.totalExpenses + 1,
       }));
@@ -545,7 +564,7 @@ export default function ExpensesPage() {
               </button>
             )}
           </div>
-          <div className={`grid gap-2 sm:grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <div className="relative">
               <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-400" />
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -589,6 +608,24 @@ export default function ExpensesPage() {
                   <option value="">All Users</option>
                   {users.map((u) => (
                     <option key={u._id} value={u._id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {isAdmin && (
+              <div className="relative">
+                <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-400" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={filterPayer}
+                  onChange={(e) => setFilterPayer(e.target.value)}
+                  className="input-field w-full appearance-none pl-10 pr-9 text-sm"
+                  aria-label="Filter by payer"
+                  title="Expenses counted towards this person on Spend by User"
+                >
+                  <option value="">Paid by anyone</option>
+                  {users.map((u) => (
+                    <option key={u._id} value={u._id}>Paid by {u.name}</option>
                   ))}
                 </select>
               </div>
@@ -672,6 +709,14 @@ export default function ExpensesPage() {
                 {users.find((u) => u._id === filterUser)?.name} &times;
               </button>
             )}
+            {filterPayer && (
+              <button
+                onClick={() => setFilterPayer("")}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
+              >
+                Paid by {users.find((u) => u._id === filterPayer)?.name} &times;
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -740,6 +785,20 @@ export default function ExpensesPage() {
                 </span>
                 {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
               </div>
+              {filterPayer && summary.payerSpend && (
+                <div className="rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-300">
+                    Paid by {users.find((u) => u._id === filterPayer)?.name ?? "this person"}
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-violet-900 dark:text-violet-100">
+                    {formatBaseCurrency(summary.payerSpend.totalSpend)}
+                  </p>
+                  <p className="text-xs tabular-nums text-muted-foreground">
+                    {formatBaseCurrency(summary.payerSpend.pocketSpend)} pocket ·{" "}
+                    {formatBaseCurrency(summary.payerSpend.companySpend)} company
+                  </p>
+                </div>
+              )}
 
               <button
                 onClick={handleExport}
@@ -892,7 +951,21 @@ export default function ExpensesPage() {
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Paid from</p>
-                          <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceDetail(expense)}</p>
+                          {expense.paymentSource === "multiple" && expense.payments?.length ? (
+                            <ul className="mt-1 space-y-0.5 text-sm text-foreground">
+                              {expense.payments.map((entry, index) => (
+                                <li key={index}>
+                                  <span className="font-medium">{payerName(entry)}</span>{" "}
+                                  <span className="tabular-nums">{formatCurrency(entry.amount, expense.currency?.code)}</span>{" "}
+                                  <span className="text-xs text-muted-foreground">
+                                    · {entry.source === "company" ? "company" : "pocket"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceDetail(expense)}</p>
+                          )}
                         </div>
                         <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Submitted by</p>

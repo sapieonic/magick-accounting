@@ -77,4 +77,29 @@ describe("expenseCsvRow", () => {
     expect(column(row, "Pocket (Base)")).toBe(75);
     expect(column(row, "Company (Base)")).toBe(0);
   });
+
+  it("lists each payer for an expense paid by several people", () => {
+    const row = expenseCsvRow({
+      ...base,
+      amount: 1000,
+      amountInBaseCurrency: 1000,
+      paymentSource: "multiple",
+      pocketAmount: 600,
+      pocketAmountInBaseCurrency: 600,
+      payments: [
+        { paidBy: { name: "Asha" }, amount: 600, source: "pocket" },
+        { paidBy: { email: "ravi@example.com" }, amount: 400, source: "company" },
+      ],
+    });
+    expect(column(row, "Paid From")).toBe("Several people");
+    expect(column(row, "Pocket (Base)")).toBe(600);
+    expect(column(row, "Company (Base)")).toBe(400);
+    expect(column(row, "Payments")).toBe(
+      "Asha: 600.00 (Pocket); ravi@example.com: 400.00 (Company account)"
+    );
+  });
+
+  it("leaves the payments column blank for a single payer", () => {
+    expect(column(expenseCsvRow({ ...base, amount: 75 }), "Payments")).toBe("");
+  });
 });

@@ -4,7 +4,9 @@ import { connectDB } from "@/lib/mongodb";
 import Department from "@/models/Department";
 import Category from "@/models/Category";
 import Currency from "@/models/Currency";
+import User from "@/models/User";
 
+// `members` (who can be named as a payer) is opt-in: only the expense forms need it.
 const DEFAULT_INCLUDES = ["departments", "categories", "currencies"] as const;
 
 export async function GET(req: NextRequest) {
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest) {
       .filter(Boolean)
   );
 
-  const [departments, categories, currencies] = await Promise.all([
+  const [departments, categories, currencies, members] = await Promise.all([
     requested.has("departments")
       ? Department.find().select("name isDefault").sort({ isDefault: -1, name: 1 }).lean()
       : Promise.resolve([]),
@@ -30,7 +32,10 @@ export async function GET(req: NextRequest) {
     requested.has("currencies")
       ? Currency.find({ isActive: true }).select("code name symbol isBase").sort({ isBase: -1, code: 1 }).lean()
       : Promise.resolve([]),
+    requested.has("members")
+      ? User.find().select("name email").sort({ name: 1 }).lean()
+      : Promise.resolve([]),
   ]);
 
-  return NextResponse.json({ departments, categories, currencies });
+  return NextResponse.json({ departments, categories, currencies, members });
 }

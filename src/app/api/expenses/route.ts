@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { buildExpenseFilter, getExpenseSummary } from "@/lib/expense-query";
-import { normalizeGstAmount, normalizePaymentSplit, pocketAmountInBase } from "@/lib/expense";
+import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
+import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
+import { assertPayersExist } from "@/lib/expense-server";
 import { roundMoney } from "@/lib/asset";
 import {
   AssetCreationReservation,
@@ -36,12 +37,15 @@ export async function GET(req: NextRequest) {
       .populate("department", "name")
       .populate("currency", "code name symbol rateToBase isBase")
       .populate("createdBy", "name email photoURL")
+      .populate("payments.paidBy", "name email")
       .sort({ date: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
     Expense.countDocuments(filter),
-    includeSummary ? getExpenseSummary(filter) : Promise.resolve(null),
+    includeSummary
+      ? getExpenseSummary(filter, parsePaidByParam(searchParams, authResult))
+      : Promise.resolve(null),
   ]);
 
   const expenseIds = expenses.map((expense) => expense._id);
@@ -95,7 +99,13 @@ export async function POST(req: NextRequest) {
       throw new Error("Expense amount must be a non-negative number");
     }
     const gstAmount = normalizeGstAmount(body.gstAmount, amount);
-    const paymentSplit = normalizePaymentSplit(body.paymentSource, body.pocketAmount, amount);
+    const paymentSplit = normalizePaymentSplit(
+      body.paymentSource,
+      body.pocketAmount,
+      amount,
+      body.payments
+    );
+    await assertPayersExist(paymentSplit);
     const purchaseDate = new Date(body.date);
     if (Number.isNaN(purchaseDate.getTime())) throw new Error("Expense date is invalid");
 
@@ -137,13 +147,7 @@ export async function POST(req: NextRequest) {
             department: body.department,
             date: purchaseDate,
             description: body.description || "",
-            paymentSource: paymentSplit.paymentSource,
-            pocketAmount: paymentSplit.pocketAmount,
-            pocketAmountInBaseCurrency: pocketAmountInBase(
-              paymentSplit,
-              amountInBaseCurrency,
-              rateToBase
-            ),
+            ...buildPaymentFields(paymentSplit, amountInBaseCurrency, rateToBase),
             receiptKey: body.receiptKey || undefined,
             receiptFilename: body.receiptKey ? body.receiptFilename : undefined,
             createdBy: authResult._id,
@@ -175,6 +179,7 @@ export async function POST(req: NextRequest) {
       .populate("department", "name")
       .populate("currency", "code name symbol rateToBase isBase")
       .populate("createdBy", "name email photoURL")
+      .populate("payments.paidBy", "name email")
       .lean();
 
     return NextResponse.json({ expense: populated, assets: createdAssets }, { status: 201 });

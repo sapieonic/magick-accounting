@@ -1,5 +1,17 @@
 import mongoose, { Schema, Document } from "mongoose";
-import { PAYMENT_SOURCES, type PaymentSource } from "@/lib/expense";
+import {
+  PAYMENT_ENTRY_SOURCES,
+  PAYMENT_SOURCES,
+  type PaymentEntrySource,
+  type PaymentSource,
+} from "@/lib/expense";
+
+export interface IExpensePayment {
+  paidBy: mongoose.Types.ObjectId;
+  amount: number;
+  amountInBaseCurrency: number;
+  source: PaymentEntrySource;
+}
 
 export interface IExpense extends Document {
   title: string;
@@ -19,12 +31,23 @@ export interface IExpense extends Document {
   paymentSource: PaymentSource;
   pocketAmount?: number | null;
   pocketAmountInBaseCurrency?: number | null;
+  payments: IExpensePayment[];
   receiptKey?: string;
   receiptFilename?: string;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const ExpensePaymentSchema = new Schema<IExpensePayment>(
+  {
+    paidBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    amount: { type: Number, required: true, min: 0 },
+    amountInBaseCurrency: { type: Number, required: true, min: 0 },
+    source: { type: String, enum: PAYMENT_ENTRY_SOURCES, required: true },
+  },
+  { _id: false }
+);
 
 const ExpenseSchema = new Schema<IExpense>(
   {
@@ -54,6 +77,9 @@ const ExpenseSchema = new Schema<IExpense>(
     // Absent on legacy docs; see `pocketBaseExpr` in src/lib/expense.ts.
     pocketAmount: { type: Number, default: null, min: 0 },
     pocketAmountInBaseCurrency: { type: Number, default: null, min: 0 },
+    // One entry per payer when `paymentSource` is "multiple"; empty otherwise.
+    // The pocket fields above then hold the sum of the pocket entries.
+    payments: { type: [ExpensePaymentSchema], default: [] },
     receiptKey: { type: String },
     receiptFilename: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },

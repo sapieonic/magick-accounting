@@ -5,11 +5,13 @@ import Expense from "@/models/Expense";
 import Currency from "@/models/Currency";
 import Asset from "@/models/Asset";
 import {
+  buildPaymentFields,
   getPaymentBreakdown,
   normalizeGstAmount,
   normalizePaymentSplit,
-  pocketAmountInBase,
+  paymentEntriesEqual,
 } from "@/lib/expense";
+import { assertPayersExist, storedPaymentEntries } from "@/lib/expense-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
 import mongoose from "mongoose";
@@ -33,6 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .populate("department", "name")
     .populate("currency", "code name symbol rateToBase isBase")
     .populate("createdBy", "name email photoURL")
+    .populate("payments.paidBy", "name email")
     .lean();
 
   if (!expense) {
@@ -111,8 +114,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Unlike GST, a stored split pocket amount is never clamped: lowering the
     // total below it is rejected so money owed to the user can't shrink silently.
-    // The stored pocket amount only carries over when the expense is already a
-    // split; switching to split has to send one.
+    // The stored pocket amount (or payer list) only carries over when the
+    // expense already uses it; switching to split or multiple has to send one.
+    const storedPayments = storedPaymentEntries(expense.payments);
     const paymentSplit = normalizePaymentSplit(
       body.paymentSource ?? expense.paymentSource,
       body.pocketAmount !== undefined
@@ -120,8 +124,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         : expense.paymentSource === "split"
           ? expense.pocketAmount
           : undefined,
-      newAmount
+      newAmount,
+      body.payments !== undefined
+        ? body.payments
+        : expense.paymentSource === "multiple"
+          ? storedPayments
+          : undefined
     );
+    await assertPayersExist(paymentSplit);
 
     const allocatedAmount = Math.max(
       Number(expense.assetAllocatedAmount || 0),
@@ -157,6 +167,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       (body.department !== undefined && String(body.department) !== expense.department.toString()) ||
       paymentSplit.paymentSource !== expense.paymentSource ||
       paymentSplit.pocketAmount !== getPaymentBreakdown(expense).pocket ||
+      !paymentEntriesEqual(paymentSplit.payments ?? [], storedPayments) ||
       (body.receiptKey !== undefined && body.receiptKey !== (expense.receiptKey || null));
     if (hasLinkedAssets && authResult.role === "user" && changedProtectedField) {
       return NextResponse.json(
@@ -190,13 +201,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       department: body.department !== undefined ? body.department : expense.department,
       date: newDate,
       description: body.description !== undefined ? body.description : expense.description,
-      paymentSource: paymentSplit.paymentSource,
-      pocketAmount: paymentSplit.pocketAmount,
-      pocketAmountInBaseCurrency: pocketAmountInBase(
-        paymentSplit,
-        newAmountInBaseCurrency,
-        effectiveRateToBase
-      ),
+      ...buildPaymentFields(paymentSplit, newAmountInBaseCurrency, effectiveRateToBase),
       receiptKey: requestedReceiptKey,
       receiptFilename:
         body.receiptFilename !== undefined ? body.receiptFilename : expense.receiptFilename,
@@ -216,6 +221,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate("department", "name")
       .populate("currency", "code name symbol rateToBase isBase")
       .populate("createdBy", "name email photoURL")
+      .populate("payments.paidBy", "name email")
       .lean();
     if (!updated) {
       throw new Error("Expense changed while you were editing it; reload and try again");

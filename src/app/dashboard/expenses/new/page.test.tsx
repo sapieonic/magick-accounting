@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import NewExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -139,5 +139,100 @@ describe("NewExpensePage split payment", () => {
       "/api/expenses",
       expect.objectContaining({ paymentSource: "pocket", pocketAmount: null })
     );
+  });
+});
+
+describe("NewExpensePage paid by several people", () => {
+  const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
+  const ravi = { _id: "66c1884c0853f8a76a4da202", name: "Ravi", email: "ravi@example.com" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem("expense-upload-modal-skip", "true");
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: false } as any);
+    vi.mocked(api.post).mockResolvedValue({});
+    vi.mocked(api.get).mockResolvedValue({
+      departments: [{ _id: "department-1", name: "Engineering", isDefault: true }],
+      categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+      currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+      members: [asha, ravi],
+    });
+  });
+
+  async function fillPayers(user: ReturnType<typeof userEvent.setup>, first: string, second: string) {
+    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.type(screen.getByLabelText(/amount for payment 1/i), first);
+    await user.selectOptions(screen.getByLabelText("Payer 2"), ravi._id);
+    await user.type(screen.getByLabelText(/amount for payment 2/i), second);
+  }
+
+  it("asks for the members list alongside the other lookups", async () => {
+    render(<NewExpensePage />);
+    await screen.findByLabelText(/^title/i);
+    expect(api.get).toHaveBeenCalledWith("/api/lookups?include=departments,categories,currencies,members");
+  });
+
+  it("blocks submit while the payments don't add up to the amount", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+    await fillPayers(user, "300", "100");
+
+    expect(screen.getByText("Payments add up to 400.00 but the total amount is 500.00")).toBeInTheDocument();
+    submit();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("posts each payer with their pocket/company source", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+    await fillPayers(user, "300", "200");
+    await user.click(
+      within(screen.getByRole("group", { name: /payment 2 paid from/i })).getByRole("button", {
+        name: "Company",
+      })
+    );
+
+    submit();
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/expenses",
+      expect.objectContaining({
+        amount: 500,
+        paymentSource: "multiple",
+        payments: [
+          { paidBy: asha._id, amount: 300, source: "pocket" },
+          { paidBy: ravi._id, amount: 200, source: "company" },
+        ],
+      })
+    );
+  });
+
+  it("treats a picked payer or toggled source as unsaved changes", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<NewExpensePage />);
+
+    await user.selectOptions(await screen.findByLabelText(/payment source/i), "multiple");
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByLabelText("Payer 2"), ravi._id);
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    confirmSpy.mockRestore();
+  });
+
+  it("ties the payments error to the payer inputs", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+    await fillPayers(user, "300", "100");
+
+    const message = "Payments add up to 400.00 but the total amount is 500.00";
+    expect(screen.getByLabelText(/amount for payment 1/i)).toHaveAccessibleDescription(message);
+    expect(screen.getByLabelText(/amount for payment 1/i)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Payer 2")).toHaveAccessibleDescription(message);
   });
 });

@@ -5,7 +5,7 @@ import { verifyAuth, requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
-import { baseTotalExpr, companyBaseExpr, pocketBaseExpr } from "@/lib/expense";
+import { spendByPayerPipeline } from "@/lib/expense";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -87,16 +87,7 @@ describe("GET /api/users", () => {
 
     expect(connectDB).toHaveBeenCalled();
     expect(User.find).toHaveBeenCalled();
-    expect(Expense.aggregate).toHaveBeenCalledWith([
-      {
-        $group: {
-          _id: "$createdBy",
-          totalSpend: { $sum: baseTotalExpr },
-          companySpend: { $sum: companyBaseExpr },
-          pocketSpend: { $sum: pocketBaseExpr },
-        },
-      },
-    ]);
+    expect(Expense.aggregate).toHaveBeenCalledWith(spendByPayerPipeline);
 
     expect(NextResponse.json).toHaveBeenCalledWith({
       users: [

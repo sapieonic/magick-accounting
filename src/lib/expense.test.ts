@@ -1,11 +1,21 @@
 import { describe, it, expect } from "vitest";
+import { Aggregator, Query } from "mingo";
+import "mingo/init/system";
 import {
+  buildPaymentFields,
   companyBaseExpr,
   getPaymentBreakdown,
+  getPaymentEntriesError,
+  MAX_PAYMENT_ENTRIES,
+  paymentEntriesEqual,
+  paymentEntriesInBase,
   normalizeGstAmount,
   normalizePaymentSplit,
+  paidByFilter,
+  payerSpendPipeline,
   pocketAmountInBase,
   pocketBaseExpr,
+  spendByPayerPipeline,
 } from "@/lib/expense";
 
 describe("normalizeGstAmount", () => {
@@ -182,5 +192,257 @@ describe("getPaymentBreakdown", () => {
       pocketBase: 50,
       companyBase: 0,
     });
+  });
+});
+
+describe("payments shared between people", () => {
+  const asha = "66c1884c0853f8a76a4da201";
+  const ravi = "66c1884c0853f8a76a4da202";
+
+  it("accepts two or more payments that add up to the total", () => {
+    expect(
+      getPaymentEntriesError("1000", [
+        { paidBy: asha, amount: "600", source: "pocket" },
+        { paidBy: ravi, amount: 400, source: "company" },
+      ])
+    ).toBeNull();
+  });
+
+  it("lets one person pay part from pocket and part from the company", () => {
+    expect(
+      getPaymentEntriesError(100, [
+        { paidBy: asha, amount: 30, source: "pocket" },
+        { paidBy: asha, amount: 70, source: "company" },
+      ])
+    ).toBeNull();
+  });
+
+  it("rejects an invalid list of payments", () => {
+    const valid = { paidBy: ravi, amount: 50, source: "pocket" };
+    expect(getPaymentEntriesError(100, undefined)).toMatch(/at least two payments/i);
+    expect(getPaymentEntriesError(100, [valid])).toMatch(/at least two payments/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, paidBy: "" }, valid])).toMatch(/choose who/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, paidBy: "nope" }, valid])).toMatch(/payer is invalid/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, source: "card" }, { ...valid, paidBy: asha }])).toMatch(
+      /pocket or the company account/i
+    );
+    expect(getPaymentEntriesError(100, [valid, valid])).toMatch(/only one pocket and one company/i);
+    expect(getPaymentEntriesError(100, [{ ...valid, amount: null }, { ...valid, paidBy: asha }])).toMatch(
+      /enter an amount/i
+    );
+    expect(getPaymentEntriesError(100, [{ ...valid, amount: 0 }, { ...valid, paidBy: asha, amount: 100 }])).toMatch(
+      /more than 0/i
+    );
+  });
+
+  it("requires the payments to add up exactly to the total, compared in paise", () => {
+    expect(
+      getPaymentEntriesError("0.3", [
+        { paidBy: asha, amount: 0.1, source: "pocket" },
+        { paidBy: ravi, amount: 0.2, source: "pocket" },
+      ])
+    ).toBeNull();
+    expect(
+      getPaymentEntriesError(100, [
+        { paidBy: asha, amount: 60, source: "pocket" },
+        { paidBy: ravi, amount: 50, source: "pocket" },
+      ])
+    ).toBe("Payments add up to 110.00 but the total amount is 100.00");
+  });
+
+  it("normalizes the payments and sums the pocket entries", () => {
+    expect(
+      normalizePaymentSplit("multiple", 999, 100, [
+        { paidBy: ` ${asha} `, amount: "20.004", source: "pocket" },
+        { paidBy: ravi, amount: "30", source: "pocket" },
+        { paidBy: asha, amount: 50, source: "company" },
+      ])
+    ).toEqual({
+      paymentSource: "multiple",
+      pocketAmount: 50,
+      payments: [
+        { paidBy: asha, amount: 20, source: "pocket" },
+        { paidBy: ravi, amount: 30, source: "pocket" },
+        { paidBy: asha, amount: 50, source: "company" },
+      ],
+    });
+  });
+
+  it("converts each part so the base amounts add up to the base total", () => {
+    const parts = paymentEntriesInBase(
+      [
+        { paidBy: asha, amount: 0.01, source: "pocket" },
+        { paidBy: ravi, amount: 0.01, source: "pocket" },
+        { paidBy: asha, amount: 0.01, source: "company" },
+      ],
+      0.01,
+      0.4
+    );
+    expect(parts.map((part) => part.amountInBaseCurrency)).toEqual([0, 0.01, 0]);
+    expect(parts.every((part) => part.amountInBaseCurrency >= 0)).toBe(true);
+  });
+
+  it("builds the stored fields, clearing payers for other sources", () => {
+    const split = normalizePaymentSplit("multiple", undefined, 100, [
+      { paidBy: asha, amount: 40, source: "pocket" },
+      { paidBy: ravi, amount: 60, source: "company" },
+    ]);
+    expect(buildPaymentFields(split, 8300, 83)).toEqual({
+      paymentSource: "multiple",
+      pocketAmount: 40,
+      pocketAmountInBaseCurrency: 3320,
+      payments: [
+        { paidBy: asha, amount: 40, source: "pocket", amountInBaseCurrency: 3320 },
+        { paidBy: ravi, amount: 60, source: "company", amountInBaseCurrency: 4980 },
+      ],
+    });
+    expect(buildPaymentFields(normalizePaymentSplit("company", undefined, 100), 8300, 83)).toEqual({
+      paymentSource: "company",
+      pocketAmount: 0,
+      pocketAmountInBaseCurrency: 0,
+      payments: [],
+    });
+  });
+
+  it("compares payment lists by payer, source and amount in paise", () => {
+    const entries = [{ paidBy: asha, amount: 0.3, source: "pocket" as const }];
+    expect(paymentEntriesEqual(entries, [{ ...entries[0], amount: 0.1 + 0.2 }])).toBe(true);
+    expect(paymentEntriesEqual(entries, [{ ...entries[0], source: "company" }])).toBe(false);
+    expect(paymentEntriesEqual(entries, [])).toBe(false);
+  });
+
+  it("caps the number of payments", () => {
+    const payments = Array.from({ length: MAX_PAYMENT_ENTRIES + 1 }, (_, index) => ({
+      paidBy: index.toString(16).padStart(24, "0"),
+      amount: 1,
+      source: "pocket",
+    }));
+    expect(getPaymentEntriesError(MAX_PAYMENT_ENTRIES + 1, payments)).toMatch(/at most 50 payments/i);
+  });
+
+  it("treats payer ids case-insensitively and stores them lowercased", () => {
+    const upper = asha.toUpperCase();
+    expect(
+      getPaymentEntriesError(100, [
+        { paidBy: upper, amount: 50, source: "pocket" },
+        { paidBy: asha, amount: 50, source: "pocket" },
+      ])
+    ).toMatch(/only one pocket and one company/i);
+    expect(
+      normalizePaymentSplit("multiple", undefined, 100, [
+        { paidBy: upper, amount: 50, source: "pocket" },
+        { paidBy: ravi, amount: 50, source: "company" },
+      ]).payments?.[0].paidBy
+    ).toBe(asha);
+  });
+
+  it("ignores order and id case when comparing payment lists", () => {
+    const stored = [
+      { paidBy: asha, amount: 60, source: "pocket" as const },
+      { paidBy: ravi, amount: 40, source: "company" as const },
+    ];
+    expect(paymentEntriesEqual([stored[1], { ...stored[0], paidBy: asha.toUpperCase() }], stored)).toBe(true);
+  });
+});
+
+describe("spendByPayerPipeline", () => {
+  it("credits each payer of a shared expense and the submitter of any other", () => {
+    const expenses = [
+      { createdBy: "A", amount: 100, amountInBaseCurrency: 100, paymentSource: "pocket", pocketAmountInBaseCurrency: 100, payments: [] },
+      // Legacy doc: no pocket fields and no payments.
+      { createdBy: "A", amount: 50, paymentSource: "company" },
+      {
+        createdBy: "A",
+        amount: 100,
+        amountInBaseCurrency: 100,
+        paymentSource: "split",
+        pocketAmountInBaseCurrency: 30,
+        payments: [],
+      },
+      {
+        createdBy: "A",
+        amount: 100,
+        amountInBaseCurrency: 100,
+        paymentSource: "multiple",
+        pocketAmountInBaseCurrency: 60,
+        payments: [
+          { paidBy: "B", amountInBaseCurrency: 60, source: "pocket" },
+          { paidBy: "C", amountInBaseCurrency: 25, source: "company" },
+          { paidBy: "B", amountInBaseCurrency: 15, source: "company" },
+        ],
+      },
+    ];
+
+    const rows = new Aggregator(spendByPayerPipeline).run(expenses) as {
+      _id: string;
+      totalSpend: number;
+      pocketSpend: number;
+      companySpend: number;
+    }[];
+    const byUser = Object.fromEntries(rows.map(({ _id, ...spend }) => [_id, spend]));
+
+    expect(byUser).toEqual({
+      A: { totalSpend: 250, pocketSpend: 130, companySpend: 120 },
+      B: { totalSpend: 75, pocketSpend: 60, companySpend: 15 },
+      C: { totalSpend: 25, pocketSpend: 0, companySpend: 25 },
+    });
+  });
+});
+
+describe("paidByFilter", () => {
+  const expenses = [
+    { _id: 1, createdBy: "A", amount: 100, amountInBaseCurrency: 100, paymentSource: "pocket", pocketAmountInBaseCurrency: 100, payments: [] },
+    { _id: 2, createdBy: "A", amount: 50, paymentSource: "company" },
+    {
+      _id: 3,
+      createdBy: "A",
+      amount: 100,
+      amountInBaseCurrency: 100,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: 60,
+      payments: [
+        { paidBy: "B", amountInBaseCurrency: 60, source: "pocket" },
+        { paidBy: "C", amountInBaseCurrency: 40, source: "company" },
+      ],
+    },
+    // A stray payer list on a single-source expense still counts for its submitter.
+    {
+      _id: 4,
+      createdBy: "C",
+      amount: 80,
+      amountInBaseCurrency: 80,
+      paymentSource: "pocket",
+      pocketAmountInBaseCurrency: 80,
+      payments: [{ paidBy: "B", amountInBaseCurrency: 80, source: "pocket" }],
+    },
+    // A shared expense that lost its payer list falls back to its submitter.
+    { _id: 5, createdBy: "B", amount: 20, amountInBaseCurrency: 20, paymentSource: "multiple", pocketAmountInBaseCurrency: 20, payments: [] },
+  ];
+
+  it("doesn't move a single-source expense with a stray payer list off its submitter", () => {
+    const rows = new Aggregator(spendByPayerPipeline).run(expenses) as { _id: string; totalSpend: number }[];
+    expect(Object.fromEntries(rows.map((row) => [row._id, row.totalSpend]))).toEqual({ A: 150, B: 80, C: 120 });
+  });
+
+  it.each(["A", "B", "C"])("lists exactly the expenses Spend by User credits to %s", (person) => {
+    const listed = new Query(paidByFilter(person))
+      .find(expenses)
+      .all()
+      .map((expense) => (expense as { _id: number })._id)
+      .sort();
+    const credited = (
+      new Aggregator([...spendByPayerPipeline.slice(0, -1), { $match: { "shares.user": person } }]).run(
+        expenses
+      ) as { _id: number }[]
+    )
+      .map((row) => row._id)
+      .sort();
+    expect(listed).toEqual([...new Set(credited)]);
+
+    const [ownShare] = new Aggregator(payerSpendPipeline(paidByFilter(person), person)).run(expenses);
+    const [spendRow] = (new Aggregator(spendByPayerPipeline).run(expenses) as { _id: string }[]).filter(
+      (row) => row._id === person
+    );
+    expect(ownShare).toEqual({ ...spendRow, _id: null });
   });
 });
