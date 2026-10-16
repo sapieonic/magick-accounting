@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/sapieonic/magick-accounting/compare/v1.10.0...v1.11.0) (2026-10-16)
+
+
+### Features
+
+* let several people pay one expense, each from pocket or company ([#27](https://github.com/sapieonic/magick-accounting/issues/27)) ([b9ac76f](https://github.com/sapieonic/magick-accounting/commit/b9ac76fec80c05e1d063db464a95eaa9f4692a17))
+
 # [1.10.0](https://github.com/sapieonic/magick-accounting/compare/v1.9.0...v1.10.0) (2026-10-12)
 
 
