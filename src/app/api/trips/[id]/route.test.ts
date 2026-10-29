@@ -322,8 +322,9 @@ describe("DELETE /api/trips/:id", () => {
       { $set: { trip: null, travelType: null } }
     );
     expect(Trip.deleteOne).toHaveBeenCalledWith({ _id: oid(GOA) });
-    expect(vi.mocked(Expense.updateMany).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(Trip.deleteOne).mock.invocationCallOrder[0]
+    // Trip first, so nothing can be linked to it after the unlink.
+    expect(vi.mocked(Trip.deleteOne).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(Expense.updateMany).mock.invocationCallOrder[0]
     );
   });
 

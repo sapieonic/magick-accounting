@@ -8,7 +8,7 @@ import { CalendarDays, MapPin, Plane, Plus, Receipt, Search, X } from "lucide-re
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
-import { dayKey, formatTripDates, todayKey, tripDayCount, type TripStatus } from "@/lib/trip";
+import { dayKey, formatTripDates, todayKey, tripDayCount, withViewerStatus, type TripStatus } from "@/lib/trip";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import EmptyState from "@/components/ui/EmptyState";
@@ -196,7 +196,7 @@ export default function TripsPage() {
     api
       .get(url)
       .then((data: { trips?: TripListItem[] }) => {
-        if (active) setTrips(data.trips || []);
+        if (active) setTrips((data.trips || []).map((trip) => withViewerStatus(trip)));
       })
       .catch((err) => {
         if (active) toast(err instanceof Error ? err.message : "Failed to load trips", "error");

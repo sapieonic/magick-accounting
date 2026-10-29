@@ -3,6 +3,7 @@ import {
   dayKey,
   formatTripDates,
   getTripStatus,
+  withViewerStatus,
   groupByTripDay,
   isTravelType,
   isWithinTrip,
@@ -97,6 +98,11 @@ describe("normalizeTripInput", () => {
     );
   });
 
+  it("rejects days that don't exist instead of rolling them over", () => {
+    expect(() => normalizeTripInput(validInput({ startDate: "2026-02-31" }))).toThrow("Start date is invalid");
+    expect(() => normalizeTripInput(validInput({ endDate: "2026-13-01" }))).toThrow("End date is invalid");
+  });
+
   it("lowercases and dedupes travelers, and needs at least one valid id", () => {
     expect(normalizeTripInput(validInput({ travelers: [TRAVELER.toUpperCase(), TRAVELER, OTHER] })).travelers).toEqual([
       TRAVELER,
@@ -133,6 +139,11 @@ describe("trip dates", () => {
     expect(getTripStatus(trip, new Date(2026, 9, 15, 23, 0))).toBe("ongoing");
     expect(getTripStatus(trip, new Date(2026, 9, 16, 0, 1))).toBe("completed");
   });
+  it("re-derives a served status for the viewer's day", () => {
+    const served = { startDate: "2026-10-12T00:00:00.000Z", endDate: "2026-10-15T00:00:00.000Z", status: "upcoming" as const };
+    expect(withViewerStatus(served, new Date(2026, 9, 12, 0, 1)).status).toBe("ongoing");
+  });
+
 
   it("counts days inclusively and checks membership by day", () => {
     expect(tripDayCount(trip)).toBe(4);

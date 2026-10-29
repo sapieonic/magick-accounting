@@ -149,8 +149,10 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
   // Expenses are never deleted with their trip: every one of them (not just
   // the caller's) goes back to being an ordinary expense.
   const tripId = new mongoose.Types.ObjectId(id);
-  await Expense.updateMany({ trip: tripId }, { $set: { trip: null, travelType: null } });
+  // Delete first: once the trip is gone no request can link an expense to it,
+  // so the unlink below can't miss one added in between.
   await Trip.deleteOne({ _id: tripId });
+  await Expense.updateMany({ trip: tripId }, { $set: { trip: null, travelType: null } });
 
   return NextResponse.json({ message: "Trip deleted" });
 }

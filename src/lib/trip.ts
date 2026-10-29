@@ -77,7 +77,10 @@ export function dayKey(value: string | Date): string {
   return iso.slice(0, 10);
 }
 
-/** Today's calendar day in the viewer's own time zone. */
+/**
+ * Today's calendar day in the runtime's time zone: the viewer's in the
+ * browser, the server's on the server.
+ */
 export function todayKey(now: Date = new Date()): string {
   return format(now, "yyyy-MM-dd");
 }
@@ -93,6 +96,17 @@ export function getTripStatus(trip: TripDates, now: Date = new Date()): TripStat
   if (today < dayKey(trip.startDate)) return "upcoming";
   if (today > dayKey(trip.endDate)) return "completed";
   return "ongoing";
+}
+
+/**
+ * Re-derives a trip's status for the viewer's own day. The API derives it in
+ * the server's time zone, which differs from the viewer's around midnight.
+ */
+export function withViewerStatus<T extends TripDates & { status: TripStatus }>(
+  trip: T,
+  now: Date = new Date()
+): T {
+  return { ...trip, status: getTripStatus(trip, now) };
 }
 
 /** Whether a yyyy-MM-dd day falls inside the trip, inclusive. */
@@ -255,7 +269,10 @@ function tripDate(raw: unknown, field: string): Date {
     throw new Error(`${field} is required`);
   }
   const date = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new Error(`${field} is invalid`);
+  // Date rolls impossible days over (Feb 31 → Mar 3); reject them instead.
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value.slice(0, 10)) {
+    throw new Error(`${field} is invalid`);
+  }
   return date;
 }
 

@@ -23,7 +23,7 @@ import {
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
-import { formatTripDates, travelTypeLabel, tripDayCount } from "@/lib/trip";
+import { formatTripDates, travelTypeLabel, tripDayCount, withViewerStatus } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
@@ -207,7 +207,7 @@ export default function TripDetailPage() {
       if (quiet) setRefreshing(true);
       try {
         const result: TripDetailResponse = await api.get(`/api/trips/${tripId}`);
-        setData(result);
+        setData({ ...result, trip: withViewerStatus(result.trip) });
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to load trip", "error");
         if (!quiet) router.push("/dashboard/trips");
@@ -325,7 +325,7 @@ export default function TripDetailPage() {
 
   const handleTripSaved = (trip: TripListItem) => {
     setEditOpen(false);
-    setData((prev) => (prev ? { ...prev, trip } : prev));
+    setData((prev) => (prev ? { ...prev, trip: withViewerStatus(trip) } : prev));
     toast("Trip updated");
     void load(true);
   };
