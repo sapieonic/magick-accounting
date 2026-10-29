@@ -90,12 +90,56 @@ const splitExpense = {
   pocketAmountInBaseCurrency: 3340,
 };
 
+const goaTrip = {
+  _id: "trip-1",
+  name: "Goa client visit",
+  destinations: ["Goa"],
+  startDate: "2026-10-12T00:00:00.000Z",
+  endDate: "2026-10-15T00:00:00.000Z",
+  travelers: [{ _id: "user-1", name: "Manas Nilorout", email: "manas@example.com" }],
+  status: "completed",
+};
+
+const flightExpense = {
+  ...expense,
+  _id: "expense-3",
+  title: "Flight to Goa",
+  amount: 12000,
+  amountInBaseCurrency: 12000,
+  date: "2026-09-20T00:00:00.000Z",
+  receiptKey: "receipts/flight.pdf",
+  receiptFilename: "flight.pdf",
+  trip: { _id: "trip-1", name: "Goa client visit" },
+  travelType: "flight",
+};
+
+const hotelExpense = {
+  ...expense,
+  _id: "expense-4",
+  title: "Beach hotel",
+  amount: 8000,
+  amountInBaseCurrency: 8000,
+  date: "2026-10-12T00:00:00.000Z",
+  trip: { _id: "trip-1", name: "Goa client visit" },
+  travelType: "stay",
+};
+
 let listedExpenses: Record<string, unknown>[] = [expense];
+let listedTrips: Record<string, unknown> = {};
+/** Rows the grouped list pages over (a trip counts once). */
+let listedItemTotal: number | null = null;
+
+function expenseRequests(): string[] {
+  return vi.mocked(api.get).mock.calls.map(([url]) => url).filter((url) => url.startsWith("/api/expenses"));
+}
 
 describe("ExpensesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listedExpenses = [expense];
+    listedTrips = {};
+    listedItemTotal = null;
+    window.history.replaceState(null, "", "/dashboard/expenses");
     vi.mocked(useAuth).mockReturnValue({ isAdmin: true } as any);
     vi.mocked(api.delete).mockResolvedValue({});
     vi.mocked(api.get).mockImplementation((url: string) => {
@@ -111,9 +155,16 @@ describe("ExpensesPage", () => {
         });
       }
       if (url.startsWith("/api/expenses")) {
+        const grouped = url.includes("groupTrips=true");
         return Promise.resolve({
           expenses: listedExpenses,
-          pagination: { page: 1, limit: 25, total: listedExpenses.length, pages: 1 },
+          ...(grouped ? { trips: listedTrips } : {}),
+          pagination: {
+            page: 1,
+            limit: 25,
+            total: grouped && listedItemTotal !== null ? listedItemTotal : listedExpenses.length,
+            pages: 1,
+          },
           summary: { totalAmount: 5678.76, totalExpenses: 1 },
         });
       }
@@ -198,13 +249,17 @@ describe("ExpensesPage", () => {
 
     const [header, companyRow, splitRow] = vi.mocked(downloadCsv).mock.calls[0][1].split("\r\n");
     expect(header).toBe(
-      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base),Payments"
+      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base),Payments,Trip,Travel Type"
     );
-    expect(companyRow).toMatch(/,0,5678\.76,$/);
+    expect(companyRow).toMatch(/,0,5678\.76,,,$/);
     expect(companyRow).toContain(",Company account,");
     expect(splitRow).toContain(",USD,8350,");
-    expect(splitRow).toMatch(/,3340,5010,$/);
+    expect(splitRow).toMatch(/,3340,5010,,,$/);
     expect(splitRow).toContain(",Split,");
+    // The export is always the flat filtered list, never trip clusters.
+    const exportUrl = expenseRequests().find((url) => url.includes("limit=10000"));
+    expect(exportUrl).toBeDefined();
+    expect(exportUrl).not.toContain("groupTrips");
   });
 
   it("filters by payer and shows that person's own share", async () => {
@@ -236,5 +291,123 @@ describe("ExpensesPage", () => {
     expect(await screen.findByText("₹1,200.00")).toBeInTheDocument();
     expect(screen.getByText(/₹1,000\.00 pocket/)).toBeInTheDocument();
     expect(window.location.search).toContain("paidBy=user-1");
+  });
+  describe("trip clusters", () => {
+    beforeEach(() => {
+      listedExpenses = [flightExpense, hotelExpense, expense];
+      listedTrips = { "trip-1": goaTrip };
+      listedItemTotal = 2;
+    });
+
+    it("groups a trip's expenses into one row with its count and total", async () => {
+      render(<ExpensesPage />);
+
+      const cluster = await screen.findByRole("button", { name: /^Goa client visit/ });
+      expect(cluster).toHaveAttribute("aria-expanded", "false");
+      expect(expenseRequests()[0]).toContain("groupTrips=true");
+
+      expect(screen.getByText("2 expenses")).toBeInTheDocument();
+      expect(screen.getByText("₹20,000.00")).toBeInTheDocument();
+      expect(screen.getByText("1 without receipt")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Open trip Goa client visit" })).toHaveAttribute(
+        "href",
+        "/dashboard/trips/trip-1"
+      );
+      // Trip expenses stay inside the collapsed cluster; the other one is its own row.
+      expect(screen.queryByText("Flight to Goa")).not.toBeInTheDocument();
+      expect(screen.getByText("AWS India Cloud Services")).toBeInTheDocument();
+      expect(screen.getByText(/Showing 2 of 2 items/)).toBeInTheDocument();
+    });
+
+    it("expands into day sections, including bookings made before the trip", async () => {
+      render(<ExpensesPage />);
+
+      fireEvent.click(await screen.findByRole("button", { name: /^Goa client visit/ }));
+
+      const timeline = screen.getByTestId("trip-timeline");
+      expect(timeline).toHaveTextContent("Before the trip");
+      expect(timeline).toHaveTextContent(/Day 1/);
+      expect(screen.getByRole("listitem", { name: "Before the trip" })).toHaveTextContent("Flight to Goa");
+      expect(screen.getByRole("listitem", { name: /^Day 1/ })).toHaveTextContent("Beach hotel");
+      expect(screen.getByRole("listitem", { name: /^Day 1/ })).toHaveTextContent("₹8,000.00");
+
+      fireEvent.click(screen.getByText("Beach hotel"));
+      expect(await screen.findByText("Company account")).toBeInTheDocument();
+    });
+
+    it("switches to a flat list without groupTrips and remembers it in the URL", async () => {
+      render(<ExpensesPage />);
+
+      const toggle = await screen.findByRole("switch", { name: /group trips/i });
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+      const requestsBefore = expenseRequests().length;
+      fireEvent.click(toggle);
+
+      await waitFor(() => expect(expenseRequests().length).toBeGreaterThan(requestsBefore));
+      expect(expenseRequests().at(-1)).not.toContain("groupTrips");
+      expect(await screen.findByText("Flight to Goa")).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: /group trips/i })).toHaveAttribute("aria-checked", "false");
+      expect(screen.queryByRole("button", { name: /^Goa client visit/ })).not.toBeInTheDocument();
+      expect(screen.getAllByRole("link", { name: /Goa client visit/ })[0]).toHaveAttribute(
+        "href",
+        "/dashboard/trips/trip-1"
+      );
+      expect(screen.getByText("Showing 3 of 3 expenses")).toBeInTheDocument();
+      expect(window.location.search).toContain("view=flat");
+    });
+
+    it("counts items while grouped even when no trip is on the loaded page", async () => {
+      listedExpenses = [expense];
+      listedTrips = {};
+      listedItemTotal = 30;
+      render(<ExpensesPage />);
+
+      expect(await screen.findByText("Showing 1 of 30 items · each trip counts as one")).toBeInTheDocument();
+      expect(screen.queryByText(/of 30 expenses/)).not.toBeInTheDocument();
+    });
+
+    it("starts flat when the URL says view=flat", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?view=flat");
+      render(<ExpensesPage />);
+
+      expect(await screen.findByText("Flight to Goa")).toBeInTheDocument();
+      expect(expenseRequests().every((url) => !url.includes("groupTrips"))).toBe(true);
+    });
+
+    it("deletes inside a cluster, drops the cluster with its last expense, and undoes", async () => {
+      render(<ExpensesPage />);
+
+      fireEvent.click(await screen.findByRole("button", { name: /^Goa client visit/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete Flight to Goa" }));
+
+      expect(screen.queryByText("Flight to Goa")).not.toBeInTheDocument();
+      expect(screen.getByText("1 expense")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Goa client visit/ })).toHaveAccessibleName(/₹8,000\.00/);
+      // The cluster is still one row.
+      expect(screen.getByText(/Showing 2 of 2 items/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Delete Beach hotel" }));
+      expect(screen.queryByRole("button", { name: /^Goa client visit/ })).not.toBeInTheDocument();
+      // Still grouped, so the count is of rows, not expenses.
+      expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
+
+      // Undo the last delete: the cluster comes back with that expense.
+      const undo = toastMock.mock.calls.at(-1)?.[2]?.action;
+      expect(undo?.label).toBe("Undo");
+      act(() => undo.onClick());
+      expect(screen.getByRole("button", { name: /^Goa client visit/ })).toBeInTheDocument();
+      expect(screen.getByText(/Showing 2 of 2 items/)).toBeInTheDocument();
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("opens the cluster and the expense for an ?expand= deep link", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?expand=expense-4");
+      render(<ExpensesPage />);
+
+      const cluster = await screen.findByRole("button", { name: /^Goa client visit/ });
+      await waitFor(() => expect(cluster).toHaveAttribute("aria-expanded", "true"));
+      expect(screen.getByText("Beach hotel").closest("button")).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText("Company account")).toBeInTheDocument();
+    });
   });
 });

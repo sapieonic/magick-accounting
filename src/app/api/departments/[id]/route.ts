@@ -5,6 +5,7 @@ import Department from "@/models/Department";
 import Expense from "@/models/Expense";
 import Asset from "@/models/Asset";
 import AssetAssignment from "@/models/AssetAssignment";
+import Trip from "@/models/Trip";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await verifyAuth(req);
@@ -69,5 +70,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   await Department.findByIdAndDelete(id);
+  // A trip's department is only the default for its new expenses; drop it.
+  await Trip.updateMany({ department: id }, { $set: { department: null } });
   return NextResponse.json({ message: "Department deleted" });
 }

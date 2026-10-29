@@ -20,7 +20,12 @@ import PaymentSourceFields, {
   type PayerOption,
   type PaymentDraft,
 } from "@/components/expenses/PaymentSourceFields";
+import TripFields, {
+  categoryForTravelType,
+  useTripOptions,
+} from "@/components/expenses/TripFields";
 import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
+import { dayKey, isWithinTrip, type TravelType } from "@/lib/trip";
 import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
 
 interface Department {
@@ -73,6 +78,26 @@ export default function NewExpensePage() {
   const [extracting, setExtracting] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
 
+  const { trips, loaded: tripsLoaded } = useTripOptions();
+  // `?trip=<id>`: the trip page's "Add expense" opens the form inside that trip
+  // and gets the user back to it afterwards.
+  // Read after mount: on a client-side navigation Next updates the URL only
+  // once the new page has rendered, so a render-time read sees the old URL.
+  const [prefillTripId, setPrefillTripId] = useState("");
+  const [urlRead, setUrlRead] = useState(false);
+  useEffect(() => {
+    setPrefillTripId(new URLSearchParams(window.location.search).get("trip") ?? "");
+    setUrlRead(true);
+  }, []);
+  const [openedFromTrip, setOpenedFromTrip] = useState("");
+  const [prefillDone, setPrefillDone] = useState(false);
+  // A category or department the user (or the receipt) chose is never
+  // overwritten by trip/travel-type defaults.
+  const [categoryPinned, setCategoryPinned] = useState(false);
+  const [departmentPinned, setDepartmentPinned] = useState(false);
+  // Travel type read from a receipt before any trip was picked.
+  const [pendingTravelType, setPendingTravelType] = useState<TravelType | null>(null);
+
   // Open the AI-upload modal on arrival unless the user opted out earlier.
   useEffect(() => {
     if (localStorage.getItem(SKIP_UPLOAD_MODAL_KEY) !== "true") {
@@ -92,6 +117,8 @@ export default function NewExpensePage() {
     paymentSource: "pocket",
     pocketAmount: "",
     payments: [] as PaymentDraft[],
+    trip: "",
+    travelType: null as TravelType | null,
   });
 
   const [receipt, setReceipt] = useState<{
@@ -108,7 +135,9 @@ export default function NewExpensePage() {
           entry.amount !== "" || entry.source !== "pocket" || (entry.paidBy && entry.paidBy !== user?._id)
       ) ||
       receipt ||
-      assets.length > 0
+      assets.length > 0 ||
+      form.trip !== openedFromTrip ||
+      form.travelType !== null
   );
 
   useEffect(() => {
@@ -120,11 +149,42 @@ export default function NewExpensePage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty, submitting]);
 
+  const backHref = openedFromTrip ? `/dashboard/trips/${openedFromTrip}` : "/dashboard/expenses";
+
   const handleCancel = () => {
     if (isDirty && !window.confirm("Discard this expense? Your changes will be lost.")) {
       return;
     }
-    router.push("/dashboard/expenses");
+    router.push(backHref);
+  };
+
+  /** Form changes for a travel type: the type plus, unless pinned, its category. */
+  const travelTypeFields = (travelType: TravelType | null) => {
+    const category = categoryPinned ? null : categoryForTravelType(travelType, categories);
+    return category ? { travelType, category: category._id } : { travelType };
+  };
+
+  const handleTravelTypeChange = (travelType: TravelType | null) => {
+    setPendingTravelType(null);
+    setForm((prev) => ({ ...prev, ...travelTypeFields(prev.trip ? travelType : null) }));
+  };
+
+  const handleTripChange = (tripId: string) => {
+    const trip = trips.find((t) => t._id === tripId);
+    const tripDepartment =
+      trip?.department && departments.some((d) => d._id === trip.department?._id)
+        ? trip.department._id
+        : null;
+    setForm((prev) => {
+      if (!tripId) return { ...prev, trip: "", travelType: null };
+      return {
+        ...prev,
+        trip: tripId,
+        ...(tripDepartment && !departmentPinned ? { department: tripDepartment } : {}),
+        ...(!prev.travelType && pendingTravelType ? travelTypeFields(pendingTravelType) : {}),
+      };
+    });
+    if (tripId && pendingTravelType) setPendingTravelType(null);
   };
 
   const handlePurchaseDateChange = (date: string) => {
@@ -162,6 +222,29 @@ export default function NewExpensePage() {
     loadOptions();
   }, [toast]);
 
+  // Applies `?trip=<id>` once the trips and form options are in.
+  useEffect(() => {
+    if (!prefillTripId || prefillDone || loading || !tripsLoaded) return;
+    setPrefillDone(true);
+    const trip = trips.find((t) => t._id === prefillTripId);
+    if (!trip) {
+      toast("That trip isn't available, so the expense isn't linked to it.", "info");
+      return;
+    }
+    setOpenedFromTrip(trip._id);
+    setForm((prev) => ({
+      ...prev,
+      trip: trip._id,
+      department:
+        (!prev.department || !departmentPinned) &&
+        trip.department &&
+        departments.some((d) => d._id === trip.department?._id)
+          ? trip.department._id
+          : prev.department,
+      date: isWithinTrip(prev.date, trip) ? prev.date : dayKey(trip.startDate),
+    }));
+  }, [prefillTripId, prefillDone, loading, tripsLoaded, trips, departments, departmentPinned, toast]);
+
   useEffect(() => {
     if (!isAdmin) return;
     api.get("/api/users")
@@ -190,9 +273,14 @@ export default function NewExpensePage() {
       formData.append("file", file);
 
       const data = await api.postFormData("/api/expenses/extract", formData);
+      if (data.category) setCategoryPinned(true);
+      const extractedType: TravelType | null = data.travelType || null;
 
       setForm((prev) => ({
         ...prev,
+        // A receipt's travel type applies inside a trip; otherwise it waits
+        // until one is picked.
+        ...(extractedType && prev.trip ? { travelType: extractedType } : {}),
         title: data.title || prev.title,
         amount: data.amount != null ? String(data.amount) : prev.amount,
         gstAmount: data.gstAmount != null ? String(data.gstAmount) : prev.gstAmount,
@@ -202,6 +290,7 @@ export default function NewExpensePage() {
         currency: data.currency || prev.currency,
       }));
 
+      setPendingTravelType(extractedType);
       setAutoFilled(true);
       setShowUploadModal(false);
       toast("Details filled from your receipt — please review before creating.", "success");
@@ -304,11 +393,21 @@ export default function NewExpensePage() {
         pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
         payments: paymentDraftsToPayload(form.paymentSource, form.payments),
         assets: assets.map(({ id: _id, ...asset }) => asset),
+        trip: form.trip || null,
+        travelType: form.trip ? form.travelType : null,
         ...receiptData,
       });
 
       toast(assets.length > 0 ? "Expense and company assets created" : "Expense created");
-      router.push(assets.length > 0 ? "/dashboard/assets" : "/dashboard/expenses");
+      // Land on the trip the expense went into, else the one the form was opened from.
+      const tripId = form.trip || openedFromTrip;
+      router.push(
+        tripId
+          ? `/dashboard/trips/${tripId}`
+          : assets.length > 0
+            ? "/dashboard/assets"
+            : "/dashboard/expenses"
+      );
     } catch (err) {
       if (uploadedReceiptKey) {
         await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
@@ -319,7 +418,8 @@ export default function NewExpensePage() {
     }
   };
 
-  if (loading) return <FormSkeleton />;
+  // Hold the form back until `?trip=` is applied, so it doesn't flash empty.
+  if (loading || !urlRead || (prefillTripId && !prefillDone)) return <FormSkeleton />;
 
   return (
     <div className="animate-fade-in">
@@ -383,7 +483,7 @@ export default function NewExpensePage() {
           className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Expenses
+          {openedFromTrip ? "Back to Trip" : "Back to Expenses"}
         </button>
         <h1 className="text-2xl font-bold text-foreground">New Expense</h1>
       </div>
@@ -483,6 +583,15 @@ export default function NewExpensePage() {
             </p>
           </div>
 
+          <TripFields
+            trips={trips}
+            trip={form.trip}
+            travelType={form.travelType}
+            onTripChange={handleTripChange}
+            onTravelTypeChange={handleTravelTypeChange}
+            date={form.date}
+          />
+
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <label htmlFor="category" className="mb-1.5 block text-sm font-medium text-muted">
@@ -492,7 +601,10 @@ export default function NewExpensePage() {
                 id="category"
                 required
                 value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                onChange={(e) => {
+                  setCategoryPinned(true);
+                  setForm({ ...form, category: e.target.value });
+                }}
                 className="input-field"
               >
                 <option value="">Select a category</option>
@@ -509,7 +621,10 @@ export default function NewExpensePage() {
                 id="department"
                 required
                 value={form.department}
-                onChange={(e) => setForm({ ...form, department: e.target.value })}
+                onChange={(e) => {
+                  setDepartmentPinned(true);
+                  setForm({ ...form, department: e.target.value });
+                }}
                 className="input-field"
               >
                 <option value="">Select a department</option>

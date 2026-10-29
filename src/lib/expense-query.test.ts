@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import mongoose from "mongoose";
+import { Aggregator } from "mingo";
+import "mingo/init/system";
 import type { AuthUser } from "@/lib/auth";
 
 // Mock the Expense model so getExpenseSummary can be tested without a DB.
@@ -7,7 +9,12 @@ vi.mock("@/models/Expense", () => ({
   default: { aggregate: vi.fn() },
 }));
 
-import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
+import {
+  buildExpenseFilter,
+  getExpenseSummary,
+  groupedExpensePagePipeline,
+  parsePaidByParam,
+} from "@/lib/expense-query";
 import { paidByFilter, payerSpendPipeline } from "@/lib/expense";
 import Expense from "@/models/Expense";
 
@@ -318,5 +325,122 @@ describe("getExpenseSummary — payer share", () => {
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([] as never).mockResolvedValueOnce([] as never);
     const result = await getExpenseSummary({}, new mongoose.Types.ObjectId(OTHER_ID));
     expect(result.payerSpend).toEqual({ totalSpend: 0, pocketSpend: 0, companySpend: 0 });
+  });
+});
+
+describe("buildExpenseFilter — trip", () => {
+  const TRIP_ID = "507f191e810c19729de860ee";
+
+  it("trip=<id> lists that trip's expenses (as an ObjectId)", () => {
+    const filter = buildExpenseFilter(params(`trip=${TRIP_ID}`), makeUser("admin"));
+    expect(filter.trip).toBeInstanceOf(mongoose.Types.ObjectId);
+    expect(String(filter.trip)).toBe(TRIP_ID);
+  });
+
+  it("trip=none lists expenses in no trip (null also matches legacy docs without the field)", () => {
+    expect(buildExpenseFilter(params("trip=none"), makeUser("admin")).trip).toBeNull();
+  });
+
+  it("ignores an invalid trip id", () => {
+    expect(buildExpenseFilter(params("trip=nope"), makeUser("admin"))).not.toHaveProperty("trip");
+  });
+
+  it("keeps a user to their own expenses inside a trip", () => {
+    const filter = buildExpenseFilter(params(`trip=${TRIP_ID}`), makeUser("user"));
+    expect(String(filter.createdBy)).toBe(USER_ID);
+    expect(String(filter.trip)).toBe(TRIP_ID);
+  });
+});
+
+function runPipeline(pipeline: unknown[], docs: Record<string, unknown>[]) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new Aggregator(pipeline as any[]).run(docs) as any[];
+}
+
+describe("groupedExpensePagePipeline", () => {
+  const oid = () => new mongoose.Types.ObjectId();
+  const goa = oid();
+  const pune = oid();
+  // Copies of the id, as distinct instances the way documents carry them.
+  const same = (id: mongoose.Types.ObjectId) => new mongoose.Types.ObjectId(id.toString());
+
+  function expense(day: string, trip: mongoose.Types.ObjectId | null | undefined, createdAt = day) {
+    return {
+      _id: oid(),
+      date: new Date(`${day}T00:00:00.000Z`),
+      createdAt: new Date(`${createdAt}T10:00:00.000Z`),
+      createdBy: new mongoose.Types.ObjectId(USER_ID),
+      ...(trip === undefined ? {} : { trip }),
+    };
+  }
+
+  const goaFlight = expense("2026-01-01", goa);
+  const goaHotel = expense("2026-01-05", same(goa));
+  const puneCab = expense("2026-01-03", pune);
+  const lunch = expense("2026-01-04", null);
+  const taxi = expense("2026-01-02", null);
+  const legacy = expense("2026-01-06", undefined);
+  const docs = [goaFlight, goaHotel, puneCab, lunch, taxi, legacy];
+
+  const ids = (item: { ids: unknown[] }) => item.ids.map(String).sort();
+
+  it("collapses each trip's expenses into one item keyed by the trip id", () => {
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), docs);
+
+    expect(total).toEqual([{ count: 5 }]);
+    const goaItem = items.find((item: { _id: unknown }) => String(item._id) === goa.toString());
+    expect(ids(goaItem)).toEqual([goaFlight._id, goaHotel._id].map(String).sort());
+    // Expenses in no trip (incl. legacy docs without the field) stay single items keyed by their own id.
+    for (const single of [lunch, taxi, legacy]) {
+      const item = items.find((entry: { _id: unknown }) => String(entry._id) === String(single._id));
+      expect(item.ids.map(String)).toEqual([String(single._id)]);
+    }
+  });
+
+  it("orders items by their latest expense date, newest first", () => {
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), docs);
+
+    expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
+      [legacy._id, goa, lunch._id, pune, taxi._id].map(String)
+    );
+  });
+
+  it("breaks a date tie by the latest entry time", () => {
+    const early = expense("2026-02-01", null, "2026-02-01");
+    const late = expense("2026-02-01", oid(), "2026-02-03");
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), [early, late]);
+
+    expect(items.map((item: { ids: unknown[] }) => String(item.ids[0]))).toEqual(
+      [late._id, early._id].map(String)
+    );
+  });
+
+  it("paginates items, not expenses, and counts all items", () => {
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 2, 2), docs);
+
+    expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
+      [lunch._id, pune].map(String)
+    );
+    expect(total).toEqual([{ count: 5 }]);
+  });
+
+  it("applies the filter before grouping", () => {
+    const filter = buildExpenseFilter(params("trip=none"), makeUser("admin"));
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline(filter, 1, 20), docs);
+
+    expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
+      [legacy._id, lunch._id, taxi._id].map(String)
+    );
+    expect(total).toEqual([{ count: 3 }]);
+  });
+
+  it("returns one document with no items when nothing matches", () => {
+    const filter = buildExpenseFilter(params(""), makeUser("user", OTHER_ID));
+    const result = runPipeline(groupedExpensePagePipeline(filter, 1, 20), docs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].items).toEqual([]);
+    // MongoDB's $count emits nothing for no input (mingo emits 0); readers treat both as 0.
+    expect(result[0].total[0]?.count ?? 0).toBe(0);
   });
 });

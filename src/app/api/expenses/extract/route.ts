@@ -5,6 +5,7 @@ import Category from "@/models/Category";
 import Currency from "@/models/Currency";
 import { callDatabricksClaude, parseJsonResponse } from "@/lib/databricks";
 import { renderPdfFirstPageToPng } from "@/lib/pdf";
+import { isTravelType, TRAVEL_TYPES } from "@/lib/trip";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,7 @@ interface ExtractedReceipt {
   category?: string | null;
   date?: string | null;
   description?: string | null;
+  travelType?: string | null;
 }
 
 export async function POST(req: NextRequest) {
@@ -84,6 +86,7 @@ Return ONLY a JSON object (no markdown, no commentary) with exactly these keys:
 - "category": the single best-matching category. Must be exactly one of [${categoryNames.join(", ")}], or null if none clearly fits
 - "date": the receipt/transaction date in YYYY-MM-DD format. Use "${today}" if no date is visible
 - "description": a brief summary of the line items or purpose of the expense
+- "travelType": if this is a business-travel expense, the single best-matching kind. Must be exactly one of [${TRAVEL_TYPES.join(", ")}] ("cab" covers taxis and local rides, "stay" hotels and lodging, "client_meeting" meals or costs of meeting a client, "visa" visa and travel fees), or null if it is not travel-related or none clearly fits
 If a value cannot be determined, use null (except "date"). Never invent values.`;
 
     const raw = await callDatabricksClaude([
@@ -130,6 +133,9 @@ If a value cannot be determined, use null (except "date"). Never invent values.`
         ? gstNum
         : null;
 
+    const travelType =
+      typeof parsed.travelType === "string" ? parsed.travelType.trim().toLowerCase() : null;
+
     return NextResponse.json({
       title: typeof parsed.title === "string" ? parsed.title : "",
       amount,
@@ -141,6 +147,7 @@ If a value cannot be determined, use null (except "date"). Never invent values.`
       description: typeof parsed.description === "string" ? parsed.description : "",
       currency: currency?._id?.toString() ?? null,
       category: category?._id?.toString() ?? null,
+      travelType: travelType && isTravelType(travelType) ? travelType : null,
     });
   } catch (err) {
     console.error("Receipt extraction error:", err);

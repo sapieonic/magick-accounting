@@ -25,6 +25,15 @@ Single-tenant by design — one organization per deployment.
 - Search and filter by department, category, or keyword
 - Responsive table view (desktop) and card view (mobile)
 
+### Business Trips
+- Group a trip's flights, trains, stays, food and client meetings under one trip (name, destinations, dates, travelers, purpose, optional budget)
+- Tag each trip expense with a travel type; picking one pre-fills the category, and AI auto-fill suggests it
+- Add expenses from the trip page, pick a trip on the expense form (it suggests one from the date), or add existing unassigned expenses
+- The Expenses list shows each trip as one expandable row (total, travelers, spend by type, missing receipts) that opens into a day-by-day timeline; a toggle switches to the flat list
+- Trip page with spend by type, who paid and what is owed to each traveler from their pocket, and the timeline
+- Bookings made before or after the trip dates are kept and shown before/after the trip
+- Admins see every trip; others see trips they travel on or created, and only their own expenses inside them. Deleting a trip keeps its expenses
+
 ### Company Assets
 - Create one or more company assets while recording their purchase expense
 - Share the expense date, currency, GST, and receipt without duplicate entry
@@ -189,6 +198,9 @@ src/
 │   │   │   ├── page.tsx                  # Expense list with search/filter
 │   │   │   ├── new/page.tsx              # Create expense form
 │   │   │   └── [id]/edit/page.tsx        # Edit expense form
+│   │   ├── trips/
+│   │   │   ├── page.tsx                  # Trips: ongoing, upcoming, past
+│   │   │   └── [id]/page.tsx             # Trip detail: totals, who paid, timeline
 │   │   ├── assets/
 │   │   │   ├── page.tsx                  # Company asset register
 │   │   │   └── [id]/page.tsx             # Asset detail, assignment and depreciation
@@ -204,6 +216,11 @@ src/
 │       ├── expenses/
 │       │   ├── route.ts                  # GET (list) / POST (create)
 │       │   └── [id]/route.ts            # GET / PUT / DELETE
+│       ├── trips/
+│       │   ├── route.ts                  # GET (list) / POST (create)
+│       │   ├── [id]/route.ts            # GET (detail + summary) / PUT / DELETE
+│       │   ├── [id]/expenses/route.ts   # PATCH (add / remove expenses)
+│       │   └── [id]/candidates/route.ts # GET (unassigned expenses around the dates)
 │       ├── assets/
 │       │   ├── route.ts                 # GET asset register
 │       │   └── [id]/route.ts            # GET / PUT / DELETE correction
@@ -231,11 +248,15 @@ src/
 │   ├── s3.ts                             # S3 presigned URL helpers
 │   ├── auth.ts                           # Token verification + role guards
 │   ├── api.ts                            # Client-side fetch wrapper with auth
-│   └── currency.ts                       # Currency formatting (Intl.NumberFormat)
+│   ├── currency.ts                       # Currency formatting (Intl.NumberFormat)
+│   ├── trip.ts                           # Trip validation, travel types, day grouping (client-safe)
+│   ├── trip-server.ts                    # Trip access rules
+│   └── trip-query.ts                     # Trip queries, summaries, grouped expense list
 ├── models/
 │   ├── User.ts                           # email, name, role, firebaseUid
 │   ├── Department.ts                     # name, description, isDefault
-│   ├── Expense.ts                        # title, amount, currency, amountInBaseCurrency, receipt
+│   ├── Expense.ts                        # title, amount, currency, amountInBaseCurrency, receipt, trip, travelType
+│   ├── Trip.ts                           # name, destinations, dates, travelers, department, budget
 │   ├── Currency.ts                       # code, name, symbol, rateToBase, isBase
 │   ├── Category.ts                       # name, isDefault + DEFAULT_CATEGORIES list
 │   └── AllowedDomain.ts                  # domain, addedBy
@@ -260,11 +281,18 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 |----------|---------------------------|--------------|------------------------------------|
 | `POST`   | `/api/auth/verify`        | Public       | Verify token, create user if new   |
 | `GET`    | `/api/auth/me`            | Authenticated| Get current user                   |
-| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role)   |
+| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `groupTrips=true` pages by trip) |
 | `POST`   | `/api/expenses`           | Authenticated| Create expense                     |
 | `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID                  |
 | `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense                     |
 | `DELETE` | `/api/expenses/:id`       | Authenticated| Delete expense                     |
+| `GET`    | `/api/trips`              | Authenticated| List visible trips with totals     |
+| `POST`   | `/api/trips`              | Authenticated| Create trip                        |
+| `GET`    | `/api/trips/:id`          | Traveler/Creator/Admin | Trip, summary and expenses |
+| `PUT`    | `/api/trips/:id`          | Creator/Admin| Update trip                        |
+| `DELETE` | `/api/trips/:id`          | Creator/Admin| Delete trip (expenses are kept)    |
+| `PATCH`  | `/api/trips/:id/expenses` | Traveler/Creator/Admin | Add/remove expenses (users: own only) |
+| `GET`    | `/api/trips/:id/candidates` | Traveler/Creator/Admin | Unassigned expenses around the trip |
 | `GET`    | `/api/assets`             | Authenticated| List visible company assets        |
 | `GET`    | `/api/assets/:id`         | Authenticated| Get asset and assignment history   |
 | `PUT`    | `/api/assets/:id`         | Admin        | Update asset and assignment        |

@@ -16,7 +16,9 @@ import PaymentSourceFields, {
   type PayerOption,
   type PaymentDraft,
 } from "@/components/expenses/PaymentSourceFields";
+import TripFields, { useTripOptions } from "@/components/expenses/TripFields";
 import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
+import { isTravelType, type TravelType } from "@/lib/trip";
 import { ArrowLeft, Package, Upload, X as XIcon } from "lucide-react";
 
 interface Department {
@@ -51,6 +53,19 @@ interface LinkedAsset {
   allocatedAmount: number;
 }
 
+const DEFAULT_RETURN_TO = "/dashboard/expenses";
+
+/** `?returnTo=` if it's a dashboard path; anything else (other sites included) is ignored. */
+function readReturnTo(): string | null {
+  const value = new URLSearchParams(window.location.search).get("returnTo");
+  return value && value.startsWith("/dashboard/") && !value.startsWith("//") ? value : null;
+}
+
+function backLabel(returnTo: string): string {
+  if (returnTo === DEFAULT_RETURN_TO) return "Back to Expenses";
+  return returnTo.startsWith("/dashboard/trips/") ? "Back to Trip" : "Back";
+}
+
 export default function EditExpensePage() {
   useTitle("Edit Expense");
   const router = useRouter();
@@ -65,6 +80,9 @@ export default function EditExpensePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [linkedAssets, setLinkedAssets] = useState<LinkedAsset[]>([]);
+  const { trips } = useTripOptions();
+  // The stored trip, so it still shows by name if it isn't in `trips`.
+  const [storedTrip, setStoredTrip] = useState<{ _id: string; name: string } | null>(null);
 
   const emptyForm = {
     title: "",
@@ -78,10 +96,21 @@ export default function EditExpensePage() {
     paymentSource: "pocket",
     pocketAmount: "",
     payments: [] as PaymentDraft[],
+    trip: "",
+    travelType: null as TravelType | null,
   };
   const [form, setForm] = useState(emptyForm);
   const [initialForm, setInitialForm] = useState(emptyForm);
   const [initialHadReceipt, setInitialHadReceipt] = useState(false);
+  // Where Back, Cancel and Save go, e.g. the trip the edit was opened from.
+  const [returnTo, setReturnTo] = useState(DEFAULT_RETURN_TO);
+
+  // Read after mount: on client navigation Next updates the URL only once
+  // the new page has rendered.
+  useEffect(() => {
+    const value = readReturnTo();
+    if (value) setReturnTo(value);
+  }, []);
 
   const [existingReceipt, setExistingReceipt] = useState<{ key: string; filename: string } | null>(null);
   const [newReceipt, setNewReceipt] = useState<{ file: File; filename: string } | null>(null);
@@ -111,7 +140,7 @@ export default function EditExpensePage() {
     if (isDirty && !window.confirm("Discard your changes to this expense?")) {
       return;
     }
-    router.push("/dashboard/expenses");
+    router.push(returnTo);
   };
 
   useEffect(() => {
@@ -126,6 +155,8 @@ export default function EditExpensePage() {
         const storedPayments: StoredPayment[] =
           exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
+        const storedTripId: string =
+          (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
         const loadedForm = {
           title: exp.title,
           amount: exp.amount.toString(),
@@ -145,7 +176,12 @@ export default function EditExpensePage() {
               source: entry.source,
             })
           ),
+          trip: storedTripId,
+          travelType: storedTripId && isTravelType(exp.travelType) ? exp.travelType : null,
         };
+        setStoredTrip(
+          storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null
+        );
         setForm(loadedForm);
         setInitialForm(loadedForm);
 
@@ -241,6 +277,8 @@ export default function EditExpensePage() {
         gstAmount,
         pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
         payments: paymentDraftsToPayload(form.paymentSource, form.payments),
+        trip: form.trip || null,
+        travelType: form.trip ? form.travelType : null,
       };
 
       if (newReceipt?.file) {
@@ -255,7 +293,7 @@ export default function EditExpensePage() {
 
       await api.put(`/api/expenses/${params.id}`, updateData);
       toast("Expense updated");
-      router.push("/dashboard/expenses");
+      router.push(returnTo);
     } catch (err) {
       if (uploadedReceiptKey) {
         await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
@@ -279,7 +317,7 @@ export default function EditExpensePage() {
           className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Expenses
+          {backLabel(returnTo)}
         </button>
         <h1 className="text-2xl font-bold text-foreground">Edit Expense</h1>
       </div>
@@ -409,6 +447,20 @@ export default function EditExpensePage() {
               Tax portion already included in the amount above. Leave blank if not applicable.
             </p>
           </div>
+
+          <TripFields
+            trips={trips}
+            trip={form.trip}
+            travelType={form.travelType}
+            onTripChange={(trip) =>
+              setForm((prev) => ({ ...prev, trip, travelType: trip ? prev.travelType : null }))
+            }
+            onTravelTypeChange={(travelType) =>
+              setForm((prev) => ({ ...prev, travelType: prev.trip ? travelType : null }))
+            }
+            date={form.date}
+            currentTrip={storedTrip}
+          />
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>

@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { getPaymentBreakdown, PaymentSplitFields } from "@/lib/expense";
+import { travelTypeLabel, type TravelType } from "@/lib/trip";
 
 export interface ExpensePaymentEntry {
   paidBy?: { name?: string; email?: string } | null;
@@ -17,6 +18,8 @@ export interface ExpenseCsvSource extends PaymentSplitFields {
   createdBy?: { name: string };
   description?: string;
   payments?: ExpensePaymentEntry[];
+  trip?: { name: string } | null;
+  travelType?: TravelType | null;
 }
 
 export const EXPENSE_CSV_HEADERS = [
@@ -24,6 +27,7 @@ export const EXPENSE_CSV_HEADERS = [
   "Paid From", "Submitted By", "Description",
   // Appended so existing columns keep their positions for anyone reading by index.
   "Pocket (Base)", "Company (Base)", "Payments",
+  "Trip", "Travel Type",
 ];
 
 export function paymentSourceLabel(source?: string | null): string {
@@ -64,5 +68,7 @@ export function expenseCsvRow(e: ExpenseCsvSource): unknown[] {
     pocketBase,
     companyBase,
     describePayments(e.payments),
+    e.trip?.name ?? "",
+    e.travelType ? travelTypeLabel(e.travelType) : "",
   ];
 }

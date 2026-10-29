@@ -170,6 +170,27 @@ describe("MultiSelect", () => {
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
   });
 
+  it("keeps Escape from also reaching an enclosing modal while open", async () => {
+    const user = userEvent.setup();
+    const onModalEscape = vi.fn();
+    const listener = (e: KeyboardEvent) => e.key === "Escape" && onModalEscape();
+    document.addEventListener("keydown", listener);
+    try {
+      renderMultiSelect();
+
+      await user.click(screen.getByRole("button", { name: /pick fruit/i }));
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+      expect(onModalEscape).not.toHaveBeenCalled();
+
+      // Closed again, Escape is the modal's.
+      await user.keyboard("{Escape}");
+      expect(onModalEscape).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener("keydown", listener);
+    }
+  });
+
   it("applies ariaLabel to the trigger and reflects open state via aria-expanded", async () => {
     const user = userEvent.setup();
     renderMultiSelect({ ariaLabel: "Filter by fruit" });

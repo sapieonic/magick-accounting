@@ -4,6 +4,13 @@ import { connectDB } from "@/lib/mongodb";
 import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
 import { assertPayersExist } from "@/lib/expense-server";
+import { normalizeTravelType } from "@/lib/trip";
+import { resolveTripAssignment } from "@/lib/trip-server";
+import {
+  getGroupedExpensePage,
+  populateExpenseRefs,
+  withLinkedAssetCounts,
+} from "@/lib/trip-query";
 import { roundMoney } from "@/lib/asset";
 import {
   AssetCreationReservation,
@@ -30,41 +37,44 @@ export async function GET(req: NextRequest) {
   const limit = parseInt(searchParams.get("limit") || "20");
   const includeSummary = searchParams.get("includeSummary") === "true";
   const filter = buildExpenseFilter(searchParams, authResult);
+  const summaryPromise = includeSummary
+    ? getExpenseSummary(filter, parsePaidByParam(searchParams, authResult))
+    : Promise.resolve(null);
+
+  if (searchParams.get("groupTrips") === "true") {
+    // Each trip is one item (its expenses never split across pages), so
+    // page/limit count items rather than expenses.
+    const itemPage = Number.isFinite(page) && page > 0 ? page : 1;
+    const itemLimit = Number.isFinite(limit) && limit > 0 ? limit : 20;
+    const [grouped, summary] = await Promise.all([
+      getGroupedExpensePage(filter, itemPage, itemLimit, authResult),
+      summaryPromise,
+    ]);
+    return NextResponse.json({
+      expenses: grouped.expenses,
+      trips: grouped.trips,
+      pagination: {
+        page: itemPage,
+        limit: itemLimit,
+        total: grouped.total,
+        pages: Math.ceil(grouped.total / itemLimit),
+      },
+      ...(summary ? { summary } : {}),
+    });
+  }
 
   const [expenses, total, summary] = await Promise.all([
-    Expense.find(filter)
-      .populate("category", "name")
-      .populate("department", "name")
-      .populate("currency", "code name symbol rateToBase isBase")
-      .populate("createdBy", "name email photoURL")
-      .populate("payments.paidBy", "name email")
+    populateExpenseRefs(Expense.find(filter))
       .sort({ date: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
     Expense.countDocuments(filter),
-    includeSummary
-      ? getExpenseSummary(filter, parsePaidByParam(searchParams, authResult))
-      : Promise.resolve(null),
+    summaryPromise,
   ]);
 
-  const expenseIds = expenses.map((expense) => expense._id);
-  const linkedAssetCounts = expenseIds.length > 0
-    ? await Asset.aggregate([
-        { $match: { purchaseExpense: { $in: expenseIds } } },
-        { $group: { _id: "$purchaseExpense", count: { $sum: 1 } } },
-      ])
-    : [];
-  const assetCountByExpense = new Map(
-    linkedAssetCounts.map((row) => [String(row._id), row.count])
-  );
-  const expensesWithAssets = expenses.map((expense) => ({
-    ...expense,
-    linkedAssetCount: assetCountByExpense.get(String(expense._id)) || 0,
-  }));
-
   return NextResponse.json({
-    expenses: expensesWithAssets,
+    expenses: await withLinkedAssetCounts(expenses),
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     ...(summary ? { summary } : {}),
   });
@@ -106,6 +116,9 @@ export async function POST(req: NextRequest) {
       body.payments
     );
     await assertPayersExist(paymentSplit);
+    // A travel type only means something inside a trip.
+    const travelType = normalizeTravelType(body.travelType);
+    const trip = (await resolveTripAssignment(body.trip, authResult)) ?? null;
     const purchaseDate = new Date(body.date);
     if (Number.isNaN(purchaseDate.getTime())) throw new Error("Expense date is invalid");
 
@@ -150,6 +163,8 @@ export async function POST(req: NextRequest) {
             ...buildPaymentFields(paymentSplit, amountInBaseCurrency, rateToBase),
             receiptKey: body.receiptKey || undefined,
             receiptFilename: body.receiptKey ? body.receiptFilename : undefined,
+            trip,
+            travelType: trip ? travelType : null,
             createdBy: authResult._id,
           },
         ],
@@ -174,13 +189,7 @@ export async function POST(req: NextRequest) {
         .sort({ assetTag: 1 })
         .lean();
 
-    const populated = await Expense.findById(result.expenseId)
-      .populate("category", "name")
-      .populate("department", "name")
-      .populate("currency", "code name symbol rateToBase isBase")
-      .populate("createdBy", "name email photoURL")
-      .populate("payments.paidBy", "name email")
-      .lean();
+    const populated = await populateExpenseRefs(Expense.findById(result.expenseId)).lean();
 
     return NextResponse.json({ expense: populated, assets: createdAssets }, { status: 201 });
   } catch (err) {

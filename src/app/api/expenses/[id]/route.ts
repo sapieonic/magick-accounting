@@ -14,10 +14,13 @@ import {
 import { assertPayersExist, storedPaymentEntries } from "@/lib/expense-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
+import { normalizeTravelType } from "@/lib/trip";
+import { resolveTripAssignment } from "@/lib/trip-server";
 import mongoose from "mongoose";
 import "@/models/Category";
 import "@/models/Department";
 import "@/models/User";
+import "@/models/Trip";
 import { deleteObject } from "@/lib/s3";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -36,6 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .populate("currency", "code name symbol rateToBase isBase")
     .populate("createdBy", "name email photoURL")
     .populate("payments.paidBy", "name email")
+    .populate("trip", "name")
     .lean();
 
   if (!expense) {
@@ -176,6 +180,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       );
     }
 
+    // Trip and travel type aren't accounting fields, so they're left out of
+    // the linked-asset check above. The trip is only re-checked when it
+    // changes: an expense may stay in a trip its owner was later taken off.
+    const currentTripId = expense.trip ? expense.trip.toString() : null;
+    const requestedTripId =
+      body.trip === undefined
+        ? currentTripId
+        : body.trip === null || body.trip === ""
+          ? null
+          : String(typeof body.trip === "object" && "_id" in body.trip ? body.trip._id : body.trip)
+              .trim()
+              .toLowerCase();
+    const newTrip =
+      requestedTripId === currentTripId
+        ? expense.trip ?? null
+        : await resolveTripAssignment(body.trip, authResult);
+    const requestedTravelType =
+      body.travelType !== undefined
+        ? normalizeTravelType(body.travelType)
+        : (expense.travelType ?? null);
+    const newTravelType = newTrip ? requestedTravelType : null;
+
     let effectiveRateToBase = expense.exchangeRateToBase;
     if (!effectiveRateToBase && expense.amount > 0 && expense.amountInBaseCurrency != null) {
       effectiveRateToBase = expense.amountInBaseCurrency / expense.amount;
@@ -205,6 +231,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       receiptKey: requestedReceiptKey,
       receiptFilename:
         body.receiptFilename !== undefined ? body.receiptFilename : expense.receiptFilename,
+      trip: newTrip,
+      travelType: newTravelType,
     };
     const previousReceiptKey = expense.receiptKey;
     const revision = Number(expense.assetAllocationRevision || 0);
@@ -222,6 +250,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate("currency", "code name symbol rateToBase isBase")
       .populate("createdBy", "name email photoURL")
       .populate("payments.paidBy", "name email")
+      .populate("trip", "name")
       .lean();
     if (!updated) {
       throw new Error("Expense changed while you were editing it; reload and try again");

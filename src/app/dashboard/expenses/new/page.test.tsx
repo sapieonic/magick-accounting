@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import NewExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -79,7 +79,7 @@ describe("NewExpensePage split payment", () => {
     expect(screen.getByLabelText(/paid by company \(₹\)/i)).toHaveValue("379.75");
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({ amount: 500, paymentSource: "split", pocketAmount: 120.25 })
@@ -122,7 +122,7 @@ describe("NewExpensePage split payment", () => {
       .querySelector("input[type=file]") as HTMLInputElement;
     await user.upload(fileInput, new File(["receipt"], "cab.png", { type: "image/png" }));
 
-    await vi.waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(100));
+    await waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(100));
     expect(screen.getByLabelText(/payment source/i)).toHaveValue("split");
     expect(screen.getByLabelText(/paid from pocket/i)).toHaveValue(120);
     expect(screen.getByText(/pocket amount must be more than 0 and less than the total amount/i)).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("NewExpensePage split payment", () => {
     await fillRequiredFields(user, "500");
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({ paymentSource: "pocket", pocketAmount: null })
@@ -195,7 +195,7 @@ describe("NewExpensePage paid by several people", () => {
     );
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({
@@ -234,5 +234,178 @@ describe("NewExpensePage paid by several people", () => {
     expect(screen.getByLabelText(/amount for payment 1/i)).toHaveAccessibleDescription(message);
     expect(screen.getByLabelText(/amount for payment 1/i)).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByLabelText("Payer 2")).toHaveAccessibleDescription(message);
+  });
+});
+
+describe("NewExpensePage business trips", () => {
+  const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
+  const trip = {
+    _id: "66c1884c0853f8a76a4da301",
+    name: "Mumbai client visit",
+    destinations: ["Mumbai"],
+    startDate: "2025-01-10T00:00:00.000Z",
+    endDate: "2025-01-14T00:00:00.000Z",
+    travelers: [asha],
+    department: { _id: "department-2", name: "Sales" },
+    status: "completed",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem("expense-upload-modal-skip", "true");
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: false } as any);
+    vi.mocked(api.post).mockResolvedValue({});
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/api/trips") return Promise.resolve({ trips: [trip] });
+      return Promise.resolve({
+        departments: [
+          { _id: "department-1", name: "Engineering", isDefault: true },
+          { _id: "department-2", name: "Sales" },
+        ],
+        categories: [
+          { _id: "category-1", name: "Meals & Entertainment" },
+          { _id: "category-travel", name: "Travel" },
+        ],
+        currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+        members: [asha],
+      });
+    });
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("opens inside the trip from ?trip= and returns to it after saving", async () => {
+    window.history.replaceState({}, "", `/dashboard/expenses/new?trip=${trip._id}`);
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+
+    expect(await screen.findByLabelText(/business trip/i)).toHaveValue(trip._id);
+    expect(screen.getByLabelText(/^department/i)).toHaveValue("department-2");
+    expect(screen.getByLabelText(/^date/i)).toHaveValue("2025-01-10");
+    expect(screen.getByRole("button", { name: /back to trip/i })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^title/i), "Flight to Mumbai");
+    await user.type(screen.getByLabelText(/^amount/i), "8000");
+    await user.click(screen.getByRole("radio", { name: "Flight" }));
+    expect(screen.getByLabelText(/^category/i)).toHaveValue("category-travel");
+
+    submit();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/expenses",
+      expect.objectContaining({
+        trip: trip._id,
+        travelType: "flight",
+        category: "category-travel",
+        department: "department-2",
+        date: "2025-01-10",
+      })
+    );
+    expect(router.push).toHaveBeenCalledWith(`/dashboard/trips/${trip._id}`);
+  });
+
+  it("doesn't count the ?trip= prefill as unsaved changes", async () => {
+    window.history.replaceState({}, "", `/dashboard/expenses/new?trip=${trip._id}`);
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<NewExpensePage />);
+
+    await user.click(await screen.findByRole("button", { name: /back to trip/i }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith(`/dashboard/trips/${trip._id}`);
+    confirmSpy.mockRestore();
+  });
+
+  it("fills the category from the travel type unless the user picked one", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+
+    await user.selectOptions(await screen.findByLabelText(/business trip/i), trip._id);
+    await user.click(screen.getByRole("radio", { name: "Food & drinks" }));
+    expect(screen.getByLabelText(/^category/i)).toHaveValue("category-1");
+    await user.click(screen.getByRole("radio", { name: "Stay" }));
+    expect(screen.getByLabelText(/^category/i)).toHaveValue("category-travel");
+
+    await user.selectOptions(screen.getByLabelText(/^category/i), "category-1");
+    await user.click(screen.getByRole("radio", { name: "Flight" }));
+    expect(screen.getByLabelText(/^category/i)).toHaveValue("category-1");
+  });
+
+  it("clears the travel type when the trip is cleared", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+
+    await user.selectOptions(screen.getByLabelText(/business trip/i), trip._id);
+    await user.click(screen.getByRole("radio", { name: "Cab / local" }));
+    await user.selectOptions(screen.getByLabelText(/business trip/i), "");
+    expect(screen.queryByRole("radiogroup", { name: /travel type/i })).not.toBeInTheDocument();
+
+    submit();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/expenses",
+      expect.objectContaining({ trip: null, travelType: null })
+    );
+    expect(router.push).toHaveBeenCalledWith("/dashboard/expenses");
+  });
+
+  it("goes to the trip the expense was filed into after saving", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+    await user.selectOptions(screen.getByLabelText(/business trip/i), trip._id);
+
+    submit();
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/dashboard/trips/${trip._id}`));
+    expect(api.post).toHaveBeenCalledWith("/api/expenses", expect.objectContaining({ trip: trip._id }));
+  });
+
+  it("goes back to the trip it was opened from when the trip is cleared", async () => {
+    window.history.replaceState({}, "", `/dashboard/expenses/new?trip=${trip._id}`);
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    expect(await screen.findByLabelText(/business trip/i)).toHaveValue(trip._id);
+
+    await user.type(screen.getByLabelText(/^title/i), "Office snacks");
+    await user.type(screen.getByLabelText(/^amount/i), "300");
+    await user.selectOptions(screen.getByLabelText(/^category/i), "category-1");
+    await user.selectOptions(screen.getByLabelText(/business trip/i), "");
+
+    submit();
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/dashboard/trips/${trip._id}`));
+    expect(api.post).toHaveBeenCalledWith("/api/expenses", expect.objectContaining({ trip: null }));
+  });
+
+  it("applies the receipt's travel type once a trip is picked", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.postFormData).mockResolvedValue({ title: "Hotel", amount: 4200, travelType: "stay" });
+    render(<NewExpensePage />);
+
+    const fileInput = (await screen.findByTestId("receipt-dropzone")).querySelector(
+      "input[type=file]"
+    ) as HTMLInputElement;
+    await user.upload(fileInput, new File(["receipt"], "hotel.png", { type: "image/png" }));
+    await waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(4200));
+    expect(screen.queryByRole("radiogroup", { name: /travel type/i })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/business trip/i), trip._id);
+    expect(screen.getByRole("radio", { name: "Stay" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText(/^category/i)).toHaveValue("category-travel");
+  });
+
+  it("suggests the trip when the date falls inside one the user travels on", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+
+    const date = await screen.findByLabelText(/^date/i);
+    await user.clear(date);
+    await user.type(date, "2025-01-12");
+    await user.click(screen.getByRole("button", { name: /add to trip/i }));
+
+    expect(screen.getByLabelText(/business trip/i)).toHaveValue(trip._id);
+    expect(screen.getByLabelText(/^department/i)).toHaveValue("department-2");
   });
 });

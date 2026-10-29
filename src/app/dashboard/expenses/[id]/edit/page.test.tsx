@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EditExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -59,10 +59,13 @@ const splitExpense = {
   pocketAmountInBaseCurrency: 400,
 };
 
-function mockExpense(expense: Record<string, unknown>) {
+function mockExpense(expense: Record<string, unknown>, trips: unknown[] = []) {
   vi.mocked(api.get).mockImplementation((url: string) => {
     if (url.startsWith("/api/expenses/")) {
       return Promise.resolve({ expense, assets: [] });
+    }
+    if (url === "/api/trips") {
+      return Promise.resolve({ trips });
     }
     if (url.startsWith("/api/lookups")) {
       return Promise.resolve({
@@ -145,7 +148,7 @@ describe("EditExpensePage split payment", () => {
     await user.type(pocket, "250");
     submit();
 
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ paymentSource: "split", amount: 1000, pocketAmount: 250 })
@@ -155,7 +158,7 @@ describe("EditExpensePage split payment", () => {
     await user.selectOptions(screen.getByLabelText(/payment source/i), "company");
     submit();
 
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ paymentSource: "company", pocketAmount: null })
@@ -197,7 +200,7 @@ describe("EditExpensePage paid by several people", () => {
     await user.type(screen.getByLabelText(/^title/i), "Team offsite");
     submit();
 
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({
@@ -234,4 +237,127 @@ describe("EditExpensePage unsaved changes", () => {
     expect(router.push).toHaveBeenCalledWith("/dashboard/expenses");
     confirmSpy.mockRestore();
   });
+});
+
+describe("EditExpensePage business trips", () => {
+  const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
+  const visibleTrip = {
+    _id: "66c1884c0853f8a76a4da301",
+    name: "Pune offsite",
+    destinations: ["Pune"],
+    startDate: "2026-07-01T00:00:00.000Z",
+    endDate: "2026-07-03T00:00:00.000Z",
+    travelers: [asha],
+    department: null,
+    status: "completed",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: true } as any);
+    vi.mocked(api.put).mockResolvedValue({});
+  });
+
+  it("shows the stored trip and travel type, even when the trip isn't in the user's list", async () => {
+    mockExpense(
+      { ...splitExpense, trip: { _id: "66c1884c0853f8a76a4da399", name: "Mumbai client visit" }, travelType: "cab" },
+      [visibleTrip]
+    );
+    render(<EditExpensePage />);
+
+    const select = (await screen.findByLabelText(/business trip/i)) as HTMLSelectElement;
+    expect(select).toHaveValue("66c1884c0853f8a76a4da399");
+    expect(select.selectedOptions[0]).toHaveTextContent("Mumbai client visit");
+    expect(screen.getByRole("radio", { name: "Cab / local" })).toHaveAttribute("aria-checked", "true");
+
+    submit();
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({ trip: "66c1884c0853f8a76a4da399", travelType: "cab" })
+    );
+  });
+
+  it("puts the expense in a trip with a travel type", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...splitExpense, trip: null, travelType: null }, [visibleTrip]);
+    render(<EditExpensePage />);
+
+    await user.selectOptions(await screen.findByLabelText(/business trip/i), visibleTrip._id);
+    await user.click(screen.getByRole("radio", { name: "Food & drinks" }));
+    // The category stays as stored when editing.
+    expect(screen.getByLabelText(/^category/i)).toHaveValue("category-1");
+
+    submit();
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({ trip: visibleTrip._id, travelType: "food" })
+    );
+  });
+
+  it("clears the travel type when the trip is removed, and counts it as a change", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockExpense({ ...splitExpense, trip: { _id: visibleTrip._id, name: visibleTrip.name }, travelType: "stay" }, [
+      visibleTrip,
+    ]);
+    render(<EditExpensePage />);
+
+    await user.selectOptions(await screen.findByLabelText(/business trip/i), "");
+    await user.click(screen.getByRole("button", { name: /back to expenses/i }));
+    expect(confirmSpy).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+
+    submit();
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({ trip: null, travelType: null })
+    );
+  });
+});
+
+describe("EditExpensePage returnTo", () => {
+  const tripPage = "/dashboard/trips/66c1884c0853f8a76a4da301";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "66c1884c0853f8a76a4da201" }, isAdmin: true } as any);
+    vi.mocked(api.put).mockResolvedValue({});
+    mockExpense(splitExpense);
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("goes back to the trip it was opened from on Back, Cancel and save", async () => {
+    window.history.replaceState({}, "", `/dashboard/expenses/expense-1/edit?returnTo=${encodeURIComponent(tripPage)}`);
+    const user = userEvent.setup();
+    render(<EditExpensePage />);
+
+    await user.click(await screen.findByRole("button", { name: /back to trip/i }));
+    expect(router.push).toHaveBeenLastCalledWith(tripPage);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(router.push).toHaveBeenLastCalledWith(tripPage);
+
+    submit();
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(3));
+    expect(router.push).toHaveBeenLastCalledWith(tripPage);
+  });
+
+  it.each(["https://evil.example/dashboard/", "//evil.example/dashboard/", "/settings"])(
+    "ignores returnTo=%s",
+    async (returnTo) => {
+      window.history.replaceState({}, "", `/dashboard/expenses/expense-1/edit?returnTo=${encodeURIComponent(returnTo)}`);
+      render(<EditExpensePage />);
+
+      await screen.findByLabelText(/payment source/i);
+      submit();
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith("/dashboard/expenses"));
+      expect(screen.getByRole("button", { name: /back to expenses/i })).toBeInTheDocument();
+    }
+  );
 });

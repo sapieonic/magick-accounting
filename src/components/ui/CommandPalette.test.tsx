@@ -75,6 +75,17 @@ describe("CommandPalette", () => {
     expect(push).toHaveBeenCalledWith("/dashboard/departments");
   });
 
+  it("offers the trips page", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette />);
+    openPalette();
+    expect(screen.getByText("Trips")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search commands"), "trip");
+    await user.keyboard("{Enter}");
+    expect(push).toHaveBeenCalledWith("/dashboard/trips");
+  });
+
   it("closes on Escape", async () => {
     const user = userEvent.setup();
     render(<CommandPalette />);
