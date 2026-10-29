@@ -62,6 +62,22 @@ describe("Sidebar", () => {
     expect(expand.parentElement?.className).toMatch(/flex-col/);
   });
 
+  it("lists Trips right after Expenses", () => {
+    render(<Sidebar open={false} onClose={() => {}} />);
+    const labels = screen.getAllByRole("link").map((link) => link.textContent?.trim());
+
+    expect(labels.indexOf("Trips")).toBe(labels.indexOf("Expenses") + 1);
+    expect(screen.getByRole("link", { name: "Trips" })).toHaveAttribute("href", "/dashboard/trips");
+  });
+
+  it("highlights Trips on a trip's detail page", () => {
+    vi.mocked(usePathname).mockReturnValue("/dashboard/trips/66c1884c0853f8a76a4da201");
+    render(<Sidebar open={false} onClose={() => {}} />);
+
+    expect(screen.getByRole("link", { name: "Trips" }).className).toMatch(/from-brand-600/);
+    expect(screen.getByRole("link", { name: "Expenses" }).className).not.toMatch(/from-brand-600/);
+  });
+
   it("should collapse sidebar on mobile when close button is clicked", () => {
     const onCloseMock = vi.fn();
     // Render in mobile overlay mode

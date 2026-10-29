@@ -102,4 +102,26 @@ describe("expenseCsvRow", () => {
   it("leaves the payments column blank for a single payer", () => {
     expect(column(expenseCsvRow({ ...base, amount: 75 }), "Payments")).toBe("");
   });
+
+  it("adds the trip and travel type in the last columns, blank without them", () => {
+    expect(EXPENSE_CSV_HEADERS.slice(-2)).toEqual(["Trip", "Travel Type"]);
+    // Existing columns keep their positions.
+    expect(EXPENSE_CSV_HEADERS.indexOf("Payments")).toBe(13);
+
+    const inTrip = expenseCsvRow({
+      ...base,
+      amount: 5000,
+      trip: { name: "Goa offsite" },
+      travelType: "client_meeting",
+    });
+    expect(column(inTrip, "Trip")).toBe("Goa offsite");
+    expect(column(inTrip, "Travel Type")).toBe("Client meeting");
+
+    const untagged = expenseCsvRow({ ...base, amount: 5000, trip: { name: "Goa offsite" }, travelType: null });
+    expect(column(untagged, "Travel Type")).toBe("");
+
+    const plain = expenseCsvRow({ ...base, amount: 75, trip: null });
+    expect(column(plain, "Trip")).toBe("");
+    expect(column(plain, "Travel Type")).toBe("");
+  });
 });

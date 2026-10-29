@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import mongoose from "mongoose";
 import { NextRequest } from "next/server";
 import { DELETE, GET, PUT } from "./route";
 import { verifyAuth } from "@/lib/auth";
@@ -8,6 +9,7 @@ import Expense from "@/models/Expense";
 import Asset from "@/models/Asset";
 import Currency from "@/models/Currency";
 import User from "@/models/User";
+import Trip from "@/models/Trip";
 
 vi.mock("@/lib/auth", () => ({ verifyAuth: vi.fn() }));
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
@@ -22,6 +24,7 @@ vi.mock("@/models/Currency", () => ({ default: { findById: vi.fn() } }));
 vi.mock("@/models/Category", () => ({ default: {} }));
 vi.mock("@/models/Department", () => ({ default: {} }));
 vi.mock("@/models/User", () => ({ default: { countDocuments: vi.fn() } }));
+vi.mock("@/models/Trip", () => ({ default: { findById: vi.fn() } }));
 
 describe("DELETE /api/expenses/:id", () => {
   const expenseId = "66c1884c0853f8a76a4da111";
@@ -481,5 +484,143 @@ describe("PUT /api/expenses/:id payment split", () => {
       expect(response.status).toBe(403);
       expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("PUT /api/expenses/:id trip", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+  const ownerId = "66c1884c0853f8a76a4da201";
+  const goa = "66c1884c0853f8a76a4da301";
+  const pune = "66c1884c0853f8a76a4da302";
+  const objectIdLike = (value: string) => ({ toString: () => value });
+
+  function mockStoredExpense(overrides: Record<string, unknown> = {}) {
+    vi.mocked(Expense.findById).mockResolvedValue({
+      _id: expenseId,
+      title: "Flight",
+      description: "",
+      createdBy: objectIdLike(ownerId),
+      amount: 100,
+      gstAmount: null,
+      currency: objectIdLike("inr-id"),
+      amountInBaseCurrency: 100,
+      exchangeRateToBase: 1,
+      date: new Date("2026-10-01T00:00:00.000Z"),
+      category: objectIdLike("category-id"),
+      department: objectIdLike("department-id"),
+      paymentSource: "pocket",
+      pocketAmount: 100,
+      pocketAmountInBaseCurrency: 100,
+      assetAllocationRevision: 0,
+      trip: new mongoose.Types.ObjectId(goa),
+      travelType: "flight",
+      ...overrides,
+    } as never);
+  }
+
+  function tripOn(travelers: string[]) {
+    return {
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue({
+        travelers: travelers.map((id) => new mongoose.Types.ObjectId(id)),
+        createdBy: new mongoose.Types.ObjectId(),
+      }),
+    };
+  }
+
+  function put(body: Record<string, unknown>) {
+    return PUT({ json: async () => body } as unknown as NextRequest, {
+      params: Promise.resolve({ id: expenseId }),
+    });
+  }
+
+  function storedUpdate() {
+    return (vi.mocked(Expense.findOneAndUpdate).mock.calls[0][1] as { $set: Record<string, unknown> }).$set;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: ownerId,
+      email: "owner@example.com",
+      name: "Owner",
+      role: "user",
+    });
+    vi.mocked(Asset.find).mockResolvedValue([] as never);
+    mockStoredExpense();
+    const query = {
+      populate: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue({ _id: expenseId }),
+    };
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue(query as never);
+  });
+
+  it("keeps the trip and travel type when they aren't sent, without re-checking the trip", async () => {
+    const response = await put({ title: "Flight to Goa" });
+
+    expect(response.status).toBe(200);
+    expect(String(storedUpdate().trip)).toBe(goa);
+    expect(storedUpdate().travelType).toBe("flight");
+    // The owner may since have been taken off the trip; that's fine.
+    expect(Trip.findById).not.toHaveBeenCalled();
+    const query = vi.mocked(Expense.findOneAndUpdate).mock.results[0].value;
+    expect(query.populate).toHaveBeenCalledWith("trip", "name");
+  });
+
+  it("doesn't re-check an unchanged trip the form resends", async () => {
+    const response = await put({ trip: goa.toUpperCase(), travelType: "stay" });
+
+    expect(response.status).toBe(200);
+    expect(storedUpdate()).toEqual(expect.objectContaining({ travelType: "stay" }));
+    expect(Trip.findById).not.toHaveBeenCalled();
+  });
+
+  it("clears the travel type with the trip", async () => {
+    const response = await put({ trip: null });
+
+    expect(response.status).toBe(200);
+    expect(storedUpdate()).toEqual(expect.objectContaining({ trip: null, travelType: null }));
+  });
+
+  it("moves the expense to another trip the user is on", async () => {
+    vi.mocked(Trip.findById).mockReturnValue(tripOn([ownerId]) as never);
+
+    const response = await put({ trip: pune, travelType: "train" });
+
+    expect(response.status).toBe(200);
+    expect(Trip.findById).toHaveBeenCalledWith(pune);
+    expect(String(storedUpdate().trip)).toBe(pune);
+    expect(storedUpdate().travelType).toBe("train");
+  });
+
+  it("won't put a user's expense in a trip they aren't on", async () => {
+    vi.mocked(Trip.findById).mockReturnValue(tripOn([]) as never);
+
+    const response = await put({ trip: pune });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "You can only add expenses to trips you are on" });
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown travel type", async () => {
+    const response = await put({ travelType: "yacht" });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Travel type is invalid" });
+  });
+
+  it("lets a user change the trip of an asset-linked expense (not an accounting field)", async () => {
+    mockStoredExpense({ trip: null, travelType: null });
+    vi.mocked(Asset.find).mockResolvedValue([
+      { allocatedAmount: 50, allocatedGstAmount: 0, putToUseDate: new Date("2026-11-01T00:00:00.000Z") },
+    ] as never);
+    vi.mocked(Trip.findById).mockReturnValue(tripOn([ownerId]) as never);
+
+    const response = await put({ trip: goa, travelType: "visa" });
+
+    expect(response.status).toBe(200);
+    expect(storedUpdate()).toEqual(expect.objectContaining({ travelType: "visa" }));
   });
 });

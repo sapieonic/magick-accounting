@@ -12,43 +12,21 @@ import EmptyState from "@/components/ui/EmptyState";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
 import {
-  Plus, Receipt, Trash2, Pencil, Paperclip, Download, Package,
-  Search, Filter, ChevronDown, FileText, Image as ImageIcon,
+  Plus, Receipt, Download, Plane,
+  Search, Filter, ChevronDown,
   Calendar, TrendingUp, User as UserIcon, Tag, Wallet, X as XIcon,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
-import { formatCurrency, formatBaseCurrency } from "@/lib/currency";
+import { formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import {
-  EXPENSE_CSV_HEADERS,
-  expenseCsvRow,
-  payerName,
-  paymentSourceLabel,
-  type ExpensePaymentEntry,
-} from "@/lib/expense-csv";
-import { getPaymentBreakdown, type PaymentSource } from "@/lib/expense";
+import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
+import ExpenseCard from "@/components/expenses/ExpenseCard";
+import TripCluster, { buildExpenseListItems, tripItemKey } from "@/components/trips/TripCluster";
+import type { ExpenseListItem } from "@/types/expense";
+import type { TripSummary } from "@/types/trip";
 
-interface Expense {
-  _id: string;
-  title: string;
-  amount: number;
-  amountInBaseCurrency?: number;
-  gstAmount?: number | null;
-  currency?: { _id: string; code: string; name: string; symbol: string; isBase: boolean };
-  date: string;
-  description: string;
-  paymentSource?: PaymentSource;
-  pocketAmount?: number | null;
-  pocketAmountInBaseCurrency?: number | null;
-  payments?: ExpensePaymentEntry[];
-  receiptKey?: string;
-  receiptFilename?: string;
-  category: { _id: string; name: string };
-  department: { _id: string; name: string };
-  createdBy: { _id: string; name: string; email: string };
-  linkedAssetCount?: number;
-}
+type Expense = ExpenseListItem;
 
 interface Department { _id: string; name: string }
 interface Category { _id: string; name: string }
@@ -58,38 +36,6 @@ interface ExpenseSummary {
   totalExpenses: number;
   /** The "Paid by" person's own share of the listed expenses. */
   payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
-}
-
-const CATEGORY_COLORS: Record<string, string> = {
-  "Office Supplies": "bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
-  "Travel": "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/15 dark:text-orange-300 dark:border-orange-500/30",
-  "Meals & Entertainment": "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-500/15 dark:text-pink-300 dark:border-pink-500/30",
-  "Software & Subscriptions": "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:border-violet-500/30",
-  "Equipment & Hardware": "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/15 dark:text-slate-300 dark:border-slate-500/30",
-  "Marketing & Advertising": "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30",
-  "Professional Services": "bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-300 dark:border-cyan-500/30",
-  "Utilities": "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-500/15 dark:text-yellow-300 dark:border-yellow-500/30",
-  "Rent & Facilities": "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30",
-  "Training & Education": "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30",
-  "Communication": "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-500/15 dark:text-teal-300 dark:border-teal-500/30",
-  "Insurance": "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
-  "Miscellaneous": "bg-subtle text-muted border-line",
-};
-
-function getCategoryColor(name: string): string {
-  return CATEGORY_COLORS[name] || "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30";
-}
-
-function paymentSourceDetail(expense: Expense): string {
-  if (expense.paymentSource !== "split") return paymentSourceLabel(expense.paymentSource);
-  const { pocket, company } = getPaymentBreakdown(expense);
-  const code = expense.currency?.code;
-  return `Split · ${formatCurrency(pocket, code)} pocket / ${formatCurrency(company, code)} company`;
-}
-
-function isImageFile(filename?: string): boolean {
-  if (!filename) return false;
-  return /\.(jpg|jpeg|png|webp)$/i.test(filename);
 }
 
 const CUSTOM_DATE_PRESET = "custom";
@@ -143,13 +89,18 @@ export default function ExpensesPage() {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  /** Trips on the loaded pages, keyed by id (grouped view only). */
+  const [trips, setTrips] = useState<Record<string, TripSummary>>({});
   const [departments, setDepartments] = useState<Department[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
 
+  /** The open row: an expense id, or `tripItemKey(tripId)` for a trip cluster. */
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
-  const [loadingReceipt, setLoadingReceipt] = useState<string | null>(null);
+  /** Expense to open inside the expanded trip cluster (deep links). */
+  const [clusterExpenseId, setClusterExpenseId] = useState<string | null>(null);
+  /** Show each trip's expenses as one expandable row (`?view=flat` turns it off). */
+  const [groupTrips, setGroupTrips] = useState(true);
 
   const [filterDepts, setFilterDepts] = useState<string[]>([]);
   const [filterCats, setFilterCats] = useState<string[]>([]);
@@ -174,6 +125,8 @@ export default function ExpensesPage() {
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
+  const expensesRef = useRef<Expense[]>([]);
+  expensesRef.current = expenses;
 
   const datePresetOptions = useMemo(() => getDatePresetOptions(), []);
 
@@ -218,6 +171,7 @@ export default function ExpensesPage() {
       setSearch(q);
     }
 
+    setGroupTrips(params.get("view") !== "flat");
     pendingExpandId.current = params.get("expand");
     setUrlSynced(true);
   }, []);
@@ -240,11 +194,12 @@ export default function ExpensesPage() {
       params.set("month", datePreset);
     }
     if (search) params.set("q", search);
+    if (!groupTrips) params.set("view", "flat");
 
     const query = params.toString();
     const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(null, "", url);
-  }, [urlSynced, filterDepts, filterCats, filterUser, filterPayer, datePreset, customFrom, customTo, search]);
+  }, [urlSynced, filterDepts, filterCats, filterUser, filterPayer, datePreset, customFrom, customTo, search, groupTrips]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -363,17 +318,28 @@ export default function ExpensesPage() {
       try {
         await flushPendingDeletes();
         const params = buildQueryParams(1, PAGE_SIZE, true);
+        if (groupTrips) params.set("groupTrips", "true");
         const data = await api.get(`/api/expenses?${params.toString()}`);
         if (!active) return;
 
-        setExpenses(data.expenses);
+        const loaded: Expense[] = data.expenses;
+        const loadedTrips: Record<string, TripSummary> = groupTrips ? data.trips ?? {} : {};
+        setExpenses(loaded);
+        setTrips(loadedTrips);
         setPage(1);
-        setTotalCount(data.pagination?.total ?? data.expenses.length);
+        setTotalCount(data.pagination?.total ?? loaded.length);
         setSummary(data.summary || { totalAmount: 0, totalExpenses: 0 });
 
         if (pendingExpandId.current) {
-          const target = data.expenses.find((e: Expense) => e._id === pendingExpandId.current);
-          if (target) setExpandedId(target._id);
+          const target = loaded.find((e) => e._id === pendingExpandId.current);
+          const tripId = target?.trip?._id;
+          if (target && tripId && loadedTrips[tripId]) {
+            // The expense lives inside a trip cluster: open both.
+            setExpandedId(tripItemKey(tripId));
+            setClusterExpenseId(target._id);
+          } else if (target) {
+            setExpandedId(target._id);
+          }
           pendingExpandId.current = null;
         }
       } catch {
@@ -396,13 +362,15 @@ export default function ExpensesPage() {
     return () => {
       active = false;
     };
-  }, [buildQueryParams, flushPendingDeletes, toast, urlSynced]);
+  }, [buildQueryParams, flushPendingDeletes, toast, urlSynced, groupTrips]);
 
   const loadMore = async () => {
     setLoadingMore(true);
     try {
       const params = buildQueryParams(page + 1, PAGE_SIZE, false);
+      if (groupTrips) params.set("groupTrips", "true");
       const data = await api.get(`/api/expenses?${params.toString()}`);
+      if (groupTrips && data.trips) setTrips((prev) => ({ ...prev, ...data.trips }));
       setExpenses((prev) => {
         const seen = new Set(prev.map((e) => e._id));
         return [...prev, ...data.expenses.filter((e: Expense) => !seen.has(e._id))];
@@ -434,6 +402,23 @@ export default function ExpensesPage() {
 
   // Optimistically remove the expense and give the user a short undo window
   // before the delete is committed to the server.
+  // The list row an expense belongs to: its trip's cluster in the grouped
+  // view, else its own row. Pagination counts rows, not expenses.
+  const listItemKey = useCallback(
+    (expense: Expense) => {
+      const tripId = expense.trip?._id;
+      return groupTrips && tripId && trips[tripId] ? tripItemKey(tripId) : expense._id;
+    },
+    [groupTrips, trips]
+  );
+
+  const listItems = useMemo(
+    () => buildExpenseListItems(expenses, groupTrips ? trips : null),
+    [expenses, groupTrips, trips]
+  );
+
+  // Optimistically remove the expense and give the user a short undo window
+  // before the delete is committed to the server.
   const handleDelete = (expense: Expense) => {
     if ((expense.linkedAssetCount || 0) > 0) {
       toast("Linked asset purchases cannot be deleted from Expenses", "error");
@@ -442,16 +427,23 @@ export default function ExpensesPage() {
     const index = expenses.findIndex((e) => e._id === expense._id);
     if (index === -1) return;
 
+    // Deleting the last expense of a trip cluster removes the whole row.
+    const itemKey = listItemKey(expense);
+    const keyOf = listItemKey;
+    const rowStaysListed = (list: Expense[]) =>
+      list.some((e) => e._id !== expense._id && keyOf(e) === itemKey);
+
     setExpenses((prev) => prev.filter((e) => e._id !== expense._id));
     setSummary((prev) => ({
       ...prev,
       totalAmount: prev.totalAmount - (expense.amountInBaseCurrency ?? expense.amount),
       totalExpenses: Math.max(0, prev.totalExpenses - 1),
     }));
-    setTotalCount((prev) => Math.max(0, prev - 1));
+    if (!rowStaysListed(expenses)) setTotalCount((prev) => Math.max(0, prev - 1));
     if (expandedId === expense._id) setExpandedId(null);
 
     const restore = () => {
+      const rowReappears = !rowStaysListed(expensesRef.current);
       setExpenses((prev) => {
         const next = [...prev];
         next.splice(Math.min(index, next.length), 0, expense);
@@ -462,7 +454,7 @@ export default function ExpensesPage() {
         totalAmount: prev.totalAmount + (expense.amountInBaseCurrency ?? expense.amount),
         totalExpenses: prev.totalExpenses + 1,
       }));
-      setTotalCount((prev) => prev + 1);
+      if (rowReappears) setTotalCount((prev) => prev + 1);
     };
 
     const timer = setTimeout(async () => {
@@ -494,38 +486,23 @@ export default function ExpensesPage() {
     });
   };
 
-  const toggleExpand = (expense: Expense) => {
-    setExpandedId((prev) => (prev === expense._id ? null : expense._id));
+  const toggleExpand = (key: string) => {
+    setExpandedId((prev) => (prev === key ? null : key));
+    // A deep-linked expense only opens with its cluster the first time.
+    setClusterExpenseId(null);
   };
 
-  // Lazily fetch the presigned receipt URL whenever a row with a receipt is
-  // expanded (covers both clicks and ?expand= deep links).
-  useEffect(() => {
-    if (!expandedId) return;
-    const expense = expenses.find((e) => e._id === expandedId);
-    if (!expense?.receiptKey || receiptUrls[expandedId]) return;
+  const toggleGroupTrips = () => {
+    // Keep the open expense open across the switch (it may move in or out of a cluster).
+    if (expandedId && !expandedId.startsWith("trip:")) pendingExpandId.current = expandedId;
+    else if (clusterExpenseId) pendingExpandId.current = clusterExpenseId;
+    setExpandedId(null);
+    setClusterExpenseId(null);
+    setGroupTrips((prev) => !prev);
+  };
 
-    let active = true;
-    setLoadingReceipt(expandedId);
-    api
-      .get(`/api/upload?key=${encodeURIComponent(expense.receiptKey)}`)
-      .then(({ downloadUrl }) => {
-        if (!active) return;
-        setReceiptUrls((prev) => ({ ...prev, [expandedId]: downloadUrl }));
-      })
-      .catch(() => {
-        if (active) toast("Failed to load receipt", "error");
-      })
-      .finally(() => {
-        if (active) setLoadingReceipt(null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [expandedId, expenses, receiptUrls, toast]);
-
-  const handleDownload = (url: string) => { window.open(url, "_blank"); };
+  const isFiltered = Boolean(search) || hasAnyFilter;
+  const hasClusters = listItems.some((item) => item.kind === "trip");
 
   if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
@@ -800,19 +777,44 @@ export default function ExpensesPage() {
                 </div>
               )}
 
-              <button
-                onClick={handleExport}
-                disabled={exporting || expenses.length === 0}
-                className="btn-secondary text-sm"
-                title="Download the currently filtered expenses as CSV"
-              >
-                {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
-                Export CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={groupTrips}
+                  onClick={toggleGroupTrips}
+                  className="inline-flex items-center gap-2 rounded-xl border border-line-strong bg-surface px-3 py-2.5 text-sm font-semibold text-foreground shadow-sm transition-all duration-200 hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background"
+                  title={groupTrips ? "Each trip is one expandable row. Switch off for a flat list." : "Show each trip's expenses as one expandable row"}
+                >
+                  <Plane className="h-4 w-4 text-sky-500" aria-hidden="true" />
+                  Group trips
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${
+                      groupTrips ? "bg-brand-500" : "bg-line-strong"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        groupTrips ? "translate-x-[18px]" : "translate-x-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting || expenses.length === 0}
+                  className="btn-secondary text-sm"
+                  title="Download the currently filtered expenses as CSV"
+                >
+                  {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
+                  Export CSV
+                </button>
+              </div>
             </div>
           </div>
 
-          {expenses.length === 0 ? (
+          {listItems.length === 0 ? (
             <EmptyState
               icon={<Receipt className="h-8 w-8" />}
               title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
@@ -828,225 +830,38 @@ export default function ExpensesPage() {
             />
           ) : (
             <div className="space-y-2.5">
-          {expenses.map((expense) => {
-            const isExpanded = expandedId === expense._id;
-            const receiptUrl = receiptUrls[expense._id];
-            const isImage = isImageFile(expense.receiptFilename);
-            const catColor = getCategoryColor(expense.category?.name);
-
-            return (
-              <div
-                key={expense._id}
-                className={`overflow-hidden rounded-xl border bg-surface shadow-sm transition-all duration-200 ${
-                  isExpanded ? "border-brand-200 shadow-md shadow-brand-500/5" : "border-line hover:border-line-strong hover:shadow-md"
-                }`}
-              >
-                {/* Summary row */}
-                <div className="group relative">
-                  <button
-                    onClick={() => toggleExpand(expense)}
-                    className="flex w-full cursor-pointer items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-subtle/50"
-                    aria-expanded={isExpanded}
-                  >
-                    {/* Amount with colored left accent */}
-                    <div className="w-28 flex-shrink-0 tabular-nums">
-                      <p className="text-sm font-bold text-foreground">
-                        {formatCurrency(expense.amount, expense.currency?.code)}
-                      </p>
-                      {expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null && (
-                        <p className="text-[11px] text-muted-foreground">{formatBaseCurrency(expense.amountInBaseCurrency)}</p>
-                      )}
-                    </div>
-
-                    {/* Title & meta */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium text-foreground">{expense.title}</p>
-                        {expense.receiptKey && (
-                          <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-blue-400 dark:text-blue-300" />
-                        )}
-                        {(expense.linkedAssetCount || 0) > 0 && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
-                            <Package className="h-3 w-3" /> {expense.linkedAssetCount}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${catColor}`}>
-                          {expense.category?.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {expense.department?.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">&middot;</span>
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(expense.date), "MMM d, yyyy")}
-                        </span>
-                        <span className="hidden text-xs text-muted-foreground sm:inline">&middot;</span>
-                        <span className="hidden text-xs text-muted-foreground sm:inline">{expense.createdBy?.name}</span>
-                      </div>
-                    </div>
-
-                    <ChevronDown
-                      className={`h-5 w-5 flex-shrink-0 text-muted-foreground transition-transform duration-200 ${
-                        isExpanded ? "rotate-180 text-brand-500" : ""
-                      }`}
-                    />
-                  </button>
-
-                  {/* Quick actions, shown on hover/focus without expanding the row */}
-                  <div className="absolute right-14 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-lg border border-line bg-surface/95 p-1 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100 sm:flex">
-                    <Link
-                      href={`/dashboard/expenses/${expense._id}/edit`}
-                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground"
-                      aria-label={`Edit ${expense.title}`}
-                      title="Edit"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                    <button
-                      onClick={() => handleDelete(expense)}
-                      className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                      aria-label={`Delete ${expense.title}`}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded detail */}
-                {isExpanded && (
-                  <div className="animate-slide-up border-t border-line">
-                    <div className="bg-gradient-to-b from-subtle/80 to-surface px-5 py-5">
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Amount</p>
-                          <p className="mt-1 text-base font-bold tabular-nums text-foreground">
-                            {formatCurrency(expense.amount, expense.currency?.code)}
-                          </p>
-                          {expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null && (
-                            <p className="text-xs text-emerald-600 font-medium dark:text-emerald-400">
-                              {formatBaseCurrency(expense.amountInBaseCurrency)}
-                            </p>
-                          )}
-                        </div>
-                        {expense.gstAmount != null && expense.gstAmount > 0 && (
-                          <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GST (incl.)</p>
-                            <p className="mt-1 text-base font-bold tabular-nums text-foreground">
-                              {formatCurrency(expense.gstAmount, expense.currency?.code)}
-                            </p>
-                          </div>
-                        )}
-                        <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Category</p>
-                          <span className={`mt-1.5 inline-flex rounded-md border px-2.5 py-0.5 text-xs font-semibold ${catColor}`}>
-                            {expense.category?.name}
-                          </span>
-                        </div>
-                        <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Department</p>
-                          <p className="mt-1 text-sm font-medium text-foreground">{expense.department?.name}</p>
-                        </div>
-                        <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Paid from</p>
-                          {expense.paymentSource === "multiple" && expense.payments?.length ? (
-                            <ul className="mt-1 space-y-0.5 text-sm text-foreground">
-                              {expense.payments.map((entry, index) => (
-                                <li key={index}>
-                                  <span className="font-medium">{payerName(entry)}</span>{" "}
-                                  <span className="tabular-nums">{formatCurrency(entry.amount, expense.currency?.code)}</span>{" "}
-                                  <span className="text-xs text-muted-foreground">
-                                    · {entry.source === "company" ? "company" : "pocket"}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="mt-1 text-sm font-medium text-foreground">{paymentSourceDetail(expense)}</p>
-                          )}
-                        </div>
-                        <div className="rounded-lg bg-surface p-3 shadow-sm border border-line">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Submitted by</p>
-                          <p className="mt-1 text-sm font-medium text-foreground">{expense.createdBy?.name}</p>
-                          <p className="text-xs text-muted-foreground">{format(new Date(expense.date), "MMMM d, yyyy")}</p>
-                        </div>
-                      </div>
-
-                      {expense.description && (
-                        <div className="mt-4 rounded-lg bg-surface p-3 shadow-sm border border-line">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Description</p>
-                          <p className="mt-1 text-sm text-muted">{expense.description}</p>
-                        </div>
-                      )}
-
-                      {/* Receipt preview */}
-                      {expense.receiptKey && (
-                        <div className="mt-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="rounded-md bg-blue-50 p-1 dark:bg-blue-500/10">
-                                {isImage ? <ImageIcon className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" /> : <FileText className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />}
-                              </div>
-                              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Receipt</p>
-                              {expense.receiptFilename && (
-                                <span className="text-xs text-muted-foreground">{expense.receiptFilename}</span>
-                              )}
-                            </div>
-                            {receiptUrl && (
-                              <button onClick={() => handleDownload(receiptUrl)} className="btn-ghost py-1 text-xs">
-                                <Download className="h-3.5 w-3.5" /> Download
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="mt-2 overflow-hidden rounded-lg border border-line bg-surface shadow-sm">
-                            {loadingReceipt === expense._id ? (
-                              <div className="flex items-center justify-center py-16">
-                                <Spinner size="md" />
-                              </div>
-                            ) : receiptUrl ? (
-                              isImage ? (
-                                <img src={receiptUrl} alt={`Receipt for ${expense.title}`} className="max-h-[500px] w-full object-contain" />
-                              ) : (
-                                <iframe src={receiptUrl} title={`Receipt for ${expense.title}`} className="h-[500px] w-full" />
-                              )
-                            ) : (
-                              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                                <FileText className="mb-2 h-8 w-8" />
-                                <p className="text-sm">Could not load receipt preview</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="mt-5 flex items-center gap-2 border-t border-line pt-4">
-                        <Link href={`/dashboard/expenses/${expense._id}/edit`} className="btn-secondary text-sm">
-                          <Pencil className="h-4 w-4" /> Edit
-                        </Link>
-                        <button
-                          onClick={() => handleDelete(expense)}
-                          className="btn-ghost text-sm text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
-                        >
-                          <Trash2 className="h-4 w-4" /> Delete
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              {listItems.map((item) =>
+                item.kind === "trip" ? (
+                  <TripCluster
+                    key={item.key}
+                    trip={item.trip}
+                    expenses={item.expenses}
+                    expanded={expandedId === item.key}
+                    onToggle={() => toggleExpand(item.key)}
+                    onDelete={handleDelete}
+                    initialExpandedId={expandedId === item.key ? clusterExpenseId : null}
+                    filtered={isFiltered}
+                  />
+                ) : (
+                  <ExpenseCard
+                    key={item.key}
+                    expense={item.expense}
+                    expanded={expandedId === item.key}
+                    onToggle={() => toggleExpand(item.key)}
+                    onDelete={handleDelete}
+                    showTripBadge={!groupTrips}
+                  />
+                )
+              )}
 
           {/* Pagination */}
           <div className="flex flex-col items-center gap-3 pt-3">
             <p className="text-xs text-muted-foreground">
-              Showing {expenses.length} of {totalCount} expense{totalCount !== 1 ? "s" : ""}
+              {hasClusters
+                ? `Showing ${listItems.length} of ${totalCount} item${totalCount !== 1 ? "s" : ""} · each trip counts as one`
+                : `Showing ${listItems.length} of ${totalCount} expense${totalCount !== 1 ? "s" : ""}`}
             </p>
-            {expenses.length < totalCount && (
+            {listItems.length < totalCount && (
               <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
                 {loadingMore ? (
                   <>

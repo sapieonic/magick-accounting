@@ -16,7 +16,9 @@ import PaymentSourceFields, {
   type PayerOption,
   type PaymentDraft,
 } from "@/components/expenses/PaymentSourceFields";
+import TripFields, { useTripOptions } from "@/components/expenses/TripFields";
 import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
+import { isTravelType, type TravelType } from "@/lib/trip";
 import { ArrowLeft, Package, Upload, X as XIcon } from "lucide-react";
 
 interface Department {
@@ -65,6 +67,9 @@ export default function EditExpensePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [linkedAssets, setLinkedAssets] = useState<LinkedAsset[]>([]);
+  const { trips } = useTripOptions();
+  // The stored trip, so it still shows by name if it isn't in `trips`.
+  const [storedTrip, setStoredTrip] = useState<{ _id: string; name: string } | null>(null);
 
   const emptyForm = {
     title: "",
@@ -78,6 +83,8 @@ export default function EditExpensePage() {
     paymentSource: "pocket",
     pocketAmount: "",
     payments: [] as PaymentDraft[],
+    trip: "",
+    travelType: null as TravelType | null,
   };
   const [form, setForm] = useState(emptyForm);
   const [initialForm, setInitialForm] = useState(emptyForm);
@@ -126,6 +133,8 @@ export default function EditExpensePage() {
         const storedPayments: StoredPayment[] =
           exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
+        const storedTripId: string =
+          (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
         const loadedForm = {
           title: exp.title,
           amount: exp.amount.toString(),
@@ -145,7 +154,12 @@ export default function EditExpensePage() {
               source: entry.source,
             })
           ),
+          trip: storedTripId,
+          travelType: storedTripId && isTravelType(exp.travelType) ? exp.travelType : null,
         };
+        setStoredTrip(
+          storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null
+        );
         setForm(loadedForm);
         setInitialForm(loadedForm);
 
@@ -241,6 +255,8 @@ export default function EditExpensePage() {
         gstAmount,
         pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
         payments: paymentDraftsToPayload(form.paymentSource, form.payments),
+        trip: form.trip || null,
+        travelType: form.trip ? form.travelType : null,
       };
 
       if (newReceipt?.file) {
@@ -409,6 +425,20 @@ export default function EditExpensePage() {
               Tax portion already included in the amount above. Leave blank if not applicable.
             </p>
           </div>
+
+          <TripFields
+            trips={trips}
+            trip={form.trip}
+            travelType={form.travelType}
+            onTripChange={(trip) =>
+              setForm((prev) => ({ ...prev, trip, travelType: trip ? prev.travelType : null }))
+            }
+            onTravelTypeChange={(travelType) =>
+              setForm((prev) => ({ ...prev, travelType: prev.trip ? travelType : null }))
+            }
+            date={form.date}
+            currentTrip={storedTrip}
+          />
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>

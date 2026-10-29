@@ -76,18 +76,21 @@ export default function MultiSelect({
         setOpen(false);
       }
     };
+    // Captured and stopped so Escape closes only this menu, not a Modal around it.
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setOpen(false);
     };
 
     updateMenuPosition();
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", handleEscape, true);
     window.addEventListener("resize", updateMenuPosition);
     window.addEventListener("scroll", updateMenuPosition, true);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("keydown", handleEscape, true);
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };

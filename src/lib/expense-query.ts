@@ -171,9 +171,8 @@ export function groupedExpensePagePipeline(
     { $match: filter },
     {
       $group: {
-        _id: {
-          $cond: [{ $eq: [{ $type: "$trip" }, "objectId"] }, "$trip", "$_id"],
-        },
+        // Missing or null `trip` falls back to the expense's own id.
+        _id: { $ifNull: ["$trip", "$_id"] },
         latestDate: { $max: "$date" },
         latestCreatedAt: { $max: "$createdAt" },
         ids: { $push: "$_id" },

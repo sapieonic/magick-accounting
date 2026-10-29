@@ -11,6 +11,7 @@ import {
   Users,
   Shield,
   FileText,
+  Plane,
   Plus,
   Search,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const COMMANDS: Command[] = [
   { id: "new-expense", label: "Add Expense", hint: "Action", icon: Plus, href: "/dashboard/expenses/new" },
   { id: "overview", label: "Overview", hint: "Go to", icon: LayoutDashboard, href: "/dashboard" },
   { id: "expenses", label: "Expenses", hint: "Go to", icon: Receipt, href: "/dashboard/expenses" },
+  { id: "trips", label: "Trips", hint: "Go to", icon: Plane, href: "/dashboard/trips" },
   { id: "departments", label: "Departments", hint: "Go to", icon: Building2, href: "/dashboard/departments" },
   { id: "categories", label: "Categories", hint: "Go to", icon: Tag, href: "/dashboard/categories" },
   { id: "invoices", label: "Invoices", hint: "Go to", icon: FileText, href: "/dashboard/invoices", adminOnly: true },
