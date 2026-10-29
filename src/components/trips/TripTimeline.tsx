@@ -60,47 +60,49 @@ export default function TripTimeline({
   }
 
   return (
-    <ol data-testid="trip-timeline" className="relative space-y-5 pl-7" aria-label="Trip timeline">
-      {/* The rail the day markers sit on */}
+    <div className="relative">
+      {/* The rail the day markers sit on; outside the <ol>, which takes only <li>s */}
       <span aria-hidden="true" className="absolute bottom-3 left-[12.5px] top-2 w-px bg-line-strong/70" />
-      {sections.map((section) => {
-        const [primary, secondary] = section.label.split(" · ");
-        return (
-          <li key={section.key} className="relative" aria-label={section.label}>
-            <SectionMarker kind={section.kind} />
-            <div className="mb-2 flex items-baseline justify-between gap-3">
-              <h4 className="flex min-w-0 items-baseline gap-2 text-sm">
-                <span
-                  className={`font-semibold ${section.kind === "day" ? "text-foreground" : "italic text-muted"}`}
-                >
-                  {primary}
+      <ol data-testid="trip-timeline" className="relative space-y-5 pl-7" aria-label="Trip timeline">
+        {sections.map((section) => {
+          const [primary, secondary] = section.label.split(" · ");
+          return (
+            <li key={section.key} className="relative" aria-label={section.label}>
+              <SectionMarker kind={section.kind} />
+              <div className="mb-2 flex items-baseline justify-between gap-3">
+                <h4 className="flex min-w-0 items-baseline gap-2 text-sm">
+                  <span
+                    className={`font-semibold ${section.kind === "day" ? "text-foreground" : "italic text-muted"}`}
+                  >
+                    {primary}
+                  </span>
+                  {secondary && <span className="truncate text-xs font-medium text-muted-foreground">{secondary}</span>}
+                  <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:inline">
+                    &middot; {section.items.length} expense{section.items.length !== 1 ? "s" : ""}
+                  </span>
+                </h4>
+                <span className="flex-shrink-0 text-xs font-semibold tabular-nums text-muted" title="Section total">
+                  {formatBaseCurrency(section.total)}
                 </span>
-                {secondary && <span className="truncate text-xs font-medium text-muted-foreground">{secondary}</span>}
-                <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:inline">
-                  &middot; {section.items.length} expense{section.items.length !== 1 ? "s" : ""}
-                </span>
-              </h4>
-              <span className="flex-shrink-0 text-xs font-semibold tabular-nums text-muted" title="Section total">
-                {formatBaseCurrency(section.total)}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {section.items.map((expense) => (
-                <ExpenseCard
-                  key={expense._id}
-                  expense={expense}
-                  variant="nested"
-                  showDate={section.kind !== "day"}
-                  expanded={expandedId === expense._id}
-                  onToggle={() => setExpandedId((prev) => (prev === expense._id ? null : expense._id))}
-                  onDelete={onDelete}
-                  onRemoveFromTrip={onRemoveFromTrip}
-                />
-              ))}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+              </div>
+              <div className="space-y-2">
+                {section.items.map((expense) => (
+                  <ExpenseCard
+                    key={expense._id}
+                    expense={expense}
+                    variant="nested"
+                    showDate={section.kind !== "day"}
+                    expanded={expandedId === expense._id}
+                    onToggle={() => setExpandedId((prev) => (prev === expense._id ? null : expense._id))}
+                    onDelete={onDelete}
+                    onRemoveFromTrip={onRemoveFromTrip}
+                  />
+                ))}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }

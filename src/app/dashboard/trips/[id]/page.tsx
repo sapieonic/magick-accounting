@@ -308,8 +308,9 @@ export default function TripDetailPage() {
           action: {
             label: "Undo",
             onClick: () => {
+              // PUT rather than PATCH add: leaving the trip cleared the travel type.
               api
-                .patch(`/api/trips/${tripId}/expenses`, { add: [expense._id] })
+                .put(`/api/expenses/${expense._id}`, { trip: tripId, travelType: expense.travelType ?? null })
                 .then(() => load(true))
                 .catch((err) => toast(err instanceof Error ? err.message : "Failed to restore expense", "error"));
             },

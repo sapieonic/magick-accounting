@@ -343,6 +343,17 @@ export async function getGroupedExpensePage(
   const tripMap: Record<string, TripSummary> = {};
   for (const trip of trips) tripMap[String(trip._id)] = serializeTripSummary(trip, now);
 
+  // Expenses still pointing at a deleted trip mean a trip DELETE stopped
+  // between deleting the trip and unlinking its expenses; finish the unlink
+  // so they stop being counted as one item but shown as several.
+  const missingTripIds = tripIds.filter((id) => !tripMap[String(id)]);
+  if (missingTripIds.length > 0) {
+    await Expense.updateMany(
+      { trip: { $in: missingTripIds } },
+      { $set: { trip: null, travelType: null } }
+    );
+  }
+
   return { expenses: await withLinkedAssetCounts(ordered), trips: tripMap, total };
 }
 

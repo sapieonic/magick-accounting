@@ -32,6 +32,7 @@ vi.mock("@/models/Expense", () => ({
     aggregate: vi.fn(),
     find: vi.fn(),
     countDocuments: vi.fn(),
+    updateMany: vi.fn(),
   },
 }));
 vi.mock("@/models/Currency", () => ({ default: { findById: vi.fn(), findOne: vi.fn() } }));
@@ -427,6 +428,11 @@ describe("GET /api/expenses", () => {
     expect(body.expenses.map((e: { title: string }) => e.title)).toEqual(["Orphan"]);
     expect(body.trips).toEqual({});
     expect((vi.mocked(Trip.find).mock.calls[0] as unknown[])[0]).toEqual({ _id: { $in: [deletedTrip] } });
+    // Finishes the interrupted trip delete so the orphan stops being a trip item.
+    expect(Expense.updateMany).toHaveBeenCalledWith(
+      { trip: { $in: [deletedTrip] } },
+      { $set: { trip: null, travelType: null } }
+    );
   });
 
   it("handles a page with no matches", async () => {

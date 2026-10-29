@@ -81,9 +81,14 @@ export default function NewExpensePage() {
   const { trips, loaded: tripsLoaded } = useTripOptions();
   // `?trip=<id>`: the trip page's "Add expense" opens the form inside that trip
   // and gets the user back to it afterwards.
-  const [prefillTripId] = useState(() =>
-    typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("trip") ?? ""
-  );
+  // Read after mount: on a client-side navigation Next updates the URL only
+  // once the new page has rendered, so a render-time read sees the old URL.
+  const [prefillTripId, setPrefillTripId] = useState("");
+  const [urlRead, setUrlRead] = useState(false);
+  useEffect(() => {
+    setPrefillTripId(new URLSearchParams(window.location.search).get("trip") ?? "");
+    setUrlRead(true);
+  }, []);
   const [openedFromTrip, setOpenedFromTrip] = useState("");
   const [prefillDone, setPrefillDone] = useState(false);
   // A category or department the user (or the receipt) chose is never
@@ -412,7 +417,7 @@ export default function NewExpensePage() {
   };
 
   // Hold the form back until `?trip=` is applied, so it doesn't flash empty.
-  if (loading || (prefillTripId && !prefillDone)) return <FormSkeleton />;
+  if (loading || !urlRead || (prefillTripId && !prefillDone)) return <FormSkeleton />;
 
   return (
     <div className="animate-fade-in">

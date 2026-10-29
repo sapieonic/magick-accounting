@@ -313,6 +313,25 @@ describe("TripDetailPage", () => {
     expect(toastMock).toHaveBeenCalledWith('Removed "Taj stay" from this trip', "success", expect.anything());
   });
 
+  it("undoing a removal puts the expense back with its travel type", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.put).mockResolvedValue({});
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    await user.click(screen.getByRole("button", { name: "Remove Taj stay" }));
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith('Removed "Taj stay" from this trip', "success", expect.anything()));
+    const options = toastMock.mock.calls.find(([message]) => message === 'Removed "Taj stay" from this trip')![2];
+    options.action.onClick();
+
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(`/api/expenses/${hotel._id}`, {
+        trip: TRIP_ID,
+        travelType: hotel.travelType ?? null,
+      })
+    );
+  });
+
   it("deletes an expense after the undo window, updating totals immediately", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

@@ -35,7 +35,8 @@ function statusHint(trip: TripListItem, today: string): string {
   const days = tripDayCount(trip);
   if (trip.status === "upcoming") {
     const until = differenceInCalendarDays(parseISO(dayKey(trip.startDate)), parseISO(today));
-    if (until <= 1) return "Starts tomorrow";
+    if (until <= 0) return "Starts today";
+    if (until === 1) return "Starts tomorrow";
     return `Starts in ${until} days`;
   }
   if (trip.status === "ongoing") {
@@ -43,7 +44,8 @@ function statusHint(trip: TripListItem, today: string): string {
     return `Day ${Math.min(Math.max(day, 1), days)} of ${days}`;
   }
   const ago = differenceInCalendarDays(parseISO(today), parseISO(dayKey(trip.endDate)));
-  if (ago <= 1) return "Ended yesterday";
+  if (ago <= 0) return "Ended today";
+  if (ago === 1) return "Ended yesterday";
   if (ago < 60) return `Ended ${ago} days ago`;
   return `${days} day${days !== 1 ? "s" : ""}`;
 }
