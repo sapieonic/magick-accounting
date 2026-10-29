@@ -90,6 +90,15 @@ export function buildExpenseFilter(
   if (categories.length === 1) filter.category = categories[0];
   else if (categories.length > 1) filter.category = { $in: categories };
 
+  // `trip=<id>` lists one trip's expenses; `trip=none` those in no trip.
+  const tripParam = searchParams.get("trip");
+  if (tripParam === "none") {
+    filter.trip = null;
+  } else {
+    const trip = toObjectId(tripParam);
+    if (trip) filter.trip = trip;
+  }
+
   if (search) {
     const regex = new RegExp(escapeRegExp(search), "i");
     filter.$or = [{ title: regex }, { description: regex }];
@@ -143,4 +152,39 @@ export async function getExpenseSummary(
     // With a payer filter: that person's own share, as Spend by User counts it.
     ...(payerSpend ? { payerSpend } : {}),
   };
+}
+
+/**
+ * Pipeline paginating the expenses matching `filter` as list *items*: every
+ * trip's matching expenses form one item, every other expense is its own.
+ * Items are ordered by their latest expense date, newest first. Returns one
+ * document `{ items: [{ _id, ids }], total: [{ count }] }`, where `ids` are
+ * the item's expense ids. A trip item's `_id` is the trip id, any other
+ * item's the expense id; a trip's expenses therefore always share a page.
+ */
+export function groupedExpensePagePipeline(
+  filter: Record<string, unknown>,
+  page: number,
+  limit: number
+) {
+  return [
+    { $match: filter },
+    {
+      $group: {
+        _id: {
+          $cond: [{ $eq: [{ $type: "$trip" }, "objectId"] }, "$trip", "$_id"],
+        },
+        latestDate: { $max: "$date" },
+        latestCreatedAt: { $max: "$createdAt" },
+        ids: { $push: "$_id" },
+      },
+    },
+    { $sort: { latestDate: -1, latestCreatedAt: -1, _id: -1 } },
+    {
+      $facet: {
+        items: [{ $skip: (page - 1) * limit }, { $limit: limit }, { $project: { ids: 1 } }],
+        total: [{ $count: "count" }],
+      },
+    },
+  ];
 }

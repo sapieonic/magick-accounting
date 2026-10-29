@@ -5,6 +5,7 @@ import {
   type PaymentEntrySource,
   type PaymentSource,
 } from "@/lib/expense";
+import { TRAVEL_TYPES, type TravelType } from "@/lib/trip";
 
 export interface IExpensePayment {
   paidBy: mongoose.Types.ObjectId;
@@ -34,6 +35,8 @@ export interface IExpense extends Document {
   payments: IExpensePayment[];
   receiptKey?: string;
   receiptFilename?: string;
+  trip?: mongoose.Types.ObjectId | null;
+  travelType?: TravelType | null;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -82,6 +85,10 @@ const ExpenseSchema = new Schema<IExpense>(
     payments: { type: [ExpensePaymentSchema], default: [] },
     receiptKey: { type: String },
     receiptFilename: { type: String },
+    // The business trip this expense belongs to, if any. `travelType` is only
+    // stored alongside a trip and is cleared when the expense leaves it.
+    trip: { type: Schema.Types.ObjectId, ref: "Trip", default: null },
+    travelType: { type: String, enum: TRAVEL_TYPES, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   },
   { timestamps: true }
@@ -92,6 +99,7 @@ ExpenseSchema.index({ department: 1, date: -1 });
 ExpenseSchema.index({ createdBy: 1, date: -1 });
 ExpenseSchema.index({ category: 1, date: -1 });
 ExpenseSchema.index({ currency: 1 });
+ExpenseSchema.index({ trip: 1, date: 1 });
 ExpenseSchema.index(
   { receiptKey: 1 },
   { unique: true, partialFilterExpression: { receiptKey: { $type: "string" } } }
