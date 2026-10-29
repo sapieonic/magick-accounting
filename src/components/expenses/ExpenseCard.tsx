@@ -33,24 +33,24 @@ const CATEGORY_COLORS: Record<string, string> = {
   "Miscellaneous": "bg-subtle text-muted border-line",
 };
 
-export function getCategoryColor(name: string): string {
+function getCategoryColor(name: string): string {
   return CATEGORY_COLORS[name] || "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30";
 }
 
-export function paymentSourceDetail(expense: ExpenseListItem): string {
+function paymentSourceDetail(expense: ExpenseListItem): string {
   if (expense.paymentSource !== "split") return paymentSourceLabel(expense.paymentSource);
   const { pocket, company } = getPaymentBreakdown(expense);
   const code = expense.currency?.code;
   return `Split · ${formatCurrency(pocket, code)} pocket / ${formatCurrency(company, code)} company`;
 }
 
-export function isImageFile(filename?: string): boolean {
+function isImageFile(filename?: string): boolean {
   if (!filename) return false;
   return /\.(jpg|jpeg|png|webp)$/i.test(filename);
 }
 
 /** Who paid, for the compact row: every payer of a shared bill, else the submitter. */
-export function expensePayerSummary(expense: ExpenseListItem): string {
+function expensePayerSummary(expense: ExpenseListItem): string {
   if (expense.paymentSource === "multiple" && expense.payments?.length) {
     const names = [...new Set(expense.payments.map(payerName))];
     if (names.length <= 2) return names.join(" & ");
@@ -59,7 +59,7 @@ export function expensePayerSummary(expense: ExpenseListItem): string {
   return expense.createdBy?.name ?? "";
 }
 
-export interface ExpenseCardProps {
+interface ExpenseCardProps {
   expense: ExpenseListItem;
   expanded: boolean;
   onToggle: () => void;
@@ -76,6 +76,8 @@ export interface ExpenseCardProps {
   variant?: "default" | "nested";
   /** `nested` only: show the date in the row (off inside a single day section). */
   showDate?: boolean;
+  /** Page the edit form goes back to after saving or cancelling, e.g. the trip. */
+  returnTo?: string;
 }
 
 export default function ExpenseCard({
@@ -87,6 +89,7 @@ export default function ExpenseCard({
   showTripBadge = false,
   variant = "default",
   showDate = true,
+  returnTo,
 }: ExpenseCardProps) {
   const { toast } = useToast();
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
@@ -120,6 +123,9 @@ export default function ExpenseCard({
   const foreign = Boolean(expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null);
   const trip = expense.trip ?? null;
   const tripBadge = showTripBadge && trip ? trip : null;
+  const editHref = `/dashboard/expenses/${expense._id}/edit${
+    returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""
+  }`;
 
   const quickActions = (
     <div
@@ -128,7 +134,7 @@ export default function ExpenseCard({
       }`}
     >
       <Link
-        href={`/dashboard/expenses/${expense._id}/edit`}
+        href={editHref}
         className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground"
         aria-label={`Edit ${expense.title}`}
         title="Edit"
@@ -426,7 +432,7 @@ export default function ExpenseCard({
 
             {/* Actions */}
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-              <Link href={`/dashboard/expenses/${expense._id}/edit`} className="btn-secondary text-sm">
+              <Link href={editHref} className="btn-secondary text-sm">
                 <Pencil className="h-4 w-4" /> Edit
               </Link>
               {onRemoveFromTrip && (

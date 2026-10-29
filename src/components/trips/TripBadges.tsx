@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { TRIP_STATUS_LABELS, type TripStatus } from "@/lib/trip";
 import type { TripPerson } from "@/types/trip";
 
-export const TRIP_STATUS_PILL_CLASSES: Record<TripStatus, string> = {
+const TRIP_STATUS_PILL_CLASSES: Record<TripStatus, string> = {
   ongoing:
     "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
   upcoming: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300",

@@ -100,4 +100,22 @@ describe("TripTimeline", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Delete$/ }));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ _id: "taxi" })));
   });
+
+  it("points Edit links back to returnTo when given", () => {
+    const { rerender } = render(<TripTimeline trip={trip} expenses={expenses} initialExpandedId="taxi" />);
+    expect(screen.getByRole("link", { name: "Edit Taxi home" })).toHaveAttribute("href", "/dashboard/expenses/taxi/edit");
+
+    rerender(
+      <TripTimeline trip={trip} expenses={expenses} initialExpandedId="taxi" returnTo="/dashboard/trips/trip-1" />
+    );
+    expect(screen.getByRole("link", { name: "Edit Taxi home" })).toHaveAttribute(
+      "href",
+      "/dashboard/expenses/taxi/edit?returnTo=%2Fdashboard%2Ftrips%2Ftrip-1"
+    );
+    // The expanded row's Edit button carries it too.
+    expect(screen.getByRole("link", { name: /^Edit$/ })).toHaveAttribute(
+      "href",
+      "/dashboard/expenses/taxi/edit?returnTo=%2Fdashboard%2Ftrips%2Ftrip-1"
+    );
+  });
 });

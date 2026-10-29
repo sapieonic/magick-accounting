@@ -399,9 +399,11 @@ export default function NewExpensePage() {
       });
 
       toast(assets.length > 0 ? "Expense and company assets created" : "Expense created");
+      // Land on the trip the expense went into, else the one the form was opened from.
+      const tripId = form.trip || openedFromTrip;
       router.push(
-        openedFromTrip
-          ? `/dashboard/trips/${openedFromTrip}`
+        tripId
+          ? `/dashboard/trips/${tripId}`
           : assets.length > 0
             ? "/dashboard/assets"
             : "/dashboard/expenses"

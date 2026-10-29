@@ -38,19 +38,31 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [candidates, setCandidates] = useState<ExpenseListItem[]>([]);
+  // More matched than the endpoint returns (it sends the most recent ones).
+  const [truncated, setTruncated] = useState(false);
   // Kept as a map so a selection survives changing the search.
   const [selected, setSelected] = useState<Map<string, ExpenseListItem>>(new Map());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set once the open-reset has applied, so a reopen fetches once, with the
+  // cleared search, and never shows the previous list.
+  const [ready, setReady] = useState(false);
 
   // Start clean each time the modal opens.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setReady(false);
+      return;
+    }
     setSearchInput("");
     setSearch("");
+    setCandidates([]);
+    setTruncated(false);
     setSelected(new Map());
     setError(null);
+    setLoading(true);
+    setReady(true);
   }, [isOpen]);
 
   useEffect(() => {
@@ -59,14 +71,16 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
   }, [searchInput]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !ready) return;
     let active = true;
     setLoading(true);
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
     api
       .get(`/api/trips/${tripId}/candidates${query}`)
-      .then((data: { expenses?: ExpenseListItem[] }) => {
-        if (active) setCandidates(data.expenses || []);
+      .then((data: { expenses?: ExpenseListItem[]; truncated?: boolean }) => {
+        if (!active) return;
+        setCandidates(data.expenses || []);
+        setTruncated(Boolean(data.truncated));
       })
       .catch((err) => {
         if (active) setError(err instanceof Error ? err.message : "Failed to load expenses");
@@ -77,7 +91,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
     return () => {
       active = false;
     };
-  }, [isOpen, tripId, search]);
+  }, [isOpen, ready, tripId, search]);
 
   const toggle = (expense: ExpenseListItem) => {
     setSelected((current) => {
@@ -133,7 +147,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
         />
       </label>
 
-      {loading && candidates.length === 0 ? (
+      {!ready || (loading && candidates.length === 0) ? (
         <div className="space-y-2" role="status" aria-label="Loading expenses">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-xl" />
@@ -158,13 +172,14 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
             aria-pressed={allSelected}
           >
             <Checkbox checked={allSelected} partial={visibleSelected > 0 && !allSelected} />
-            Select all ({candidates.length})
+            {truncated ? "Select all shown" : "Select all"} ({candidates.length})
             {loading && <Spinner size="sm" className="ml-auto" />}
           </button>
           <ul className="max-h-[min(50vh,24rem)] divide-y divide-line overflow-y-auto">
             {candidates.map((expense) => {
               const isSelected = selected.has(expense._id);
               const code = expense.currency?.code || "INR";
+              const foreign = Boolean(expense.currency && !expense.currency.isBase);
               return (
                 <li key={expense._id}>
                   <label
@@ -193,7 +208,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
                       <p className="text-sm font-semibold tabular-nums text-foreground">
                         {formatCurrency(expense.amount, code)}
                       </p>
-                      {code !== "INR" && expense.amountInBaseCurrency != null && (
+                      {foreign && expense.amountInBaseCurrency != null && (
                         <p className="text-[11px] tabular-nums text-muted-foreground">
                           {formatBaseCurrency(expense.amountInBaseCurrency)}
                         </p>
@@ -204,6 +219,11 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
               );
             })}
           </ul>
+          {truncated && (
+            <p className="border-t border-line bg-subtle/30 px-4 py-2 text-xs text-muted-foreground">
+              Showing the {candidates.length} most recent — search to narrow it down.
+            </p>
+          )}
         </div>
       )}
 

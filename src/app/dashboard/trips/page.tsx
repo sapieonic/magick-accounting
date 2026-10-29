@@ -7,6 +7,7 @@ import { differenceInCalendarDays, parseISO } from "date-fns";
 import { CalendarDays, MapPin, Plane, Plus, Receipt, Search, X } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatBaseCurrency } from "@/lib/currency";
 import { dayKey, formatTripDates, todayKey, tripDayCount, withViewerStatus, type TripStatus } from "@/lib/trip";
 import { useTitle } from "@/hooks/useTitle";
@@ -76,7 +77,7 @@ function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
   );
 }
 
-function TripCard({ trip, today }: { trip: TripListItem; today: string }) {
+function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: string; showBudget: boolean }) {
   const days = tripDayCount(trip);
   return (
     <Link
@@ -121,7 +122,8 @@ function TripCard({ trip, today }: { trip: TripListItem; today: string }) {
         {statusHint(trip, today)}
       </TripStatusPill>
 
-      {trip.budget != null && <BudgetBar spent={trip.totalAmount} budget={trip.budget} />}
+      {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
+      {showBudget && trip.budget != null && <BudgetBar spent={trip.totalAmount} budget={trip.budget} />}
 
       <div className="mt-auto flex items-end justify-between gap-3 border-t border-line pt-3">
         <TravelerAvatars travelers={trip.travelers} />
@@ -157,6 +159,7 @@ function TripsSkeleton() {
 export default function TripsPage() {
   useTitle("Trips");
   const router = useRouter();
+  const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [trips, setTrips] = useState<TripListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,6 +242,9 @@ export default function TripsPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Flights, stays and meals for each business trip, grouped in one place.
           </p>
+          {!isAdmin && (
+            <p className="mt-1 text-xs text-muted-foreground">Totals and expense counts include only your own expenses.</p>
+          )}
         </div>
         <button type="button" onClick={() => setModalOpen(true)} className="btn-primary">
           <Plus className="h-4 w-4" /> New trip
@@ -310,7 +316,7 @@ export default function TripsPage() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {section.items.map((trip) => (
-                  <TripCard key={trip._id} trip={trip} today={today} />
+                  <TripCard key={trip._id} trip={trip} today={today} showBudget={isAdmin} />
                 ))}
               </div>
             </section>

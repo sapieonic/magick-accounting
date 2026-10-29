@@ -356,6 +356,16 @@ describe("ExpensesPage", () => {
       expect(window.location.search).toContain("view=flat");
     });
 
+    it("counts items while grouped even when no trip is on the loaded page", async () => {
+      listedExpenses = [expense];
+      listedTrips = {};
+      listedItemTotal = 30;
+      render(<ExpensesPage />);
+
+      expect(await screen.findByText("Showing 1 of 30 items · each trip counts as one")).toBeInTheDocument();
+      expect(screen.queryByText(/of 30 expenses/)).not.toBeInTheDocument();
+    });
+
     it("starts flat when the URL says view=flat", async () => {
       window.history.replaceState(null, "", "/dashboard/expenses?view=flat");
       render(<ExpensesPage />);
@@ -378,7 +388,8 @@ describe("ExpensesPage", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Delete Beach hotel" }));
       expect(screen.queryByRole("button", { name: /^Goa client visit/ })).not.toBeInTheDocument();
-      expect(screen.getByText("Showing 1 of 1 expense")).toBeInTheDocument();
+      // Still grouped, so the count is of rows, not expenses.
+      expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
 
       // Undo the last delete: the cluster comes back with that expense.
       const undo = toastMock.mock.calls.at(-1)?.[2]?.action;

@@ -16,6 +16,8 @@ export interface TripTimelineProps {
   onRemoveFromTrip?: (expense: ExpenseListItem) => void;
   /** Expense to open initially (deep links). */
   initialExpandedId?: string | null;
+  /** Where an expense's Edit form returns to (e.g. this trip's page). */
+  returnTo?: string;
 }
 
 function SectionMarker({ kind }: { kind: TripDaySection<unknown>["kind"] }) {
@@ -41,6 +43,7 @@ export default function TripTimeline({
   onDelete,
   onRemoveFromTrip,
   initialExpandedId = null,
+  returnTo,
 }: TripTimelineProps) {
   const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId);
 
@@ -96,6 +99,7 @@ export default function TripTimeline({
                     onToggle={() => setExpandedId((prev) => (prev === expense._id ? null : expense._id))}
                     onDelete={onDelete}
                     onRemoveFromTrip={onRemoveFromTrip}
+                    returnTo={returnTo}
                   />
                 ))}
               </div>

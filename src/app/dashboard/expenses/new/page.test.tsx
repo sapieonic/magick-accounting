@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import NewExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -79,7 +79,7 @@ describe("NewExpensePage split payment", () => {
     expect(screen.getByLabelText(/paid by company \(₹\)/i)).toHaveValue("379.75");
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({ amount: 500, paymentSource: "split", pocketAmount: 120.25 })
@@ -122,7 +122,7 @@ describe("NewExpensePage split payment", () => {
       .querySelector("input[type=file]") as HTMLInputElement;
     await user.upload(fileInput, new File(["receipt"], "cab.png", { type: "image/png" }));
 
-    await vi.waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(100));
+    await waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(100));
     expect(screen.getByLabelText(/payment source/i)).toHaveValue("split");
     expect(screen.getByLabelText(/paid from pocket/i)).toHaveValue(120);
     expect(screen.getByText(/pocket amount must be more than 0 and less than the total amount/i)).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("NewExpensePage split payment", () => {
     await fillRequiredFields(user, "500");
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({ paymentSource: "pocket", pocketAmount: null })
@@ -195,7 +195,7 @@ describe("NewExpensePage paid by several people", () => {
     );
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({
@@ -292,7 +292,7 @@ describe("NewExpensePage business trips", () => {
     expect(screen.getByLabelText(/^category/i)).toHaveValue("category-travel");
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({
@@ -344,12 +344,39 @@ describe("NewExpensePage business trips", () => {
     expect(screen.queryByRole("radiogroup", { name: /travel type/i })).not.toBeInTheDocument();
 
     submit();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith(
       "/api/expenses",
       expect.objectContaining({ trip: null, travelType: null })
     );
     expect(router.push).toHaveBeenCalledWith("/dashboard/expenses");
+  });
+
+  it("goes to the trip the expense was filed into after saving", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+    await user.selectOptions(screen.getByLabelText(/business trip/i), trip._id);
+
+    submit();
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/dashboard/trips/${trip._id}`));
+    expect(api.post).toHaveBeenCalledWith("/api/expenses", expect.objectContaining({ trip: trip._id }));
+  });
+
+  it("goes back to the trip it was opened from when the trip is cleared", async () => {
+    window.history.replaceState({}, "", `/dashboard/expenses/new?trip=${trip._id}`);
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    expect(await screen.findByLabelText(/business trip/i)).toHaveValue(trip._id);
+
+    await user.type(screen.getByLabelText(/^title/i), "Office snacks");
+    await user.type(screen.getByLabelText(/^amount/i), "300");
+    await user.selectOptions(screen.getByLabelText(/^category/i), "category-1");
+    await user.selectOptions(screen.getByLabelText(/business trip/i), "");
+
+    submit();
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/dashboard/trips/${trip._id}`));
+    expect(api.post).toHaveBeenCalledWith("/api/expenses", expect.objectContaining({ trip: null }));
   });
 
   it("applies the receipt's travel type once a trip is picked", async () => {
@@ -361,7 +388,7 @@ describe("NewExpensePage business trips", () => {
       "input[type=file]"
     ) as HTMLInputElement;
     await user.upload(fileInput, new File(["receipt"], "hotel.png", { type: "image/png" }));
-    await vi.waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(4200));
+    await waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(4200));
     expect(screen.queryByRole("radiogroup", { name: /travel type/i })).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText(/business trip/i), trip._id);

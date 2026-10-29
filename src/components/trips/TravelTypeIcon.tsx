@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { TravelType } from "@/lib/trip";
 
-export const TRAVEL_TYPE_ICONS: Record<TravelType, LucideIcon> = {
+const TRAVEL_TYPE_ICONS: Record<TravelType, LucideIcon> = {
   flight: Plane,
   train: TrainFront,
   bus: Bus,

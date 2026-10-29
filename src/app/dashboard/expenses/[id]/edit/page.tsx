@@ -53,6 +53,19 @@ interface LinkedAsset {
   allocatedAmount: number;
 }
 
+const DEFAULT_RETURN_TO = "/dashboard/expenses";
+
+/** `?returnTo=` if it's a dashboard path; anything else (other sites included) is ignored. */
+function readReturnTo(): string | null {
+  const value = new URLSearchParams(window.location.search).get("returnTo");
+  return value && value.startsWith("/dashboard/") && !value.startsWith("//") ? value : null;
+}
+
+function backLabel(returnTo: string): string {
+  if (returnTo === DEFAULT_RETURN_TO) return "Back to Expenses";
+  return returnTo.startsWith("/dashboard/trips/") ? "Back to Trip" : "Back";
+}
+
 export default function EditExpensePage() {
   useTitle("Edit Expense");
   const router = useRouter();
@@ -89,6 +102,15 @@ export default function EditExpensePage() {
   const [form, setForm] = useState(emptyForm);
   const [initialForm, setInitialForm] = useState(emptyForm);
   const [initialHadReceipt, setInitialHadReceipt] = useState(false);
+  // Where Back, Cancel and Save go, e.g. the trip the edit was opened from.
+  const [returnTo, setReturnTo] = useState(DEFAULT_RETURN_TO);
+
+  // Read after mount: on client navigation Next updates the URL only once
+  // the new page has rendered.
+  useEffect(() => {
+    const value = readReturnTo();
+    if (value) setReturnTo(value);
+  }, []);
 
   const [existingReceipt, setExistingReceipt] = useState<{ key: string; filename: string } | null>(null);
   const [newReceipt, setNewReceipt] = useState<{ file: File; filename: string } | null>(null);
@@ -118,7 +140,7 @@ export default function EditExpensePage() {
     if (isDirty && !window.confirm("Discard your changes to this expense?")) {
       return;
     }
-    router.push("/dashboard/expenses");
+    router.push(returnTo);
   };
 
   useEffect(() => {
@@ -271,7 +293,7 @@ export default function EditExpensePage() {
 
       await api.put(`/api/expenses/${params.id}`, updateData);
       toast("Expense updated");
-      router.push("/dashboard/expenses");
+      router.push(returnTo);
     } catch (err) {
       if (uploadedReceiptKey) {
         await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
@@ -295,7 +317,7 @@ export default function EditExpensePage() {
           className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Expenses
+          {backLabel(returnTo)}
         </button>
         <h1 className="text-2xl font-bold text-foreground">Edit Expense</h1>
       </div>

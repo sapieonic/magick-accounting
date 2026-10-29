@@ -400,8 +400,6 @@ export default function ExpensesPage() {
     }
   };
 
-  // Optimistically remove the expense and give the user a short undo window
-  // before the delete is committed to the server.
   // The list row an expense belongs to: its trip's cluster in the grouped
   // view, else its own row. Pagination counts rows, not expenses.
   const listItemKey = useCallback(
@@ -502,7 +500,6 @@ export default function ExpensesPage() {
   };
 
   const isFiltered = Boolean(search) || hasAnyFilter;
-  const hasClusters = listItems.some((item) => item.kind === "trip");
 
   if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
@@ -854,28 +851,28 @@ export default function ExpensesPage() {
                 )
               )}
 
-          {/* Pagination */}
-          <div className="flex flex-col items-center gap-3 pt-3">
-            <p className="text-xs text-muted-foreground">
-              {hasClusters
-                ? `Showing ${listItems.length} of ${totalCount} item${totalCount !== 1 ? "s" : ""} · each trip counts as one`
-                : `Showing ${listItems.length} of ${totalCount} expense${totalCount !== 1 ? "s" : ""}`}
-            </p>
-            {listItems.length < totalCount && (
-              <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
-                {loadingMore ? (
-                  <>
-                    <Spinner size="sm" /> Loading...
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="h-4 w-4" />
-                    Load more
-                  </>
+              {/* Pagination */}
+              <div className="flex flex-col items-center gap-3 pt-3">
+                <p className="text-xs text-muted-foreground">
+                  {groupTrips
+                    ? `Showing ${listItems.length} of ${totalCount} item${totalCount !== 1 ? "s" : ""} · each trip counts as one`
+                    : `Showing ${listItems.length} of ${totalCount} expense${totalCount !== 1 ? "s" : ""}`}
+                </p>
+                {listItems.length < totalCount && (
+                  <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
+                    {loadingMore ? (
+                      <>
+                        <Spinner size="sm" /> Loading...
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-4 w-4" />
+                        Load more
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
-            )}
-          </div>
+              </div>
             </div>
           )}
         </section>

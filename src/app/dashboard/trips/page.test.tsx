@@ -116,14 +116,26 @@ describe("TripsPage", () => {
     expect(within(ongoing).getByText("Mumbai → Pune")).toBeInTheDocument();
     expect(within(ongoing).getByText(formatBaseCurrency(9000))).toBeInTheDocument();
     expect(within(ongoing).getByText("3 expenses")).toBeInTheDocument();
-    // 90% of budget: shown as a warning.
-    expect(within(ongoing).getByRole("progressbar", { name: "Budget used" })).toHaveAttribute("aria-valuenow", "90");
+    // A user's total covers only their own expenses, so the trip budget isn't compared with it.
+    expect(within(ongoing).queryByRole("progressbar", { name: "Budget used" })).not.toBeInTheDocument();
+    expect(screen.getByText("Totals and expense counts include only your own expenses.")).toBeInTheDocument();
     expect(within(upcoming).getByText("Bengaluru client visit")).toBeInTheDocument();
     expect(within(past).getByText("Delhi offsite")).toBeInTheDocument();
     expect(within(past).getByText("1 expense")).toBeInTheDocument();
 
     expect(within(ongoing).getByRole("link")).toHaveAttribute("href", `/dashboard/trips/${"2".repeat(24)}`);
     expect(api.get).toHaveBeenCalledWith("/api/trips");
+  });
+
+  it("shows budget usage to admins", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { ...person, role: "admin" }, isAdmin: true } as any);
+    render(<TripsPage />);
+
+    const ongoing = await screen.findByRole("region", { name: "Ongoing" });
+    // 90% of budget: shown as a warning.
+    expect(within(ongoing).getByRole("progressbar", { name: "Budget used" })).toHaveAttribute("aria-valuenow", "90");
+    expect(within(ongoing).getByText("90%")).toBeInTheDocument();
+    expect(screen.queryByText("Totals and expense counts include only your own expenses.")).not.toBeInTheDocument();
   });
 
   it("shows the first-trip empty state", async () => {

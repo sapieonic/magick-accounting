@@ -22,7 +22,9 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
+import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
+import { getPaymentBreakdown } from "@/lib/expense";
 import { formatTripDates, travelTypeLabel, tripDayCount, withViewerStatus } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -40,15 +42,6 @@ import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/type
 
 const UNDO_WINDOW_MS = 5000;
 
-const round2 = (value: number) => Math.round(value * 100) / 100;
-
-function expenseShares(expense: ExpenseListItem) {
-  const base = expense.amountInBaseCurrency ?? expense.amount ?? 0;
-  // Mirrors pocketBaseExpr: legacy docs without the pocket field count by source.
-  const pocket = expense.pocketAmountInBaseCurrency ?? (expense.paymentSource === "company" ? 0 : base);
-  return { base, pocket, company: base - pocket };
-}
-
 /**
  * The server summary minus expenses still inside their undo window, so the
  * stats move the moment an expense is deleted. A "several people paid"
@@ -63,33 +56,41 @@ function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[])
     byPayer: summary.byPayer.map((row) => ({ ...row })),
   };
   for (const expense of removed) {
-    const { base, pocket, company } = expenseShares(expense);
-    next.totalAmount = round2(next.totalAmount - base);
-    next.pocketAmount = round2(next.pocketAmount - pocket);
-    next.companyAmount = round2(next.companyAmount - company);
+    const base = expense.amountInBaseCurrency ?? expense.amount ?? 0;
+    const { pocketBase: pocket, companyBase: company } = getPaymentBreakdown(expense);
+    next.totalAmount = roundMoney(next.totalAmount - base);
+    next.pocketAmount = roundMoney(next.pocketAmount - pocket);
+    next.companyAmount = roundMoney(next.companyAmount - company);
     next.expenseCount = Math.max(0, next.expenseCount - 1);
     const typeRow = next.byType.find((row) => row.travelType === (expense.travelType ?? null));
     if (typeRow) {
-      typeRow.total = round2(typeRow.total - base);
+      typeRow.total = roundMoney(typeRow.total - base);
       typeRow.count -= 1;
     }
     if (expense.paymentSource !== "multiple") {
       const payer = next.byPayer.find((row) => row.user._id === expense.createdBy?._id);
       if (payer) {
-        payer.totalSpend = round2(payer.totalSpend - base);
-        payer.pocketSpend = round2(payer.pocketSpend - pocket);
-        payer.companySpend = round2(payer.companySpend - company);
+        payer.totalSpend = roundMoney(payer.totalSpend - base);
+        payer.pocketSpend = roundMoney(payer.pocketSpend - pocket);
+        payer.companySpend = roundMoney(payer.companySpend - company);
       }
     }
   }
-  next.byType = next.byType.filter((row) => row.count > 0);
+  // Keep the server's order (largest first, untyped last) now the totals moved.
+  next.byType = next.byType
+    .filter((row) => row.count > 0)
+    .sort((a, b) => {
+      if (a.travelType === null) return 1;
+      if (b.travelType === null) return -1;
+      return b.total - a.total;
+    });
   next.byPayer = next.byPayer.filter((row) => row.totalSpend > 0.004);
   return next;
 }
 
 function BudgetProgress({ spent, budget }: { spent: number; budget: number }) {
   const { percent, over, width, barClass, textClass } = budgetUsage(spent, budget);
-  const remaining = round2(budget - spent);
+  const remaining = roundMoney(budget - spent);
   return (
     <div className="mt-3">
       <div
@@ -198,22 +199,29 @@ export default function TripDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+  // Only the latest load may apply: an earlier, slower GET mustn't overwrite a newer one.
+  const loadSeq = useRef(0);
   useTitle(data?.trip.name || "Trip");
 
   const syncPending = useCallback(() => setPendingIds([...pendingDeletes.current.keys()]), []);
 
   const load = useCallback(
     async (quiet: boolean) => {
+      const seq = ++loadSeq.current;
       if (quiet) setRefreshing(true);
       try {
         const result: TripDetailResponse = await api.get(`/api/trips/${tripId}`);
+        if (seq !== loadSeq.current) return;
         setData({ ...result, trip: withViewerStatus(result.trip) });
       } catch (err) {
+        if (seq !== loadSeq.current) return;
         toast(err instanceof Error ? err.message : "Failed to load trip", "error");
         if (!quiet) router.push("/dashboard/trips");
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (seq === loadSeq.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [tripId, router, toast]
@@ -356,11 +364,7 @@ export default function TripDetailPage() {
   const days = tripDayCount(trip);
   const newExpenseHref = `/dashboard/expenses/new?trip=${trip._id}`;
   const perDay = days > 0 ? summary.totalAmount / days : 0;
-  const byType = [...summary.byType].sort((a, b) => {
-    if (a.travelType === null) return 1;
-    if (b.travelType === null) return -1;
-    return b.total - a.total;
-  });
+  const byType = summary.byType;
   const typeTotal = byType.reduce((sum, row) => sum + Math.max(row.total, 0), 0);
 
   return (
@@ -464,14 +468,15 @@ export default function TripDetailPage() {
       {/* Stats */}
       <div className="grid gap-4 min-[420px]:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Total spend"
+          label={isAdmin ? "Total spend" : "Your spend"}
           value={formatBaseCurrency(summary.totalAmount)}
           hint={summary.expenseCount > 0 ? `≈ ${formatBaseCurrency(perDay)} per day` : undefined}
           icon={<TrendingUp className="h-5 w-5" />}
           iconClass="bg-gradient-to-br from-emerald-500 to-teal-500 text-white"
           className="border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50 dark:border-emerald-500/30 dark:from-emerald-500/10 dark:to-teal-500/10"
         >
-          {trip.budget != null && <BudgetProgress spent={summary.totalAmount} budget={trip.budget} />}
+          {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
+          {isAdmin && trip.budget != null && <BudgetProgress spent={summary.totalAmount} budget={trip.budget} />}
         </StatCard>
         <StatCard
           label="Paid from pocket"
@@ -503,7 +508,9 @@ export default function TripDetailPage() {
             <h2 id="spend-by-type" className="text-base font-bold text-foreground">
               Spend by type
             </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Where the trip money went.</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {isAdmin ? "Where the trip money went." : "Where your money on this trip went."}
+            </p>
             {typeTotal > 0 && (
               <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-subtle" aria-hidden="true">
                 {byType.map((row) => (
@@ -638,6 +645,7 @@ export default function TripDetailPage() {
             onDelete={handleDelete}
             onRemoveFromTrip={handleRemoveFromTrip}
             initialExpandedId={expandId}
+            returnTo={`/dashboard/trips/${trip._id}`}
           />
         )}
       </section>

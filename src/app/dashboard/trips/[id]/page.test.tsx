@@ -225,6 +225,56 @@ describe("TripDetailPage", () => {
     expect(await screen.findByText("Showing your expenses on this trip")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete trip" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit trip" })).not.toBeInTheDocument();
+    // Their total isn't the trip's, so it isn't measured against the trip budget.
+    expect(screen.queryByRole("progressbar", { name: "Budget used" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/left$/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Total spend")).not.toBeInTheDocument();
+    expect(screen.getByText("Your spend")).toBeInTheDocument();
+    expect(screen.getByText("Where your money on this trip went.")).toBeInTheDocument();
+  });
+
+  it("passes the trip page to the timeline as the edit return path", async () => {
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+    expect(timelineProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ returnTo: `/dashboard/trips/${TRIP_ID}` })
+    );
+  });
+
+  it("ignores an earlier refresh that resolves after a newer one", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.put).mockResolvedValue({});
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    // The refresh after the removal is slow; the one after Undo comes back first.
+    const withoutHotel = detail({
+      expenses: [flight],
+      summary: { ...detail().summary, totalAmount: 7000, expenseCount: 1, companyAmount: 0 },
+    });
+    let resolveSlow!: (value: TripDetailResponse) => void;
+    const slow = new Promise<TripDetailResponse>((resolve) => {
+      resolveSlow = resolve;
+    });
+    let tripGets = 0;
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === `/api/trips/${TRIP_ID}`) {
+        tripGets += 1;
+        return tripGets === 1 ? slow : Promise.resolve(detail());
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    await user.click(screen.getByRole("button", { name: "Remove Taj stay" }));
+    await waitFor(() => expect(tripGets).toBe(1));
+    const options = toastMock.mock.calls.find(([message]) => message === 'Removed "Taj stay" from this trip')![2];
+    options.action.onClick();
+    await waitFor(() => expect(tripGets).toBe(2));
+    await waitFor(() => expect(screen.queryByText("Refreshing...")).not.toBeInTheDocument());
+
+    await act(async () => resolveSlow(withoutHotel));
+    expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Taj stay");
+    expect(screen.getByText(formatBaseCurrency(12500))).toBeInTheDocument();
   });
 
   it("passes ?expand= to the timeline", async () => {

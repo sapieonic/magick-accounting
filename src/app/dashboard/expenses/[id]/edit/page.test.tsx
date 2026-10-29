@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EditExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -148,7 +148,7 @@ describe("EditExpensePage split payment", () => {
     await user.type(pocket, "250");
     submit();
 
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ paymentSource: "split", amount: 1000, pocketAmount: 250 })
@@ -158,7 +158,7 @@ describe("EditExpensePage split payment", () => {
     await user.selectOptions(screen.getByLabelText(/payment source/i), "company");
     submit();
 
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ paymentSource: "company", pocketAmount: null })
@@ -200,7 +200,7 @@ describe("EditExpensePage paid by several people", () => {
     await user.type(screen.getByLabelText(/^title/i), "Team offsite");
     submit();
 
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({
@@ -271,7 +271,7 @@ describe("EditExpensePage business trips", () => {
     expect(screen.getByRole("radio", { name: "Cab / local" })).toHaveAttribute("aria-checked", "true");
 
     submit();
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ trip: "66c1884c0853f8a76a4da399", travelType: "cab" })
@@ -289,7 +289,7 @@ describe("EditExpensePage business trips", () => {
     expect(screen.getByLabelText(/^category/i)).toHaveValue("category-1");
 
     submit();
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ trip: visibleTrip._id, travelType: "food" })
@@ -310,10 +310,54 @@ describe("EditExpensePage business trips", () => {
     confirmSpy.mockRestore();
 
     submit();
-    await vi.waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(api.put).toHaveBeenCalledWith(
       "/api/expenses/expense-1",
       expect.objectContaining({ trip: null, travelType: null })
     );
   });
+});
+
+describe("EditExpensePage returnTo", () => {
+  const tripPage = "/dashboard/trips/66c1884c0853f8a76a4da301";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "66c1884c0853f8a76a4da201" }, isAdmin: true } as any);
+    vi.mocked(api.put).mockResolvedValue({});
+    mockExpense(splitExpense);
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("goes back to the trip it was opened from on Back, Cancel and save", async () => {
+    window.history.replaceState({}, "", `/dashboard/expenses/expense-1/edit?returnTo=${encodeURIComponent(tripPage)}`);
+    const user = userEvent.setup();
+    render(<EditExpensePage />);
+
+    await user.click(await screen.findByRole("button", { name: /back to trip/i }));
+    expect(router.push).toHaveBeenLastCalledWith(tripPage);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(router.push).toHaveBeenLastCalledWith(tripPage);
+
+    submit();
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(3));
+    expect(router.push).toHaveBeenLastCalledWith(tripPage);
+  });
+
+  it.each(["https://evil.example/dashboard/", "//evil.example/dashboard/", "/settings"])(
+    "ignores returnTo=%s",
+    async (returnTo) => {
+      window.history.replaceState({}, "", `/dashboard/expenses/expense-1/edit?returnTo=${encodeURIComponent(returnTo)}`);
+      render(<EditExpensePage />);
+
+      await screen.findByLabelText(/payment source/i);
+      submit();
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith("/dashboard/expenses"));
+      expect(screen.getByRole("button", { name: /back to expenses/i })).toBeInTheDocument();
+    }
+  );
 });
