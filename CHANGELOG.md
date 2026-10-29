@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/sapieonic/magick-accounting/compare/v1.11.0...v1.12.0) (2026-10-29)
+
+
+### Features
+
+* group business travel expenses into trips ([#28](https://github.com/sapieonic/magick-accounting/issues/28)) ([02d2b6b](https://github.com/sapieonic/magick-accounting/commit/02d2b6b0b3ca296446edfedc7321337e256fa269))
+
 # [1.11.0](https://github.com/sapieonic/magick-accounting/compare/v1.10.0...v1.11.0) (2026-10-16)
 
 
