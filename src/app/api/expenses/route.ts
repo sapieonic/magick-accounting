@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const itemPage = Number.isFinite(page) && page > 0 ? page : 1;
     const itemLimit = Number.isFinite(limit) && limit > 0 ? limit : 20;
     const [grouped, summary] = await Promise.all([
-      getGroupedExpensePage(filter, itemPage, itemLimit),
+      getGroupedExpensePage(filter, itemPage, itemLimit, authResult),
       summaryPromise,
     ]);
     return NextResponse.json({

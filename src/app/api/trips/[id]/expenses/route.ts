@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { canViewTrip, isAdminUser } from "@/lib/trip-server";
-import { parseExpenseIdList } from "@/lib/trip-query";
+import { parseExpenseIdList, type LeanDoc } from "@/lib/trip-query";
 import Trip from "@/models/Trip";
 import Expense from "@/models/Expense";
 
@@ -40,8 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const trip: any = await Trip.findById(id).select("travelers createdBy").lean();
+  const trip: LeanDoc = await Trip.findById(id).select("travelers createdBy").lean();
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   if (!canViewTrip(trip, authResult)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });

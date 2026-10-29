@@ -353,7 +353,6 @@ describe("GET /api/expenses", () => {
   const orphan = expense("Orphan", "2026-10-03", deletedTrip);
   const docs = [hotel, flight, cab, lunch, books, orphan];
 
-
   function get(query: string) {
     return GET({ url: `http://localhost/api/expenses${query}` } as NextRequest);
   }
@@ -418,6 +417,39 @@ describe("GET /api/expenses", () => {
     expect(query.populate).toHaveBeenCalledWith("trip", "name");
     expect(query.populate).toHaveBeenCalledWith("payments.paidBy", "name email");
     expect(Expense.countDocuments).not.toHaveBeenCalled();
+  });
+
+  it("shows a user the trips they're on, and others' trips only as plain rows", async () => {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: String(asha),
+      email: "asha@example.com",
+      name: "Asha",
+      role: "user",
+    });
+
+    const onTrip = await (await get("?groupTrips=true&page=1&limit=3")).json();
+    expect(Object.keys(onTrip.trips)).toEqual([String(goa)]);
+
+    // Taken off the travelers (and not the creator): the cluster would link to
+    // a trip page that refuses them, so the expenses come back as singles.
+    vi.mocked(Trip.find).mockReturnValue(
+      chain([
+        {
+          _id: goa,
+          name: "Goa offsite",
+          destinations: ["Goa"],
+          startDate: new Date("2026-10-04T00:00:00.000Z"),
+          endDate: new Date("2026-10-06T00:00:00.000Z"),
+          travelers: [],
+          createdBy: oid(),
+        },
+      ]) as never
+    );
+    const offTrip = await (await get("?groupTrips=true&page=1&limit=3")).json();
+    expect(offTrip.trips).toEqual({});
+    expect(offTrip.expenses.map((e: { title: string }) => e.title)).toContain("Hotel");
+    // The trip still exists, so its expenses are not unlinked.
+    expect(Expense.updateMany).not.toHaveBeenCalled();
   });
 
   it("leaves a trip whose document is gone out of the trips map", async () => {

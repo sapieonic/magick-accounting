@@ -352,7 +352,6 @@ describe("buildExpenseFilter — trip", () => {
   });
 });
 
-
 function runPipeline(pipeline: unknown[], docs: Record<string, unknown>[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new Aggregator(pipeline as any[]).run(docs) as any[];

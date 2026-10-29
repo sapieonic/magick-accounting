@@ -198,7 +198,7 @@ export function groupByTripDay<T extends DatedAmount>(items: T[], trip: TripDate
   return sections;
 }
 
-export interface TravelTypeTotal {
+interface TravelTypeTotal {
   travelType: TravelType | null;
   total: number;
   count: number;
@@ -226,8 +226,9 @@ export function totalsByTravelType(
 // ---------------------------------------------------------------------------
 // Trip input validation, shared by the API and the trip form.
 
-const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}/;
+export const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+// A calendar day, optionally as a full ISO timestamp (stored dates round-trip as one).
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
 
 export const TRIP_LIMITS = {
   name: 120,
@@ -325,6 +326,9 @@ export function normalizeTripInput(body: Record<string, unknown>): TripInput {
 
   let budget: number | null = null;
   if (body.budget !== null && body.budget !== undefined && String(body.budget).trim() !== "") {
+    if (typeof body.budget !== "number" && typeof body.budget !== "string") {
+      throw new Error("Budget must be a valid non-negative number");
+    }
     budget = Number(body.budget);
     if (!Number.isFinite(budget) || budget < 0) {
       throw new Error("Budget must be a valid non-negative number");

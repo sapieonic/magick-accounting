@@ -113,12 +113,13 @@ describe("GET /api/trips/:id/candidates", () => {
     const response = await get();
 
     expect(response.status).toBe(200);
-    expect(titles(await response.json())).toEqual(
-      ["Cab (airport)", "Flight GOI", "Hotel extra", "Visa for Asha"].sort()
-    );
+    const body = await response.json();
+    expect(titles(body)).toEqual(["Cab (airport)", "Flight GOI", "Hotel extra", "Visa for Asha"].sort());
+    expect(body.truncated).toBe(false);
     const query = vi.mocked(Expense.find).mock.results[0].value;
-    expect(query.sort).toHaveBeenCalledWith({ date: 1, createdAt: 1, _id: 1 });
-    expect(query.limit).toHaveBeenCalledWith(100);
+    // Newest first, so a long tail of early bookings can't crowd out the trip itself.
+    expect(query.sort).toHaveBeenCalledWith({ date: -1, createdAt: -1, _id: -1 });
+    expect(query.limit).toHaveBeenCalledWith(101);
     expect(query.populate).toHaveBeenCalledWith("trip", "name");
     const filter = (vi.mocked(Expense.find).mock.calls[0] as unknown[])[0] as { date: { $gte: Date; $lte: Date } };
     expect(filter.date.$gte.toISOString()).toBe("2026-08-13T00:00:00.000Z");
@@ -128,6 +129,17 @@ describe("GET /api/trips/:id/candidates", () => {
   it("offers a traveler only their own expenses", async () => {
     signIn(ASHA, "user");
     expect(titles(await (await get()).json())).toEqual(["Flight GOI", "Hotel extra"]);
+  });
+
+  it("caps the list at 100 and says it was cut off", async () => {
+    signIn(ADMIN, "admin");
+    const many = Array.from({ length: 101 }, (_, i) => expense(`Bill ${i}`, "2026-10-13", ADMIN));
+    vi.mocked(Expense.find).mockReturnValue(chain(many) as never);
+
+    const body = await (await get()).json();
+
+    expect(body.expenses).toHaveLength(100);
+    expect(body.truncated).toBe(true);
   });
 
   it("searches titles with the input escaped", async () => {

@@ -117,7 +117,7 @@ describe("PATCH /api/trips/:id/expenses", () => {
     expect(await response.json()).toEqual({ added: 2, removed: 1 });
   });
 
-  it("lets the creator who isn't traveling, or an admin, move anyone's expenses", async () => {
+  it("lets an admin move anyone's expenses, and a creator who isn't traveling only their own", async () => {
     signIn(ADMIN, "admin");
     const response = await patch({ add: [E1, E2] });
 

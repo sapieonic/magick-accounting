@@ -3,7 +3,7 @@ import Expense from "@/models/Expense";
 import type { AuthUser } from "./auth";
 import { paidByFilter, payerSpendPipeline } from "./expense";
 
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

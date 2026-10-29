@@ -11,7 +11,7 @@ interface TripAccessFields {
 }
 
 /** Ids may arrive raw or populated (`{ _id }`); compare them as strings. */
-function idOf(value: unknown): string {
+export function idOf(value: unknown): string {
   if (value && typeof value === "object" && "_id" in value) {
     return String((value as { _id: unknown })._id);
   }
@@ -58,8 +58,7 @@ export async function resolveTripAssignment(
   if (raw === null || raw === "") return null;
   const id = typeof raw === "object" && raw && "_id" in raw ? idOf(raw) : String(raw);
   if (!mongoose.isValidObjectId(id)) throw new Error("Trip is invalid");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const trip: any = await Trip.findById(id).select("travelers createdBy").lean();
+  const trip = await Trip.findById(id).select("travelers createdBy").lean<TripAccessFields | null>();
   if (!trip) throw new Error("Trip is invalid");
   if (!canViewTrip(trip, user)) throw new Error("You can only add expenses to trips you are on");
   return new mongoose.Types.ObjectId(id);
@@ -87,8 +86,17 @@ export function tripDocumentFields(input: TripInput) {
 }
 
 /** Stored trip back into the shape `normalizeTripInput` accepts, for merging updates. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function storedTripInput(trip: any): Record<string, unknown> {
+export function storedTripInput(trip: {
+  name: string;
+  purpose?: string;
+  destinations?: string[];
+  startDate: Date | string;
+  endDate: Date | string;
+  travelers?: unknown[];
+  department?: unknown;
+  budget?: number | null;
+  notes?: string;
+}): Record<string, unknown> {
   return {
     name: trip.name,
     purpose: trip.purpose,

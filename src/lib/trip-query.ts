@@ -2,9 +2,9 @@ import mongoose, { type PipelineStage } from "mongoose";
 import type { AuthUser } from "@/lib/auth";
 import { roundMoney } from "@/lib/asset";
 import { baseTotalExpr, companyBaseExpr, pocketBaseExpr, spendByPayerPipeline } from "@/lib/expense";
-import { buildExpenseFilter, groupedExpensePagePipeline } from "@/lib/expense-query";
-import { getTripStatus, totalsByTravelType, type TravelType } from "@/lib/trip";
-import { canManageTrip, TRIP_TRAVELER_FIELDS } from "@/lib/trip-server";
+import { buildExpenseFilter, escapeRegExp, groupedExpensePagePipeline } from "@/lib/expense-query";
+import { getTripStatus, OBJECT_ID_PATTERN, totalsByTravelType, type TravelType } from "@/lib/trip";
+import { canManageTrip, canViewTrip, idOf, isAdminUser, TRIP_TRAVELER_FIELDS } from "@/lib/trip-server";
 import Expense from "@/models/Expense";
 import Asset from "@/models/Asset";
 import Trip from "@/models/Trip";
@@ -22,11 +22,7 @@ import type {
 
 // Lean Mongo documents; their shape is described by the serializers below.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LeanDoc = any;
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+export type LeanDoc = any;
 
 function isoDate(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value);
@@ -81,6 +77,12 @@ export function tripExpenseFilter(tripId: string, user: AuthUser): Record<string
 /** Oldest first; same-day expenses in the order they were entered. */
 export const TRIP_EXPENSE_SORT = { date: 1, createdAt: 1, _id: 1 } as const;
 
+/**
+ * Newest first, so when more than `CANDIDATE_LIMIT` match, the ones dated
+ * during and right after the trip are kept over bookings long before it.
+ */
+export const CANDIDATE_SORT = { date: -1, createdAt: -1, _id: -1 } as const;
+
 function compareTripExpenses(a: LeanDoc, b: LeanDoc): number {
   const byDate = new Date(a.date).getTime() - new Date(b.date).getTime();
   if (byDate !== 0) return byDate;
@@ -101,7 +103,7 @@ export function populateTripRefs<Q extends { populate: (...args: any[]) => any }
     .populate("department", "name");
 }
 
-export function tripPerson(user: LeanDoc | null | undefined): TripPerson {
+function tripPerson(user: LeanDoc | null | undefined): TripPerson {
   if (!user || typeof user !== "object" || !("email" in user)) {
     // A deleted user, or an unpopulated id.
     return { _id: user ? String(user._id ?? user) : "", name: "Unknown user", email: "" };
@@ -114,7 +116,7 @@ export function tripPerson(user: LeanDoc | null | undefined): TripPerson {
   };
 }
 
-export function serializeTripSummary(trip: LeanDoc, now: Date = new Date()): TripSummary {
+function serializeTripSummary(trip: LeanDoc, now: Date = new Date()): TripSummary {
   return {
     _id: String(trip._id),
     name: trip.name,
@@ -126,7 +128,7 @@ export function serializeTripSummary(trip: LeanDoc, now: Date = new Date()): Tri
   };
 }
 
-export interface TripTotals {
+interface TripTotals {
   expenseCount: number;
   totalAmount: number;
 }
@@ -304,7 +306,8 @@ interface GroupedItem {
 export async function getGroupedExpensePage(
   filter: Record<string, unknown>,
   page: number,
-  limit: number
+  limit: number,
+  user: AuthUser
 ) {
   const [result] = await Expense.aggregate(
     groupedExpensePagePipeline(filter, page, limit) as PipelineStage[]
@@ -323,7 +326,7 @@ export async function getGroupedExpensePage(
       : Promise.resolve([]),
     tripIds.length > 0
       ? Trip.find({ _id: { $in: tripIds } })
-          .select("name destinations startDate endDate travelers")
+          .select("name destinations startDate endDate travelers createdBy")
           .populate("travelers", TRIP_TRAVELER_FIELDS)
           .lean()
       : Promise.resolve([]),
@@ -341,12 +344,20 @@ export async function getGroupedExpensePage(
 
   const now = new Date();
   const tripMap: Record<string, TripSummary> = {};
-  for (const trip of trips) tripMap[String(trip._id)] = serializeTripSummary(trip, now);
+  const existingTripIds = new Set<string>();
+  for (const trip of trips) {
+    existingTripIds.add(String(trip._id));
+    // Someone whose expense is in a trip they can't open (taken off the
+    // travelers, or moved there by an admin) sees it as a plain row instead.
+    if (isAdminUser(user) || canViewTrip(trip, user)) {
+      tripMap[String(trip._id)] = serializeTripSummary(trip, now);
+    }
+  }
 
   // Expenses still pointing at a deleted trip mean a trip DELETE stopped
   // between deleting the trip and unlinking its expenses; finish the unlink
   // so they stop being counted as one item but shown as several.
-  const missingTripIds = tripIds.filter((id) => !tripMap[String(id)]);
+  const missingTripIds = tripIds.filter((id) => !existingTripIds.has(String(id)));
   if (missingTripIds.length > 0) {
     await Expense.updateMany(
       { trip: { $in: missingTripIds } },
@@ -361,7 +372,7 @@ export async function getGroupedExpensePage(
 // Moving expenses into and out of a trip
 
 /** At most this many ids per `add` / `remove` list of one request. */
-export const TRIP_MOVE_LIMIT = 200;
+const TRIP_MOVE_LIMIT = 200;
 
 /** Validates one id list of `PATCH /api/trips/[id]/expenses`. Throws a user-facing message. */
 export function parseExpenseIdList(raw: unknown, field: string): mongoose.Types.ObjectId[] {
@@ -374,7 +385,7 @@ export function parseExpenseIdList(raw: unknown, field: string): mongoose.Types.
   const ids: mongoose.Types.ObjectId[] = [];
   for (const value of raw) {
     const id = typeof value === "string" ? value.trim().toLowerCase() : "";
-    if (!/^[a-f0-9]{24}$/.test(id)) throw new Error("Expense id is invalid");
+    if (!OBJECT_ID_PATTERN.test(id)) throw new Error("Expense id is invalid");
     if (seen.has(id)) continue;
     seen.add(id);
     ids.push(new mongoose.Types.ObjectId(id));
@@ -383,8 +394,8 @@ export function parseExpenseIdList(raw: unknown, field: string): mongoose.Types.
 }
 
 /** How far around the trip dates candidate expenses are looked for. */
-export const CANDIDATE_DAYS_BEFORE = 60;
-export const CANDIDATE_DAYS_AFTER = 14;
+const CANDIDATE_DAYS_BEFORE = 60;
+const CANDIDATE_DAYS_AFTER = 14;
 export const CANDIDATE_LIMIT = 100;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -405,15 +416,7 @@ export function tripCandidateFilter(
   const filter = buildExpenseFilter(params, user);
 
   if (!filter.createdBy) {
-    const submitters = new Set(
-      [...(trip.travelers ?? []), user._id].map((traveler) =>
-        String(
-          traveler && typeof traveler === "object" && "_id" in traveler
-            ? (traveler as { _id: unknown })._id
-            : traveler
-        )
-      )
-    );
+    const submitters = new Set([...(trip.travelers ?? []), user._id].map(idOf));
     filter.createdBy = {
       $in: [...submitters]
         .filter((id) => mongoose.isValidObjectId(id))

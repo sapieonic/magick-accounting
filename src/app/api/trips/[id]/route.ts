@@ -19,6 +19,7 @@ import {
   TRIP_EXPENSE_SORT,
   tripExpenseFilter,
   withLinkedAssetCounts,
+  type LeanDoc,
 } from "@/lib/trip-query";
 import Trip from "@/models/Trip";
 import Expense from "@/models/Expense";
@@ -62,16 +63,14 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   if (!mongoose.isValidObjectId(id)) return invalidId();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const trip: any = await populateTripRefs(Trip.findById(id)).lean();
+  const trip: LeanDoc = await populateTripRefs(Trip.findById(id)).lean();
   if (!trip) return notFound();
   if (!canViewTrip(trip, authResult)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const filter = tripExpenseFilter(id, authResult);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const expenses: any[] = await populateExpenseRefs(Expense.find(filter))
+  const expenses: LeanDoc[] = await populateExpenseRefs(Expense.find(filter))
     .sort(TRIP_EXPENSE_SORT)
     .lean();
   const [summary, expensesWithAssets] = await Promise.all([
@@ -99,8 +98,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   if (!mongoose.isValidObjectId(id)) return invalidId();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existing: any = await Trip.findById(id).lean();
+  const existing: LeanDoc = await Trip.findById(id).lean();
   if (!existing) return notFound();
   if (!canManageTrip(existing, authResult)) return cannotManage();
 
@@ -141,8 +139,7 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   if (!mongoose.isValidObjectId(id)) return invalidId();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const trip: any = await Trip.findById(id).select("travelers createdBy").lean();
+  const trip: LeanDoc = await Trip.findById(id).select("travelers createdBy").lean();
   if (!trip) return notFound();
   if (!canManageTrip(trip, authResult)) return cannotManage();
 

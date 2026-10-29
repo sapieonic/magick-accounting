@@ -9,6 +9,7 @@ import {
   serializeTripListItem,
   tripSearchFilter,
   visibleTripTotals,
+  type LeanDoc,
 } from "@/lib/trip-query";
 import Trip from "@/models/Trip";
 
@@ -20,8 +21,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const filter = tripSearchFilter(tripAccessFilter(authResult), searchParams.get("q"));
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const trips: any[] = await populateTripRefs(Trip.find(filter))
+  const trips: LeanDoc[] = await populateTripRefs(Trip.find(filter))
     .sort({ startDate: -1, createdAt: -1 })
     .lean();
   const totals = await visibleTripTotals(

@@ -101,6 +101,11 @@ describe("normalizeTripInput", () => {
   it("rejects days that don't exist instead of rolling them over", () => {
     expect(() => normalizeTripInput(validInput({ startDate: "2026-02-31" }))).toThrow("Start date is invalid");
     expect(() => normalizeTripInput(validInput({ endDate: "2026-13-01" }))).toThrow("End date is invalid");
+    expect(() => normalizeTripInput(validInput({ startDate: "2026-10-12garbage" }))).toThrow("Start date is required");
+    // Stored dates come back as full timestamps when an update is merged.
+    expect(normalizeTripInput(validInput({ startDate: "2026-10-12T00:00:00.000Z" })).startDate.toISOString()).toBe(
+      "2026-10-12T00:00:00.000Z"
+    );
   });
 
   it("lowercases and dedupes travelers, and needs at least one valid id", () => {
@@ -122,6 +127,7 @@ describe("normalizeTripInput", () => {
     );
     expect(() => normalizeTripInput(validInput({ department: "x" }))).toThrow("Department is invalid");
     expect(() => normalizeTripInput(validInput({ budget: -1 }))).toThrow("Budget must be a valid non-negative number");
+    expect(() => normalizeTripInput(validInput({ budget: true }))).toThrow("Budget must be a valid non-negative number");
   });
 
   it("limits text lengths", () => {

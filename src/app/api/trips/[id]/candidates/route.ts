@@ -5,10 +5,11 @@ import { connectDB } from "@/lib/mongodb";
 import { canViewTrip } from "@/lib/trip-server";
 import {
   CANDIDATE_LIMIT,
+  CANDIDATE_SORT,
   populateExpenseRefs,
-  TRIP_EXPENSE_SORT,
   tripCandidateFilter,
   withLinkedAssetCounts,
+  type LeanDoc,
 } from "@/lib/trip-query";
 import Trip from "@/models/Trip";
 import Expense from "@/models/Expense";
@@ -24,8 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Trip id is invalid" }, { status: 400 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const trip: any = await Trip.findById(id).select("startDate endDate travelers createdBy").lean();
+  const trip: LeanDoc = await Trip.findById(id).select("startDate endDate travelers createdBy").lean();
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   if (!canViewTrip(trip, authResult)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
@@ -33,11 +33,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { searchParams } = new URL(req.url);
   const filter = tripCandidateFilter(trip, authResult, searchParams.get("search"));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const expenses: any[] = await populateExpenseRefs(Expense.find(filter))
-    .sort(TRIP_EXPENSE_SORT)
-    .limit(CANDIDATE_LIMIT)
+  // One extra row tells whether the list was cut off.
+  const found: LeanDoc[] = await populateExpenseRefs(Expense.find(filter))
+    .sort(CANDIDATE_SORT)
+    .limit(CANDIDATE_LIMIT + 1)
     .lean();
+  const truncated = found.length > CANDIDATE_LIMIT;
 
-  return NextResponse.json({ expenses: await withLinkedAssetCounts(expenses) });
+  return NextResponse.json({
+    expenses: await withLinkedAssetCounts(found.slice(0, CANDIDATE_LIMIT)),
+    truncated,
+  });
 }
