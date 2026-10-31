@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TripsPage from "./page";
@@ -94,8 +94,14 @@ const trips = [
   }),
 ];
 
+// The fixtures' trip dates are fixed, while the pages derive each trip's
+// status from today's date, so pin "today" to keep the expectations stable.
+// Only Date is faked; timers and promises keep running normally.
+const TODAY = new Date("2026-10-29T12:00:00Z");
+
 describe("TripsPage", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
     vi.clearAllMocks();
     window.history.replaceState(null, "", "/dashboard/trips");
     vi.mocked(useAuth).mockReturnValue({ user: { ...person, role: "user" }, isAdmin: false } as any);
@@ -103,6 +109,10 @@ describe("TripsPage", () => {
       if (url.startsWith("/api/lookups")) return Promise.resolve({ members: [person], departments: [] });
       return Promise.resolve({ trips });
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("groups trips into Ongoing, Upcoming and Past sections", async () => {
