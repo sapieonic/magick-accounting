@@ -14,6 +14,7 @@ import {
   Plane,
   Plus,
   Search,
+  UserRound,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -35,6 +36,7 @@ const COMMANDS: Command[] = [
   { id: "trips", label: "Trips", hint: "Go to", icon: Plane, href: "/dashboard/trips" },
   { id: "departments", label: "Departments", hint: "Go to", icon: Building2, href: "/dashboard/departments" },
   { id: "categories", label: "Categories", hint: "Go to", icon: Tag, href: "/dashboard/categories" },
+  { id: "profile", label: "Profile & Telegram", hint: "Go to", icon: UserRound, href: "/dashboard/profile" },
   { id: "invoices", label: "Invoices", hint: "Go to", icon: FileText, href: "/dashboard/invoices", adminOnly: true },
   { id: "users", label: "Users", hint: "Go to", icon: Users, href: "/dashboard/admin/users", adminOnly: true },
   { id: "settings", label: "Settings", hint: "Go to", icon: Shield, href: "/dashboard/admin/settings", adminOnly: true },

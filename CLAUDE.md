@@ -16,7 +16,7 @@ Magick Accounting is a single-tenant expense management app (one organization pe
 - `npm run lint` — `next lint`; no ESLint config is committed, so this opens setup
 - `npx serverless deploy --stage prod` — provision the S3 receipts bucket from `serverless.yaml`
 
-Beyond the tests, validate manually in the app: auth, expense CRUD, role checks, receipt upload, AI auto-fill, invoice generation, trips (create, add expenses, clustered list).
+Beyond the tests, validate manually in the app: auth, expense CRUD, role checks, receipt upload, AI auto-fill, invoice generation, trips (create, add expenses, clustered list), Telegram (connect bot, link from profile, send a photo/PDF/forwarded message and save).
 
 ## Architecture
 
@@ -37,6 +37,8 @@ Beyond the tests, validate manually in the app: auth, expense CRUD, role checks,
 **Receipts (S3):** `src/lib/s3.ts` lazily resolves the bucket region via `GetBucketLocation` and caches the client. Uploads happen server-side through `/api/upload`; downloads use 1-hour presigned URLs. Expenses store `receiptKey` + `receiptFilename`.
 
 **AI auto-fill:** `/api/expenses/extract` sends a receipt image to a Databricks-hosted Claude endpoint via `src/lib/databricks.ts` (OpenAI-compatible chat completions). PDF receipts are first rasterized to PNG by `src/lib/pdf.ts` (`mupdf` WASM) since the vision model is image-only. `parseJsonResponse` strips code fences from model output.
+
+**Telegram bot:** Admins connect one bot in Settings (`/api/telegram/settings`): the token is verified with `getMe`, the webhook is registered at `<appUrl>/api/telegram/webhook` under a fresh secret, and both live in the `TelegramSettings` singleton (the token is never returned to the client). Users link from `/dashboard/profile`: `POST /api/telegram/link` stores a hashed one-time code on the `User` and returns a `t.me/<bot>?start=<code>` link; the bot's `/start <code>` sets `user.telegram`. The webhook route is the one API route without `verifyAuth` — it checks the `X-Telegram-Bot-Api-Secret-Token` header and dedupes by `update_id` (`TelegramUpdate`). `src/lib/telegram-bot.ts` turns photos, PDFs/images and forwarded text into a `TelegramDraft` (receipt uploaded to `receipts/<userId>/`, fields read by `extractExpense` in `src/lib/receipt-extract.ts`, shared with `/api/expenses/extract`), asks for missing fields with inline buttons, then `createExpenseFromDraft` saves it with the same currency/GST/payment rules as `POST /api/expenses`. Pure card rendering and callback payloads are in `src/lib/telegram-draft.ts`; the Bot API client is `src/lib/telegram.ts`.
 
 **Invoices:** `/api/invoices/generate/route.tsx` renders a GST invoice PDF with `@react-pdf/renderer` (`src/components/invoice/InvoiceDocument.tsx`). `InvoiceSettings` is a single company-wide document (HSN/SAC, company details). Use `api.postBlob` client-side for PDF downloads.
 

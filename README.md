@@ -25,6 +25,13 @@ Single-tenant by design — one organization per deployment.
 - Search and filter by department, category, or keyword
 - Responsive table view (desktop) and card view (mobile)
 
+### Add Expenses from Telegram
+- An admin connects the organization's Telegram bot once in **Settings → Telegram Bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL)
+- Each person links their own Telegram account from **Profile** (avatar menu → Profile & Telegram); the one-time link expires after 15 minutes
+- Send the bot a receipt photo, an invoice/receipt file (PDF, JPEG, PNG, WebP up to 10MB) or a forwarded message; AI reads it into a draft
+- The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save**, with the file attached as its receipt
+- Commands: `/help`, `/cancel` (discard the expense you're adding), `/unlink`. Only private chats are accepted
+
 ### Business Trips
 - Group a trip's flights, trains, stays, food and client meetings under one trip (name, destinations, dates, travelers, purpose, optional budget)
 - Tag each trip expense with a travel type; picking one pre-fills the category, and AI auto-fill suggests it
@@ -275,7 +282,7 @@ src/
 
 ## API Reference
 
-All API routes require a Firebase ID token in the `Authorization: Bearer <token>` header (except `/api/seed` and `/api/auth/verify`).
+All API routes require a Firebase ID token in the `Authorization: Bearer <token>` header (except `/api/seed`, `/api/auth/verify`, and `/api/telegram/webhook`, which Telegram authenticates with the webhook's secret token).
 
 | Method   | Endpoint                  | Access       | Description                        |
 |----------|---------------------------|--------------|------------------------------------|
@@ -319,6 +326,13 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 | `POST`   | `/api/upload`             | Authenticated| Get presigned upload URL           |
 | `GET`    | `/api/upload?key=...`     | Authenticated| Get presigned download URL         |
 | `POST`   | `/api/seed`               | Authenticated| Seed default data                  |
+| `GET`    | `/api/telegram/settings`  | Admin        | Bot connection and webhook status  |
+| `PUT`    | `/api/telegram/settings`  | Admin        | Connect/reconnect the bot (token, App URL) |
+| `DELETE` | `/api/telegram/settings`  | Admin        | Disconnect the bot                 |
+| `GET`    | `/api/telegram/link`      | Authenticated| Own Telegram link status           |
+| `POST`   | `/api/telegram/link`      | Authenticated| Issue a one-time `t.me` link code  |
+| `DELETE` | `/api/telegram/link`      | Authenticated| Unlink own Telegram account        |
+| `POST`   | `/api/telegram/webhook`   | Telegram (secret header) | Bot updates from Telegram |
 
 ## Scripts
 

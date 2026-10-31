@@ -10,6 +10,7 @@ import { InlineLoader } from "@/components/ui/Spinner";
 import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
 import Modal from "@/components/ui/Modal";
+import TelegramBotSettings from "@/components/settings/TelegramBotSettings";
 import { Globe, Plus, Trash2, Shield, Coins, Pencil, FileText } from "lucide-react";
 
 interface AllowedDomain {
@@ -238,7 +239,7 @@ export default function AdminSettingsPage() {
       <div className="flex items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground">Manage application access, security, and currencies.</p>
+          <p className="text-sm text-muted-foreground">Manage application access, security, currencies, and integrations.</p>
         </div>
         {refreshing && <InlineLoader label="Refreshing..." />}
       </div>
@@ -383,6 +384,9 @@ export default function AdminSettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Telegram Bot Section */}
+      <TelegramBotSettings />
 
       {/* Invoice Defaults Section */}
       <div className="card">
