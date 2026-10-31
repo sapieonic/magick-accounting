@@ -26,7 +26,7 @@ Single-tenant by design — one organization per deployment.
 - Responsive table view (desktop) and card view (mobile)
 
 ### Add Expenses from Telegram
-- An admin connects the organization's Telegram bot once in **Settings → Telegram Bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL)
+- An admin connects the organization's Telegram bot once in **Settings → Telegram Bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL). See [Set up the Telegram bot](#7-set-up-the-telegram-bot-optional)
 - Each person links their own Telegram account from **Profile** (avatar menu → Profile & Telegram): the one-time link expires after 15 minutes, and the bot asks them to confirm which account they're linking
 - Send the bot a receipt photo, an invoice/receipt file (PDF, JPEG, PNG, WebP up to 10MB) or a forwarded message; AI reads it into a draft
 - The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save**, with the file attached as its receipt. Reply to the expense card with a number to correct the amount; other details can be edited in the app after saving
@@ -190,6 +190,75 @@ Open [http://localhost:3000](http://localhost:3000).
    - INR as the base currency
    - Your email domain as the first allowed domain
 3. You are assigned the **Master Admin** role
+
+### 7. Set up the Telegram bot (optional)
+
+People can add expenses by sending receipts to a Telegram bot ([what it does](#add-expenses-from-telegram)). Each deployment uses its own bot, which an admin connects once in the app. No environment variables are needed, because the bot token is stored in the database.
+
+**Before you start**
+- The app must be reachable at a public **https** URL. Telegram delivers messages to `<App URL>/api/telegram/webhook` and can't reach `localhost` or plain http. For local development, see [Trying it locally](#trying-it-locally).
+- S3 must be configured, because the receipts people send are stored there like any other upload.
+- `DATABRICKS_TOKEN` is recommended. Without it the bot still works, but people type the details themselves instead of having them read from the receipt.
+- The hosting platform must allow the webhook request to run for up to 60 seconds, since reading a receipt can take a while. On Vercel, the route sets `maxDuration = 60`.
+
+**1. Create the bot in Telegram**
+1. Open [@BotFather](https://t.me/BotFather) and send `/newbot`.
+2. Pick a display name, e.g. *Magick Expenses*, and a username ending in `bot`, e.g. `magick_expenses_bot`.
+3. Copy the token BotFather replies with. It looks like `123456789:AAH4sJ…`. Keep it secret: anyone with it can control the bot.
+4. Optionally, give the bot a description (`/setdescription`) and a profile picture (`/setuserpic`). You don't need to set up commands, because the app registers `/help`, `/cancel` and `/unlink` itself.
+
+**2. Connect it in Magick Accounting** (admin)
+1. Go to **Settings → Telegram Bot**.
+2. Paste the token into **Bot token**.
+3. Check **App URL**. It defaults to the address you're browsing from, so change it if people reach the app at a different public address.
+4. Click **Connect bot**.
+
+The app then checks the token with Telegram, registers the webhook under a fresh secret, and shows **Connected to @your_bot**. From then on, the section shows how many people have linked and warns you if Telegram can't deliver messages.
+
+**3. Each person links their Telegram account**
+1. Open **Profile & Telegram** from the avatar menu (or press ⌘K and type *Profile*).
+2. Click **Link Telegram**, then **Open Telegram**.
+3. Tap **Start** in the chat with the bot, then **✅ Yes, link it**. The bot names the app account being linked, so check that it's yours.
+4. The profile page switches to *Linked to @username*.
+
+Each link works once and expires after 15 minutes. A Telegram account can be linked to only one app user. To disconnect, use **Unlink** on the profile page or send `/unlink` to the bot.
+
+**4. Send an expense**
+
+Send the bot one of:
+- a photo of a receipt
+- a PDF, JPEG, PNG or WebP file (max 10MB)
+- a forwarded payment or booking message
+
+The bot reads it, asks for anything missing (amount, category, department), and saves it when you tap **✅ Save expense**. The file is attached as the receipt. The bot only works in private chats, never in groups.
+
+#### Trying it locally
+
+1. Expose the dev server with a tunnel, e.g. `ngrok http 3000`.
+2. Open the app through the tunnel's `https://…` address, so **App URL** defaults to it, and connect the bot.
+3. When the tunnel address changes, click **Reconnect** in Settings and enter the new address. Leave the token field empty to keep the stored one.
+
+A bot can deliver to only one webhook at a time. Connecting a bot from a dev or staging app moves it away from production, so **create a separate bot for each environment**.
+
+#### Managing the connection
+
+| Situation | What to do |
+|-----------|------------|
+| The app moved to a new domain | **Reconnect** with the new App URL. Leave the token empty to keep the stored one. |
+| You want to use a different bot | **Reconnect** and paste the new token. The old bot stops receiving messages. People stay linked, but must open the new bot's chat. |
+| You want to turn it off | **Disconnect**. The bot stops accepting expenses. People stay linked, and it works again as soon as a bot is reconnected. |
+| The token leaked | In @BotFather, send `/revoke` for the bot, then **Reconnect** with the new token. |
+
+#### Troubleshooting
+
+| Symptom | Likely cause |
+|---------|--------------|
+| Connecting fails with *Telegram requires an https:// App URL* or *Telegram can't reach localhost* | Telegram needs a public https address; use your deployed URL or a tunnel. |
+| Settings warns *Telegram is sending updates to a different URL* | The bot was connected from another environment, or its webhook was changed outside the app. Click **Reconnect**. |
+| Settings shows *Telegram couldn't deliver messages to this app* | The App URL isn't reachable from the internet, its TLS certificate isn't valid, or requests are timing out. The warning includes Telegram's own error message. |
+| The bot replies *link your account* | That Telegram account isn't linked yet. Link it from **Profile & Telegram**. |
+| The bot says *Automatic reading isn't set up* | `DATABRICKS_TOKEN` is not set. The bot still works, but people type the details themselves. |
+| The bot doesn't reply at all | Check that the bot is connected in Settings, then check the server logs for `/api/telegram/webhook`. |
 
 ## Project Structure
 
@@ -378,6 +447,8 @@ The app can be deployed to any platform that supports Next.js:
 - **Docker** — add a Dockerfile with `node:18-alpine`, build, and serve
 
 Set all environment variables from `.env.example` in your deployment platform.
+
+If you use the Telegram bot, connect it from the deployed app (see [Set up the Telegram bot](#7-set-up-the-telegram-bot-optional)), and use a separate bot for each environment.
 
 Before the first deployment containing the asset register, take a database backup and run
 `npm run migrate:assets` once against the target MongoDB database. The migration backfills
