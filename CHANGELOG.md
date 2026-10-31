@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/sapieonic/magick-accounting/compare/v1.12.0...v1.13.0) (2026-10-31)
+
+
+### Features
+
+* add expenses by sending receipts to a Telegram bot ([#29](https://github.com/sapieonic/magick-accounting/issues/29)) ([bf57fcf](https://github.com/sapieonic/magick-accounting/commit/bf57fcfef43941f134b2c3480a9458be9e02bc13))
+
 # [1.12.0](https://github.com/sapieonic/magick-accounting/compare/v1.11.0...v1.12.0) (2026-10-29)
 
 
