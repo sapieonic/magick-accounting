@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeExtraction } from "./receipt-extract";
+import { isIsoDate, normalizeExtraction } from "./receipt-extract";
 
 const categories = [{ _id: "cat-travel", name: "Travel" }];
 const currencies = [
@@ -56,5 +56,22 @@ describe("normalizeExtraction", () => {
 
   it("rejects GST larger than the total", () => {
     expect(normalizeExtraction({ amount: 100, gstAmount: 120 }, categories, currencies).gstAmount).toBeNull();
+  });
+});
+
+describe("isIsoDate", () => {
+  it("accepts only real calendar dates", () => {
+    expect(isIsoDate("2026-10-31")).toBe(true);
+    expect(isIsoDate("2024-02-29")).toBe(true);
+    expect(isIsoDate("2026-02-31")).toBe(false);
+    expect(isIsoDate("2026-13-45")).toBe(false);
+    expect(isIsoDate("31/10/2026")).toBe(false);
+    expect(isIsoDate(null)).toBe(false);
+  });
+
+  it("falls back to today for an impossible extracted date", () => {
+    expect(normalizeExtraction({ date: "2026-02-31" }, categories, currencies, "2026-10-31").date).toBe(
+      "2026-10-31"
+    );
   });
 });

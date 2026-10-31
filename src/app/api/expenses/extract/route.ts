@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
-import { connectDB } from "@/lib/mongodb";
 import {
   extractExpense,
   isExtractableReceiptType,
@@ -34,7 +33,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await connectDB();
     const extracted = await extractExpense({
       kind: "file",
       buffer: Buffer.from(await file.arrayBuffer()),

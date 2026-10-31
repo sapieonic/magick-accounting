@@ -10,6 +10,8 @@ export interface ITelegramSettings extends Document {
   botUsername: string;
   /** Sent by Telegram in X-Telegram-Bot-Api-Secret-Token on every webhook call. */
   webhookSecret: string;
+  /** The secret before the last reconnect, still accepted so no update is refused mid-switch. */
+  previousWebhookSecret: string;
   /** Public https origin of this app; the webhook lives at <appUrl>/api/telegram/webhook. */
   appUrl: string;
   connectedBy: mongoose.Types.ObjectId | null;
@@ -25,6 +27,7 @@ const TelegramSettingsSchema = new Schema<ITelegramSettings>(
     botId: { type: Number, default: null },
     botUsername: { type: String, default: "" },
     webhookSecret: { type: String, default: "" },
+    previousWebhookSecret: { type: String, default: "" },
     appUrl: { type: String, default: "" },
     connectedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     connectedAt: { type: Date, default: null },

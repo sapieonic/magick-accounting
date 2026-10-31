@@ -3,8 +3,9 @@
 
 const API_BASE = "https://api.telegram.org";
 
-/** The largest file a bot may download through getFile. */
-export const TELEGRAM_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
+// Bound every call so a hung request can't use up the webhook's time budget.
+const API_TIMEOUT_MS = 15_000;
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 
 export class TelegramApiError extends Error {
   constructor(
@@ -54,6 +55,8 @@ export interface TelegramMessage {
   document?: TelegramDocument;
   /** Present on forwarded messages. */
   forward_origin?: unknown;
+  /** The message this one replies to (only its id is used). */
+  reply_to_message?: { message_id: number };
 }
 
 export interface TelegramCallbackQuery {
@@ -95,6 +98,7 @@ export async function callTelegram<T>(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
   } catch (err) {
     throw new TelegramApiError(
@@ -198,7 +202,9 @@ export async function downloadFile(token: string, fileId: string): Promise<Buffe
     file_id: fileId,
   });
   if (!file.file_path) throw new TelegramApiError("Telegram did not return a file path");
-  const res = await fetch(`${API_BASE}/file/bot${token}/${file.file_path}`);
+  const res = await fetch(`${API_BASE}/file/bot${token}/${file.file_path}`, {
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
   if (!res.ok) throw new TelegramApiError(`Could not download the file (${res.status})`);
   return Buffer.from(await res.arrayBuffer());
 }

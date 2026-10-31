@@ -26,6 +26,24 @@ export interface TelegramSettingsView {
   webhookError?: string | null;
 }
 
+/** Telegram keeps the last delivery error even after later deliveries succeed. */
+const RECENT_ERROR_MS = 60 * 60 * 1000;
+
+export function describeWebhookProblem(view: TelegramSettingsView): string | null {
+  if (view.webhookError) return `Couldn't check the bot with Telegram: ${view.webhookError}`;
+  const webhook = view.webhook;
+  if (!webhook) return null;
+  if (webhook.url !== view.webhookUrl) {
+    return "Telegram is sending updates to a different URL. Reconnect to fix it.";
+  }
+  const recent =
+    webhook.lastErrorDate && Date.now() - new Date(webhook.lastErrorDate).getTime() < RECENT_ERROR_MS;
+  if (webhook.lastErrorMessage && (recent || webhook.pendingUpdateCount > 0)) {
+    return `Telegram couldn't deliver messages to this app: ${webhook.lastErrorMessage}`;
+  }
+  return null;
+}
+
 function defaultAppUrl(): string {
   return typeof window === "undefined" ? "" : window.location.origin;
 }
@@ -87,12 +105,7 @@ export default function TelegramBotSettings() {
   };
 
   const showForm = view && (!view.configured || editing);
-  const webhookProblem =
-    view?.configured &&
-    (view.webhookError ||
-      (view.webhook && view.webhook.url !== view.webhookUrl
-        ? "Telegram is sending updates to a different URL. Reconnect to fix it."
-        : view.webhook?.lastErrorMessage));
+  const webhookProblem = view?.configured ? describeWebhookProblem(view) : null;
 
   return (
     <div className="card">

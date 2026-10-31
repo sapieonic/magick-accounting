@@ -62,6 +62,7 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
     const timer = setInterval(async () => {
       if (new Date(pending.expiresAt).getTime() < Date.now()) {
         setPending(null);
+        toast("That link expired. Tap Link Telegram to get a new one.", "error");
         return;
       }
       const data = await load();
@@ -77,9 +78,9 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
   const startLink = async () => {
     setCreating(true);
     try {
-      const data = (await api.post("/api/telegram/link")) as PendingLink;
-      setPending(data);
-      window.open(data.url, "_blank", "noopener,noreferrer");
+      // Not opened automatically: a window opened after an await is blocked
+      // as a popup, so the user taps "Open Telegram" instead.
+      setPending((await api.post("/api/telegram/link")) as PendingLink);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not create a link", "error");
     } finally {
@@ -129,7 +130,7 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
           <p className="text-sm text-muted-foreground">Couldn&apos;t load your Telegram status. Refresh to try again.</p>
         )}
 
-        {status && !status.available && (
+        {status && !status.available && !status.link && (
           <p className="text-sm text-muted">
             Telegram isn&apos;t set up for your organization yet.{" "}
             {isAdmin ? (
@@ -146,30 +147,45 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
           </p>
         )}
 
-        {status?.available && status.link && (
+        {status && !status.available && status.link && (
+          <p className="text-sm text-muted">
+            The Telegram bot is disconnected right now, so it isn&apos;t accepting expenses. Your account stays
+            linked and works again once an admin reconnects it.
+          </p>
+        )}
+
+        {status?.link && (
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <CircleCheck className="h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
               <div>
                 <p className="text-sm font-medium text-foreground">Linked to {linkedName}</p>
                 <p className="text-xs text-muted-foreground">
-                  Since {format(new Date(status.link.linkedAt), "d MMM yyyy")} · chat with{" "}
-                  <a
-                    href={status.botUrl ?? "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium text-brand-600 hover:underline dark:text-brand-400"
-                  >
-                    @{status.botUsername}
-                  </a>
+                  Since {format(new Date(status.link.linkedAt), "d MMM yyyy")}
+                  {status.botUrl && (
+                    <>
+                      {" "}
+                      · chat with{" "}
+                      <a
+                        href={status.botUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-brand-600 hover:underline dark:text-brand-400"
+                      >
+                        @{status.botUsername}
+                      </a>
+                    </>
+                  )}
                 </p>
               </div>
             </div>
             <div className="flex gap-2">
-              <a href={status.botUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="btn-secondary text-sm">
-                <ExternalLink className="h-4 w-4" />
-                Open bot
-              </a>
+              {status.botUrl && (
+                <a href={status.botUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary text-sm">
+                  <ExternalLink className="h-4 w-4" />
+                  Open bot
+                </a>
+              )}
               <button onClick={() => setConfirmUnlink(true)} className="btn-secondary text-sm">
                 <Unlink className="h-4 w-4" />
                 Unlink
@@ -195,8 +211,9 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
           <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-500/20 dark:bg-sky-500/5">
             <p className="text-sm font-medium text-foreground">Finish linking in Telegram</p>
             <p className="mt-1 text-sm text-muted">
-              Telegram should have opened. Tap <span className="font-medium">Start</span> in the chat with @
-              {status.botUsername}. This page updates once you&apos;re linked.
+              Open Telegram, tap <span className="font-medium">Start</span> in the chat with @{status.botUsername},
+              then confirm with <span className="font-medium">Yes, link it</span>. This page updates once you&apos;re
+              linked.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <a href={pending.url} target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">

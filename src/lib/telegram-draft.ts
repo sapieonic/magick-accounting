@@ -81,19 +81,62 @@ export function parseDraftAction(data: string | undefined): DraftAction | null {
   return value === undefined ? ({ type, draftId } as DraftAction) : null;
 }
 
+// Currency markers a typed amount may carry, before or after the number.
+const CURRENCY_MARKERS: [RegExp, string][] = [
+  [/^(rs\.?|₹)$/i, "INR"],
+  [/^\$$/, "USD"],
+  [/^€$/, "EUR"],
+  [/^£$/, "GBP"],
+  [/^[a-z]{3}$/i, ""], // an ISO code such as INR, usd or AED: used as typed
+];
+
+export interface AmountReply {
+  amount: number;
+  /** ISO code when the reply named a currency ("$50", "AED 120"), else null. */
+  currencyCode: string | null;
+}
+
+function currencyFromMarker(marker: string): string | null | undefined {
+  if (!marker) return null;
+  for (const [pattern, code] of CURRENCY_MARKERS) {
+    if (pattern.test(marker)) return code || marker.toUpperCase();
+  }
+  return undefined;
+}
+
 /**
- * Reads a typed amount such as "1250", "1,250.50", "₹ 450" or "Rs. 99.9".
- * Returns null for anything that isn't a single non-negative amount.
+ * Reads a typed amount such as "1250", "1,250.50", "₹ 450", "Rs. 99.9",
+ * "$50" or "120 AED". Returns null for anything that isn't a single
+ * non-negative amount (with at most one currency marker).
  */
-export function parseAmountReply(text: string): number | null {
-  const cleaned = text
+export function parseAmountReply(text: string): AmountReply | null {
+  const match = text
     .trim()
-    .replace(/^(rs\.?|inr|₹|\$|€|£)\s*/i, "")
-    .replace(/\s*(rs\.?|inr|₹|\/-)$/i, "")
-    .replace(/[,\s]/g, "");
+    .replace(/\/-$/, "")
+    .match(/^([^\d\s.,]*\.?)\s*([\d,]+(?:\.\d{1,2})?)\s*([^\d\s.,]*)$/);
+  if (!match) return null;
+  const [, before, digits, after] = match;
+  if (before && after) return null;
+  const currencyCode = currencyFromMarker(before || after);
+  if (currencyCode === undefined) return null;
+  const cleaned = digits.replace(/,/g, "");
   if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
   const amount = Number(cleaned);
-  return Number.isFinite(amount) ? amount : null;
+  return Number.isFinite(amount) ? { amount, currencyCode } : null;
+}
+
+// --- Account linking confirmation buttons ---
+
+export function encodeLinkConfirm(code: string): string {
+  return `lk:${code}`;
+}
+
+export const LINK_CANCEL = "lx";
+
+/** The link code from a "Yes, link" button, or null. */
+export function parseLinkConfirm(data: string | undefined): string | null {
+  const match = data?.match(/^lk:([A-Za-z0-9_-]{1,61})$/);
+  return match ? match[1] : null;
 }
 
 // --- Rendering ---
@@ -130,18 +173,30 @@ function summaryLines(draft: DraftSnapshot): string[] {
   return lines;
 }
 
+/** Telegram rejects keyboards with more than 100 buttons; keep room for the rest. */
+export const MAX_OPTION_BUTTONS = 90;
+
 function optionRows(
   options: DraftOption[],
   toAction: (id: string) => DraftAction
 ): InlineKeyboardButton[][] {
   const rows: InlineKeyboardButton[][] = [];
-  // Keep the keyboard a manageable size; Telegram rejects very large ones.
-  options.slice(0, 60).forEach((option, index) => {
+  options.slice(0, MAX_OPTION_BUTTONS).forEach((option, index) => {
     const button = { text: truncate(option.name, 30), callback_data: encodeDraftAction(toAction(option.id)) };
     if (index % 2 === 0) rows.push([button]);
     else rows[rows.length - 1].push(button);
   });
   return rows;
+}
+
+function optionNote(options: DraftOption[], noun: string): string[] {
+  if (options.length === 0) {
+    return [`<i>There are no ${noun} yet. Add one in the app, then send the receipt again.</i>`];
+  }
+  if (options.length > MAX_OPTION_BUTTONS) {
+    return [`<i>Showing the first ${MAX_OPTION_BUTTONS} ${noun}. Pick the closest one and change it in the app after saving.</i>`];
+  }
+  return [];
 }
 
 export function renderDraftCard(
@@ -164,7 +219,7 @@ export function renderDraftCard(
   }
   if (step === "category") {
     return {
-      html: [...lines, "", "Pick a <b>category</b>:"].join("\n"),
+      html: [...lines, "", "Pick a <b>category</b>:", ...optionNote(options.categories, "categories")].join("\n"),
       keyboard: [
         ...optionRows(options.categories, (value) => ({ type: "category", draftId, value })),
         [discard],
@@ -173,7 +228,7 @@ export function renderDraftCard(
   }
   if (step === "department") {
     return {
-      html: [...lines, "", "Pick a <b>department</b>:"].join("\n"),
+      html: [...lines, "", "Pick a <b>department</b>:", ...optionNote(options.departments, "departments")].join("\n"),
       keyboard: [
         ...optionRows(options.departments, (value) => ({ type: "department", draftId, value })),
         [discard],
@@ -181,7 +236,12 @@ export function renderDraftCard(
     };
   }
   return {
-    html: [...lines, "", "Save this expense?"].join("\n"),
+    html: [
+      ...lines,
+      "",
+      "Save this expense?",
+      "<i>Wrong amount? Reply to this message with the right one. Title, date and other details can be edited in the app after saving.</i>",
+    ].join("\n"),
     keyboard: [
       [{ text: "✅ Save expense", callback_data: encodeDraftAction({ type: "save", draftId }) }],
       [

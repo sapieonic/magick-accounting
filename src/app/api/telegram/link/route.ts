@@ -8,6 +8,7 @@ import {
   getConnectedBot,
   LINK_CODE_TTL_MS,
 } from "@/lib/telegram-server";
+import { discardPendingDrafts } from "@/lib/telegram-bot";
 import User from "@/models/User";
 
 // The signed-in user's own Telegram link, shown on their profile.
@@ -77,8 +78,12 @@ export async function DELETE(req: NextRequest) {
     .select("telegram")
     .lean();
 
-  // Let the Telegram side know, so the chat doesn't silently stop working.
+  // Drop half-finished drafts (and their uploaded receipts) with the link,
+  // and let the Telegram side know so the chat doesn't silently stop working.
   const bot = await getConnectedBot();
+  await discardPendingDrafts(authResult._id, bot).catch((err) =>
+    console.error("Could not discard Telegram drafts on unlink:", err)
+  );
   if (bot && before?.telegram?.chatId) {
     await sendMessage(
       bot.token,

@@ -25,6 +25,8 @@ export interface ITelegramDraft extends Document {
   receiptKey: string | null;
   receiptFilename: string | null;
   expense: mongoose.Types.ObjectId | null;
+  /** Set once the draft is saved or discarded; the row is deleted after it. */
+  expiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,13 +50,16 @@ const TelegramDraftSchema = new Schema<ITelegramDraft>(
     receiptKey: { type: String, default: null },
     receiptFilename: { type: String, default: null },
     expense: { type: Schema.Types.ObjectId, ref: "Expense", default: null },
+    expiresAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
 
 TelegramDraftSchema.index({ user: 1, status: 1, updatedAt: -1 });
-// Drafts are short-lived; drop them a month after their last change.
-TelegramDraftSchema.index({ updatedAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
+// Finished drafts are dropped once expiresAt passes. Pending drafts have no
+// expiresAt: a TTL delete would orphan their S3 receipt, so stale ones are
+// discarded by discardStaleDrafts instead, which also deletes the receipt.
+TelegramDraftSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.models.TelegramDraft ||
   mongoose.model<ITelegramDraft>("TelegramDraft", TelegramDraftSchema);

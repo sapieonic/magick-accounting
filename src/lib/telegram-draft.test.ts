@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   draftStep,
   encodeDraftAction,
+  encodeLinkConfirm,
+  LINK_CANCEL,
+  MAX_OPTION_BUTTONS,
+  parseLinkConfirm,
   parseAmountReply,
   parseDraftAction,
   renderDraftCard,
@@ -66,18 +70,42 @@ describe("draft actions", () => {
 
 describe("parseAmountReply", () => {
   it.each([
-    ["1250", 1250],
-    ["1,250.50", 1250.5],
-    ["₹ 450", 450],
-    ["Rs. 99.9", 99.9],
-    ["450/-", 450],
-    ["0", 0],
-  ])("reads %s", (input, expected) => {
-    expect(parseAmountReply(input)).toBe(expected);
+    ["1250", 1250, null],
+    ["1,250.50", 1250.5, null],
+    ["₹ 450", 450, "INR"],
+    ["₹450", 450, "INR"],
+    ["Rs. 99.9", 99.9, "INR"],
+    ["450/-", 450, null],
+    ["0", 0, null],
+    ["$50", 50, "USD"],
+    ["120 AED", 120, "AED"],
+    ["usd 12.5", 12.5, "USD"],
+    [".5", null, null],
+  ])("reads amount reply #%#", (input, amount, currencyCode) => {
+    if (amount === null) {
+      expect(parseAmountReply(input)).toBeNull();
+      return;
+    }
+    expect(parseAmountReply(input)).toEqual({ amount, currencyCode });
   });
 
-  it.each(["", "abc", "-5", "12.345", "1 2 3 four", "450 for lunch"])("rejects %s", (input) => {
-    expect(parseAmountReply(input)).toBeNull();
+  it.each(["", "abc", "-5", "12.345", "1 2 3 four", "450 for lunch", "$50 USD", "Lunch 450", "hi"])(
+    "rejects %s",
+    (input) => {
+      expect(parseAmountReply(input)).toBeNull();
+    }
+  );
+});
+
+describe("link confirmation payloads", () => {
+  it("round-trips a link code and rejects anything else", () => {
+    const code = "AbC_123-xyzAbC_123-xyz12";
+    expect(Buffer.byteLength(encodeLinkConfirm(code))).toBeLessThanOrEqual(64);
+    expect(parseLinkConfirm(encodeLinkConfirm(code))).toBe(code);
+    expect(parseLinkConfirm(LINK_CANCEL)).toBeNull();
+    expect(parseLinkConfirm("lk:")).toBeNull();
+    expect(parseLinkConfirm("lk:bad code")).toBeNull();
+    expect(parseLinkConfirm(undefined)).toBeNull();
   });
 });
 
@@ -117,6 +145,22 @@ describe("renderDraftCard", () => {
     });
   });
 
+  it("says when there is nothing to pick", () => {
+    const card = renderDraftCard(snapshot({ categoryName: null }), { ...options, categories: [] });
+    expect(card.html).toContain("There are no categories yet");
+    expect(card.keyboard.flat().map((b) => b.text)).toEqual(["❌ Discard"]);
+  });
+
+  it("caps very long lists inside Telegram's button limit and says so", () => {
+    const many = Array.from({ length: 120 }, (_, i) => ({
+      id: (0x66c1884c0853f8a76a4d0000n + BigInt(i)).toString(16).padStart(24, "0"),
+      name: `Dept ${i}`,
+    }));
+    const card = renderDraftCard(snapshot({ departmentName: null }), { ...options, departments: many });
+    expect(card.keyboard.flat()).toHaveLength(MAX_OPTION_BUTTONS + 1);
+    expect(card.html).toContain(`Showing the first ${MAX_OPTION_BUTTONS} departments`);
+  });
+
   it("offers save, changes and the payer toggle once complete", () => {
     const card = renderDraftCard(snapshot(), options);
     expect(card.html).toContain("Paid by me (reimbursable)");
@@ -124,6 +168,7 @@ describe("renderDraftCard", () => {
     const texts = card.keyboard.flat().map((b) => b.text);
     expect(texts).toContain("✅ Save expense");
     expect(texts).toContain("💳 Company paid instead");
+    expect(card.html).toContain("Reply to this message with the right one");
   });
 
   it("links the saved expense", () => {

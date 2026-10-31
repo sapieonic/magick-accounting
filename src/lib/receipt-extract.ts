@@ -1,3 +1,4 @@
+import { connectDB } from "@/lib/mongodb";
 import Category from "@/models/Category";
 import Currency from "@/models/Currency";
 import { callDatabricksClaude, parseJsonResponse, type ContentBlock } from "@/lib/databricks";
@@ -5,7 +6,7 @@ import { renderPdfFirstPageToPng } from "@/lib/pdf";
 import { isTravelType, TRAVEL_TYPES, type TravelType } from "@/lib/trip";
 
 // Shared AI extraction used by the web auto-fill (/api/expenses/extract) and
-// the Telegram bot. Callers must have connected to MongoDB already.
+// the Telegram bot.
 
 export const RECEIPT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export const RECEIPT_PDF_TYPE = "application/pdf";
@@ -68,6 +69,13 @@ Return ONLY a JSON object (no markdown, no commentary) with exactly these keys:
 If a value cannot be determined, use null (except "date"). Never invent values.`;
 }
 
+/** A real calendar date as YYYY-MM-DD (rejects e.g. 2026-02-31 or 2026-13-45). */
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function toNumber(value: unknown): number {
   return typeof value === "number" ? value : parseFloat(String(value ?? ""));
 }
@@ -106,10 +114,7 @@ export function normalizeExtraction(
     title: typeof parsed.title === "string" ? parsed.title.trim() : "",
     amount,
     gstAmount,
-    date:
-      typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)
-        ? parsed.date
-        : fallbackDate,
+    date: isIsoDate(parsed.date) ? parsed.date : fallbackDate,
     description: typeof parsed.description === "string" ? parsed.description.trim() : "",
     currency: currency ? String(currency._id) : null,
     category: category ? String(category._id) : null,
@@ -122,35 +127,39 @@ export function normalizeExtraction(
  * the vision model. Throws ReceiptExtractionError when the input is unreadable.
  */
 export async function extractExpense(source: ExtractionSource): Promise<ExtractedExpense> {
+  // Read the file before touching the DB, so an unreadable PDF is reported as
+  // such (422) even when something else is wrong.
+  let image: { mime: string; buffer: Buffer } | null = null;
+  if (source.kind === "file") {
+    image = { mime: source.mime, buffer: source.buffer };
+    // PDF receipts are rasterized to an image; the model only accepts images.
+    if (source.mime === RECEIPT_PDF_TYPE) {
+      try {
+        image = { mime: "image/png", buffer: renderPdfFirstPageToPng(source.buffer) };
+      } catch (err) {
+        console.error("PDF rasterization error:", err);
+        throw new ReceiptExtractionError("Could not read this PDF.");
+      }
+    }
+  }
+
+  await connectDB();
   const [categories, currencies] = await Promise.all([
     Category.find().select("name").lean(),
     Currency.find({ isActive: true }).select("code").lean(),
   ]);
   const categoryRows = categories as unknown as { _id: unknown; name: string }[];
   const currencyRows = currencies as unknown as { _id: unknown; code: string }[];
+  const currencyCodes = currencyRows.map((c) => c.code);
+  const categoryNames = categoryRows.map((c) => c.name);
   const date = today();
 
   const content: ContentBlock[] = [];
-  if (source.kind === "file") {
-    // PDF receipts are rasterized to an image; the model only accepts images.
-    let imageMime = source.mime;
-    let imageBuffer = source.buffer;
-    if (source.mime === RECEIPT_PDF_TYPE) {
-      try {
-        imageBuffer = renderPdfFirstPageToPng(source.buffer);
-        imageMime = "image/png";
-      } catch (err) {
-        console.error("PDF rasterization error:", err);
-        throw new ReceiptExtractionError("Could not read this PDF.");
-      }
-    }
-    const instruction = buildInstruction(
-      "a receipt image",
-      currencyRows.map((c) => c.code),
-      categoryRows.map((c) => c.name),
-      date
-    );
-    content.push({ type: "text", text: instruction });
+  if (source.kind === "file" && image) {
+    content.push({
+      type: "text",
+      text: buildInstruction("a receipt image", currencyCodes, categoryNames, date),
+    });
     if (source.note?.trim()) {
       content.push({
         type: "text",
@@ -159,13 +168,13 @@ export async function extractExpense(source: ExtractionSource): Promise<Extracte
     }
     content.push({
       type: "image_url",
-      image_url: { url: `data:${imageMime};base64,${imageBuffer.toString("base64")}` },
+      image_url: { url: `data:${image.mime};base64,${image.buffer.toString("base64")}` },
     });
-  } else {
+  } else if (source.kind === "text") {
     const instruction = buildInstruction(
       "a text message (for example a forwarded payment confirmation, booking email or note)",
-      currencyRows.map((c) => c.code),
-      categoryRows.map((c) => c.name),
+      currencyCodes,
+      categoryNames,
       date
     );
     content.push({ type: "text", text: `${instruction}\n\nThe message:\n"""${source.text}"""` });

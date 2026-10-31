@@ -27,9 +27,10 @@ Single-tenant by design — one organization per deployment.
 
 ### Add Expenses from Telegram
 - An admin connects the organization's Telegram bot once in **Settings → Telegram Bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL)
-- Each person links their own Telegram account from **Profile** (avatar menu → Profile & Telegram); the one-time link expires after 15 minutes
+- Each person links their own Telegram account from **Profile** (avatar menu → Profile & Telegram): the one-time link expires after 15 minutes, and the bot asks them to confirm which account they're linking
 - Send the bot a receipt photo, an invoice/receipt file (PDF, JPEG, PNG, WebP up to 10MB) or a forwarded message; AI reads it into a draft
-- The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save**, with the file attached as its receipt
+- The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save**, with the file attached as its receipt. Reply to the expense card with a number to correct the amount; other details can be edited in the app after saving
+- Expenses left unfinished for 7 days, or when someone unlinks, are discarded along with their uploaded receipt
 - Commands: `/help`, `/cancel` (discard the expense you're adding), `/unlink`. Only private chats are accepted
 
 ### Business Trips
@@ -213,9 +214,10 @@ src/
 │   │   │   └── [id]/page.tsx             # Asset detail, assignment and depreciation
 │   │   ├── departments/page.tsx          # Department management
 │   │   ├── categories/page.tsx           # Category management
+│   │   ├── profile/page.tsx              # Own profile + Telegram linking
 │   │   └── admin/
 │   │       ├── users/page.tsx            # User role management
-│   │       └── settings/page.tsx         # Domain whitelist management
+│   │       └── settings/page.tsx         # Domains, currencies, Telegram bot, invoice defaults
 │   └── api/
 │       ├── auth/
 │       │   ├── verify/route.ts           # Verify Firebase token + create user
@@ -246,6 +248,10 @@ src/
 │       ├── domains/
 │       │   ├── route.ts                  # GET / POST
 │       │   └── [id]/route.ts            # DELETE
+│       ├── telegram/
+│       │   ├── settings/route.ts        # GET / PUT / DELETE (admin: bot connection)
+│       │   ├── link/route.ts            # GET / POST / DELETE (own Telegram link)
+│       │   └── webhook/route.ts         # POST (updates from Telegram, secret header)
 │       ├── upload/route.ts               # POST (presigned upload URL) / GET (download URL)
 │       └── seed/route.ts                # POST (seed defaults)
 ├── lib/
@@ -258,19 +264,29 @@ src/
 │   ├── currency.ts                       # Currency formatting (Intl.NumberFormat)
 │   ├── trip.ts                           # Trip validation, travel types, day grouping (client-safe)
 │   ├── trip-server.ts                    # Trip access rules
-│   └── trip-query.ts                     # Trip queries, summaries, grouped expense list
+│   ├── trip-query.ts                     # Trip queries, summaries, grouped expense list
+│   ├── receipt-extract.ts                # AI receipt/message reading (web auto-fill + Telegram)
+│   ├── telegram.ts                       # Telegram Bot API client
+│   ├── telegram-server.ts                # Bot connection, webhook bookkeeping, link codes
+│   ├── telegram-bot.ts                   # Bot conversation: drafts, buttons, saving expenses
+│   └── telegram-draft.ts                 # Draft cards and button payloads (pure)
 ├── models/
-│   ├── User.ts                           # email, name, role, firebaseUid
+│   ├── User.ts                           # email, name, role, firebaseUid, telegram link
 │   ├── Department.ts                     # name, description, isDefault
 │   ├── Expense.ts                        # title, amount, currency, amountInBaseCurrency, receipt, trip, travelType
 │   ├── Trip.ts                           # name, destinations, dates, travelers, department, budget
 │   ├── Currency.ts                       # code, name, symbol, rateToBase, isBase
 │   ├── Category.ts                       # name, isDefault + DEFAULT_CATEGORIES list
-│   └── AllowedDomain.ts                  # domain, addedBy
+│   ├── AllowedDomain.ts                  # domain, addedBy
+│   ├── TelegramSettings.ts               # bot token, username, webhook secret, app URL (singleton)
+│   ├── TelegramDraft.ts                  # expense being added via Telegram, until saved
+│   └── TelegramUpdate.ts                 # processed webhook updates (dedupe)
 ├── components/
 │   ├── layout/
 │   │   ├── Sidebar.tsx                   # Desktop sidebar + mobile drawer
 │   │   └── Header.tsx                    # Top bar with user dropdown
+│   ├── profile/TelegramLinkCard.tsx      # Link / unlink Telegram
+│   ├── settings/TelegramBotSettings.tsx  # Admin: connect the Telegram bot
 │   └── ui/
 │       ├── Toast.tsx                     # Toast notification system (context-based)
 │       ├── Modal.tsx                     # Accessible modal dialog

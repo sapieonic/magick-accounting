@@ -43,8 +43,9 @@ const UserSchema = new Schema<IUser>(
       ),
       default: null,
     },
-    telegramLinkCodeHash: { type: String, default: null },
-    telegramLinkCodeExpiresAt: { type: Date, default: null },
+    // Never needed in a response; only matched against in queries.
+    telegramLinkCodeHash: { type: String, default: null, select: false },
+    telegramLinkCodeExpiresAt: { type: Date, default: null, select: false },
   },
   { timestamps: true }
 );
