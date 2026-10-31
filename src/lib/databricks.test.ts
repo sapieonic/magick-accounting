@@ -77,6 +77,7 @@ describe("callDatabricksClaude", () => {
     expect(init.method).toBe("POST");
     expect(init.headers.Authorization).toBe("Bearer test-token");
     expect(init.headers["Content-Type"]).toBe("application/json");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     const body = JSON.parse(init.body);
     expect(body.max_tokens).toBe(1234);
     expect(body.messages).toEqual([{ role: "user", content }]);

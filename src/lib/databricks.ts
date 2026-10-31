@@ -4,6 +4,8 @@
 const DEFAULT_BASE_URL =
   "https://adb-1673756548389184.4.azuredatabricks.net/serving-endpoints";
 const DEFAULT_MODEL = "databricks-claude-sonnet-4-6";
+// Fail rather than hang: the Telegram webhook has a bounded time budget.
+const REQUEST_TIMEOUT_MS = 45_000;
 
 export interface ContentBlock {
   type: "text" | "image_url";
@@ -37,6 +39,7 @@ export async function callDatabricksClaude(
       messages: [{ role: "user", content }],
       max_tokens: maxTokens,
     }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!res.ok) {

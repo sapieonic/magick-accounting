@@ -1,28 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
-import { connectDB } from "@/lib/mongodb";
-import Category from "@/models/Category";
-import Currency from "@/models/Currency";
-import { callDatabricksClaude, parseJsonResponse } from "@/lib/databricks";
-import { renderPdfFirstPageToPng } from "@/lib/pdf";
-import { isTravelType, TRAVEL_TYPES } from "@/lib/trip";
+import {
+  extractExpense,
+  isExtractableReceiptType,
+  RECEIPT_MAX_SIZE,
+  ReceiptExtractionError,
+} from "@/lib/receipt-extract";
 
 export const runtime = "nodejs";
-
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const PDF_TYPE = "application/pdf";
-
-interface ExtractedReceipt {
-  title?: string | null;
-  amount?: number | string | null;
-  gstAmount?: number | string | null;
-  currencyCode?: string | null;
-  category?: string | null;
-  date?: string | null;
-  description?: string | null;
-  travelType?: string | null;
-}
 
 export async function POST(req: NextRequest) {
   const authResult = await verifyAuth(req);
@@ -35,10 +20,10 @@ export async function POST(req: NextRequest) {
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
-    if (file.size > MAX_SIZE) {
+    if (file.size > RECEIPT_MAX_SIZE) {
       return NextResponse.json({ error: "File too large. Maximum size is 10MB." }, { status: 400 });
     }
-    if (!IMAGE_TYPES.includes(file.type) && file.type !== PDF_TYPE) {
+    if (!isExtractableReceiptType(file.type)) {
       return NextResponse.json(
         {
           error:
@@ -48,108 +33,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // PDF receipts are rasterized to an image; the model only accepts images.
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    let imageMime = file.type;
-    let imageBuffer: Buffer = fileBuffer;
-    if (file.type === PDF_TYPE) {
-      try {
-        imageBuffer = renderPdfFirstPageToPng(fileBuffer);
-        imageMime = "image/png";
-      } catch (err) {
-        console.error("PDF rasterization error:", err);
-        return NextResponse.json(
-          { error: "Could not read this PDF. Please fill the form manually." },
-          { status: 422 }
-        );
-      }
-    }
-
-    await connectDB();
-    const [categories, currencies] = await Promise.all([
-      Category.find().select("name").lean(),
-      Currency.find({ isActive: true }).select("code name symbol isBase").lean(),
-    ]);
-
-    const categoryNames = categories.map((c) => c.name as string);
-    const currencyCodes = currencies.map((c) => c.code as string);
-    const today = new Date().toISOString().split("T")[0];
-
-    const dataUrl = `data:${imageMime};base64,${imageBuffer.toString("base64")}`;
-
-    const instruction = `You are an assistant that extracts structured expense data from a receipt image.
-Return ONLY a JSON object (no markdown, no commentary) with exactly these keys:
-- "title": a short descriptive title for the expense (merchant name and/or what was purchased)
-- "amount": the total amount paid (grand total, inclusive of any tax) as a plain number, no currency symbol or thousands separators
-- "gstAmount": the total GST/tax amount included in that total as a plain number (sum CGST + SGST + IGST if shown separately), or null if no GST/tax is shown. It must never be greater than "amount"
-- "currencyCode": the ISO 4217 currency code. Must be one of [${currencyCodes.join(", ")}], or null if it cannot be determined
-- "category": the single best-matching category. Must be exactly one of [${categoryNames.join(", ")}], or null if none clearly fits
-- "date": the receipt/transaction date in YYYY-MM-DD format. Use "${today}" if no date is visible
-- "description": a brief summary of the line items or purpose of the expense
-- "travelType": if this is a business-travel expense, the single best-matching kind. Must be exactly one of [${TRAVEL_TYPES.join(", ")}] ("cab" covers taxis and local rides, "stay" hotels and lodging, "client_meeting" meals or costs of meeting a client, "visa" visa and travel fees), or null if it is not travel-related or none clearly fits
-If a value cannot be determined, use null (except "date"). Never invent values.`;
-
-    const raw = await callDatabricksClaude([
-      { type: "text", text: instruction },
-      { type: "image_url", image_url: { url: dataUrl } },
-    ]);
-
-    let parsed: ExtractedReceipt;
-    try {
-      parsed = parseJsonResponse<ExtractedReceipt>(raw);
-    } catch {
+    const extracted = await extractExpense({
+      kind: "file",
+      buffer: Buffer.from(await file.arrayBuffer()),
+      mime: file.type,
+    });
+    return NextResponse.json(extracted);
+  } catch (err) {
+    if (err instanceof ReceiptExtractionError) {
       return NextResponse.json(
-        { error: "Could not read details from this receipt. Please fill the form manually." },
+        { error: `${err.message} Please fill the form manually.` },
         { status: 422 }
       );
     }
-
-    // Map extracted values to actual DB ids where possible.
-    const currency = currencies.find(
-      (c) =>
-        typeof parsed.currencyCode === "string" &&
-        (c.code as string).toUpperCase() === parsed.currencyCode.toUpperCase()
-    );
-    const category = categories.find(
-      (c) =>
-        typeof parsed.category === "string" &&
-        (c.name as string).toLowerCase() === parsed.category.toLowerCase()
-    );
-
-    const amountNum =
-      typeof parsed.amount === "number"
-        ? parsed.amount
-        : parseFloat(String(parsed.amount ?? ""));
-    const amount = Number.isFinite(amountNum) && amountNum >= 0 ? amountNum : null;
-
-    // GST is a portion of the total, so only accept it when it's a valid
-    // non-negative number that doesn't exceed the extracted amount.
-    const gstNum =
-      typeof parsed.gstAmount === "number"
-        ? parsed.gstAmount
-        : parseFloat(String(parsed.gstAmount ?? ""));
-    const gstAmount =
-      Number.isFinite(gstNum) && gstNum >= 0 && (amount == null || gstNum <= amount)
-        ? gstNum
-        : null;
-
-    const travelType =
-      typeof parsed.travelType === "string" ? parsed.travelType.trim().toLowerCase() : null;
-
-    return NextResponse.json({
-      title: typeof parsed.title === "string" ? parsed.title : "",
-      amount,
-      gstAmount,
-      date:
-        typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)
-          ? parsed.date
-          : today,
-      description: typeof parsed.description === "string" ? parsed.description : "",
-      currency: currency?._id?.toString() ?? null,
-      category: category?._id?.toString() ?? null,
-      travelType: travelType && isTravelType(travelType) ? travelType : null,
-    });
-  } catch (err) {
     console.error("Receipt extraction error:", err);
     const message = err instanceof Error ? err.message : "Failed to read receipt";
     return NextResponse.json({ error: message }, { status: 500 });

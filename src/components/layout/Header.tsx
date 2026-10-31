@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Menu, LogOut, ChevronDown, Search } from "lucide-react";
+import Link from "next/link";
+import { Menu, LogOut, ChevronDown, Search, UserRound } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/layout/BrandLogo";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
@@ -110,6 +111,14 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 )}
               </div>
               <div className="p-1.5">
+                <Link
+                  href="/dashboard/profile"
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold text-muted transition-all duration-200 hover:bg-subtle hover:text-foreground"
+                >
+                  <UserRound className="h-4 w-4" />
+                  Profile &amp; Telegram
+                </Link>
                 <button
                   onClick={() => {
                     setDropdownOpen(false);

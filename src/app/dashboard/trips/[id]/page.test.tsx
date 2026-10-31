@@ -157,8 +157,14 @@ function detail(overrides: Partial<TripDetailResponse> = {}): TripDetailResponse
 
 let response: TripDetailResponse;
 
+// The fixtures' trip dates are fixed, while the pages derive each trip's
+// status from today's date, so pin "today" to keep the expectations stable.
+// Only Date is faked; timers and promises keep running normally.
+const TODAY = new Date("2026-10-29T12:00:00Z");
+
 describe("TripDetailPage", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
     vi.clearAllMocks();
     window.history.replaceState(null, "", `/dashboard/trips/${TRIP_ID}`);
     response = detail();
@@ -383,7 +389,9 @@ describe("TripDetailPage", () => {
   });
 
   it("deletes an expense after the undo window, updating totals immediately", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Swap the Date-only fake clock for one that also controls timers.
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<TripDetailPage />);
     await screen.findByTestId("trip-timeline");
@@ -420,7 +428,9 @@ describe("TripDetailPage", () => {
   });
 
   it("restores an expense when the delete is undone", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Swap the Date-only fake clock for one that also controls timers.
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<TripDetailPage />);
     await screen.findByTestId("trip-timeline");
