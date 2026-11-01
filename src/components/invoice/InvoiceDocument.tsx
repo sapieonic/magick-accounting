@@ -104,72 +104,76 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
           })}
         </View>
 
-        {/* Totals */}
-        <View style={styles.totals}>
-          <View style={styles.totalsBox}>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Sub Total</Text>
-              <Text style={styles.totalValue}>{formatAmount(totals.subTotal)}</Text>
-            </View>
-            {totals.discountAmount > 0 ? (
+        {/* Totals, amount in words, and bank details stay on one page.
+            If they do not fit under the line items, the whole block moves. */}
+        <View wrap={false}>
+          {/* Totals */}
+          <View style={styles.totals}>
+            <View style={styles.totalsBox}>
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>
-                  {formatDiscountLabel(data, totals.discountAmount)}
-                </Text>
-                <Text style={styles.totalValue}>-{formatAmount(totals.discountAmount)}</Text>
+                <Text style={styles.totalLabel}>Sub Total</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.subTotal)}</Text>
               </View>
-            ) : null}
-            {totals.discountAmount > 0 ? (
+              {totals.discountAmount > 0 ? (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>
+                    {formatDiscountLabel(data, totals.discountAmount)}
+                  </Text>
+                  <Text style={styles.totalValue}>-{formatAmount(totals.discountAmount)}</Text>
+                </View>
+              ) : null}
+              {totals.discountAmount > 0 ? (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Taxable Amount</Text>
+                  <Text style={styles.totalValue}>{formatAmount(totals.taxableAmount)}</Text>
+                </View>
+              ) : null}
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Taxable Amount</Text>
-                <Text style={styles.totalValue}>{formatAmount(totals.taxableAmount)}</Text>
+                <Text style={styles.totalLabel}>CGST ({totals.cgstRate}%)</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.cgstAmount)}</Text>
               </View>
-            ) : null}
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>CGST ({totals.cgstRate}%)</Text>
-              <Text style={styles.totalValue}>{formatAmount(totals.cgstAmount)}</Text>
-            </View>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>SGST ({totals.sgstRate}%)</Text>
-              <Text style={styles.totalValue}>{formatAmount(totals.sgstAmount)}</Text>
-            </View>
-            <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>Total</Text>
-              <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
-            </View>
-            <View style={styles.balanceRow}>
-              <Text style={styles.grandLabel}>Balance Due</Text>
-              <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>SGST ({totals.sgstRate}%)</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.sgstAmount)}</Text>
+              </View>
+              <View style={styles.grandRow}>
+                <Text style={styles.grandLabel}>Total</Text>
+                <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
+              </View>
+              <View style={styles.balanceRow}>
+                <Text style={styles.grandLabel}>Balance Due</Text>
+                <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Amount in words */}
-        <View style={styles.words}>
-          <Text style={styles.wordsLabel}>Total In Words:</Text>
-          <Text style={styles.wordsValue}>{amountInWords(totals.total)}</Text>
-        </View>
-
-        {/* Bank details */}
-        {data.bank &&
-        (data.bank.accountName ||
-          data.bank.accountNumber ||
-          data.bank.accountType ||
-          data.bank.ifsc) ? (
-          <View style={styles.bank}>
-            <Text style={styles.bankTitle}>Please Pay at :</Text>
-            {data.bank.accountName ? (
-              <Text style={styles.bankLine}>Account Name: {data.bank.accountName}</Text>
-            ) : null}
-            {data.bank.accountNumber ? (
-              <Text style={styles.bankLine}>Account Number: {data.bank.accountNumber}</Text>
-            ) : null}
-            {data.bank.accountType ? (
-              <Text style={styles.bankLine}>Account Type: {data.bank.accountType}</Text>
-            ) : null}
-            {data.bank.ifsc ? <Text style={styles.bankLine}>IFSC: {data.bank.ifsc}</Text> : null}
+          {/* Amount in words */}
+          <View style={styles.words}>
+            <Text style={styles.wordsLabel}>Total In Words:</Text>
+            <Text style={styles.wordsValue}>{amountInWords(totals.total)}</Text>
           </View>
-        ) : null}
+
+          {/* Bank details */}
+          {data.bank &&
+          (data.bank.accountName ||
+            data.bank.accountNumber ||
+            data.bank.accountType ||
+            data.bank.ifsc) ? (
+            <View style={styles.bank}>
+              <Text style={styles.bankTitle}>Please Pay at :</Text>
+              {data.bank.accountName ? (
+                <Text style={styles.bankLine}>Account Name: {data.bank.accountName}</Text>
+              ) : null}
+              {data.bank.accountNumber ? (
+                <Text style={styles.bankLine}>Account Number: {data.bank.accountNumber}</Text>
+              ) : null}
+              {data.bank.accountType ? (
+                <Text style={styles.bankLine}>Account Type: {data.bank.accountType}</Text>
+              ) : null}
+              {data.bank.ifsc ? <Text style={styles.bankLine}>IFSC: {data.bank.ifsc}</Text> : null}
+            </View>
+          ) : null}
+        </View>
 
         {/* Footer */}
         <Text style={styles.footer} fixed>
