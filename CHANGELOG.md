@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/sapieonic/magick-accounting/compare/v1.13.0...v1.13.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* keep the GST invoice footer clear of Balance Due ([#30](https://github.com/sapieonic/magick-accounting/issues/30)) ([346a967](https://github.com/sapieonic/magick-accounting/commit/346a967046aa93ea2eae7d7c0b6cd2cf28a58d07))
+
 # [1.13.0](https://github.com/sapieonic/magick-accounting/compare/v1.12.0...v1.13.0) (2026-10-31)
 
 
