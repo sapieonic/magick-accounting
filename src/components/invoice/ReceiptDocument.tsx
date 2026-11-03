@@ -107,68 +107,72 @@ export function ReceiptDocument({ data }: { data: ReceiptData }) {
           })}
         </View>
 
-        {/* Totals */}
-        <View style={styles.totals}>
-          <View style={styles.totalsBox}>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Sub Total</Text>
-              <Text style={styles.totalValue}>{formatAmount(totals.subTotal)}</Text>
-            </View>
-            {totals.discountAmount > 0 ? (
+        {/* Totals, amount in words, and payment details stay on one page.
+            If they do not fit under the line items, the whole block moves. */}
+        <View wrap={false}>
+          {/* Totals */}
+          <View style={styles.totals}>
+            <View style={styles.totalsBox}>
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>
-                  {formatDiscountLabel(data, totals.discountAmount)}
-                </Text>
-                <Text style={styles.totalValue}>-{formatAmount(totals.discountAmount)}</Text>
+                <Text style={styles.totalLabel}>Sub Total</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.subTotal)}</Text>
               </View>
-            ) : null}
-            {totals.discountAmount > 0 ? (
+              {totals.discountAmount > 0 ? (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>
+                    {formatDiscountLabel(data, totals.discountAmount)}
+                  </Text>
+                  <Text style={styles.totalValue}>-{formatAmount(totals.discountAmount)}</Text>
+                </View>
+              ) : null}
+              {totals.discountAmount > 0 ? (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Taxable Amount</Text>
+                  <Text style={styles.totalValue}>{formatAmount(totals.taxableAmount)}</Text>
+                </View>
+              ) : null}
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Taxable Amount</Text>
-                <Text style={styles.totalValue}>{formatAmount(totals.taxableAmount)}</Text>
+                <Text style={styles.totalLabel}>CGST ({totals.cgstRate}%)</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.cgstAmount)}</Text>
               </View>
-            ) : null}
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>CGST ({totals.cgstRate}%)</Text>
-              <Text style={styles.totalValue}>{formatAmount(totals.cgstAmount)}</Text>
-            </View>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>SGST ({totals.sgstRate}%)</Text>
-              <Text style={styles.totalValue}>{formatAmount(totals.sgstAmount)}</Text>
-            </View>
-            <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>Total</Text>
-              <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
-            </View>
-            <View style={styles.receivedRow}>
-              <Text style={styles.grandLabel}>Amount Received</Text>
-              <Text style={styles.grandValue}>{formatRupees(received)}</Text>
-            </View>
-            <View style={styles.balanceRow}>
-              <Text style={styles.grandLabel}>Balance Due</Text>
-              <Text style={styles.grandValue}>{formatRupees(balanceDue)}</Text>
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>SGST ({totals.sgstRate}%)</Text>
+                <Text style={styles.totalValue}>{formatAmount(totals.sgstAmount)}</Text>
+              </View>
+              <View style={styles.grandRow}>
+                <Text style={styles.grandLabel}>Total</Text>
+                <Text style={styles.grandValue}>{formatRupees(totals.total)}</Text>
+              </View>
+              <View style={styles.receivedRow}>
+                <Text style={styles.grandLabel}>Amount Received</Text>
+                <Text style={styles.grandValue}>{formatRupees(received)}</Text>
+              </View>
+              <View style={styles.balanceRow}>
+                <Text style={styles.grandLabel}>Balance Due</Text>
+                <Text style={styles.grandValue}>{formatRupees(balanceDue)}</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Amount in words */}
-        <View style={styles.words}>
-          <Text style={styles.wordsLabel}>Received In Words:</Text>
-          <Text style={styles.wordsValue}>{amountInWords(received)}</Text>
-        </View>
+          {/* Amount in words */}
+          <View style={styles.words}>
+            <Text style={styles.wordsLabel}>Received In Words:</Text>
+            <Text style={styles.wordsValue}>{amountInWords(received)}</Text>
+          </View>
 
-        {/* Payment details */}
-        <View style={styles.payment}>
-          <Text style={styles.paymentTitle}>Payment Details</Text>
-          <Text style={styles.paymentLine}>Payment Method: {data.payment.method}</Text>
-          {data.payment.reference ? (
+          {/* Payment details */}
+          <View style={styles.payment}>
+            <Text style={styles.paymentTitle}>Payment Details</Text>
+            <Text style={styles.paymentLine}>Payment Method: {data.payment.method}</Text>
+            {data.payment.reference ? (
+              <Text style={styles.paymentLine}>
+                Transaction / Reference ID: {data.payment.reference}
+              </Text>
+            ) : null}
             <Text style={styles.paymentLine}>
-              Transaction / Reference ID: {data.payment.reference}
+              Payment Date: {formatInvoiceDate(data.payment.paidOn)}
             </Text>
-          ) : null}
-          <Text style={styles.paymentLine}>
-            Payment Date: {formatInvoiceDate(data.payment.paidOn)}
-          </Text>
+          </View>
         </View>
 
         {/* Footer */}

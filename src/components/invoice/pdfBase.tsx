@@ -46,7 +46,10 @@ export const styles = StyleSheet.create({
     fontSize: 9,
     color: INK,
     paddingHorizontal: 35,
-    paddingVertical: 32,
+    paddingTop: 32,
+    // The disclaimer is absolutely positioned, so it does not take flow
+    // space. This padding covers the rule, the disclaimer line, and a gap.
+    paddingBottom: 56,
   },
 
   header: { flexDirection: "row", justifyContent: "space-between" },
@@ -130,7 +133,10 @@ export const styles = StyleSheet.create({
 
   words: { flexDirection: "row", justifyContent: "flex-end", marginTop: 10 },
   wordsLabel: { color: MUTED, marginRight: 6 },
-  wordsValue: { width: 200, fontWeight: 700, fontStyle: "italic" },
+  // Wide enough for a lakh-scale amount on one line. Longer phrases wrap
+  // on word boundaries. The box shrinks to the text, so a short amount
+  // stays beside its label.
+  wordsValue: { maxWidth: 430, fontWeight: 700, fontStyle: "italic" },
 
   bank: { marginTop: 40 },
   bankTitle: { fontSize: 9 },
