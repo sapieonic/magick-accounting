@@ -1,20 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
-import { ArrowLeft, Download, ExternalLink, History, Package } from "lucide-react";
+import { CalendarDays, Download, ExternalLink, FileText, Layers, Paperclip, Save, Undo2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
+import Button from "@/components/ui/Button";
+import Field, { inputClass, selectClass, textareaClass } from "@/components/ui/Field";
+import PageHeader from "@/components/ui/PageHeader";
+import Panel, { PanelGrid } from "@/components/ui/Panel";
 import Spinner from "@/components/ui/Spinner";
+import StatBand, { Stat } from "@/components/ui/StatBand";
 import { FormSkeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/components/ui/cn";
+import { linkClass, ICON_STROKE } from "@/components/ui/styles";
+import AssetStatusBadge, { ASSET_STATUSES, TERMINAL_STATUSES } from "@/components/assets/AssetStatusBadge";
+import { AssetEventList, AssignmentList, type AssetAssignment, type AssetEvent } from "@/components/assets/AssetHistory";
+import DetailList from "@/components/assets/DetailList";
+import { useReceiptOpener } from "@/components/assets/useReceiptOpener";
 
 interface UserOption { _id: string; name: string; email: string }
 interface DepartmentOption { _id: string; name: string }
+
+type DepreciationMethod = "none" | "straight_line" | "written_down_value";
 
 interface AssetDetail {
   _id: string;
@@ -33,7 +46,7 @@ interface AssetDetail {
   accumulatedDepreciation?: number;
   bookValue?: number;
   canViewFinancials: boolean;
-  depreciationMethod?: "none" | "straight_line" | "written_down_value";
+  depreciationMethod?: DepreciationMethod;
   depreciationRate?: number;
   residualValue?: number;
   putToUseDate: string;
@@ -55,17 +68,6 @@ interface AssetDetail {
   };
 }
 
-interface Assignment {
-  _id: string;
-  assignedTo: UserOption;
-  assignedBy: UserOption;
-  department: DepartmentOption;
-  purpose: string;
-  location: string;
-  assignedAt: string;
-  returnedAt?: string | null;
-}
-
 interface EditForm {
   name: string;
   assetCategory: string;
@@ -77,7 +79,7 @@ interface EditForm {
   purpose: string;
   location: string;
   status: string;
-  depreciationMethod: "none" | "straight_line" | "written_down_value";
+  depreciationMethod: DepreciationMethod;
   depreciationRate: string;
   residualValue: string;
   putToUseDate: string;
@@ -86,39 +88,38 @@ interface EditForm {
   lifecycleNotes: string;
 }
 
-interface AssetEvent {
-  _id: string;
-  type: string;
-  reason: string;
-  changes: Record<string, { from: unknown; to: unknown }>;
-  occurredAt: string;
-  actor?: UserOption;
-}
+const DEPRECIATION_LABELS: Record<DepreciationMethod, string> = {
+  none: "None",
+  straight_line: "Straight-line",
+  written_down_value: "Written-down value",
+};
 
-const STATUS_OPTIONS = [
-  ["active", "Active"],
-  ["under_repair", "Under repair"],
-  ["retired", "Retired"],
-  ["sold", "Sold"],
-  ["lost", "Lost"],
-  ["disposed", "Disposed"],
-];
-const TERMINAL_STATUSES = new Set(["retired", "sold", "lost", "disposed"]);
+const fieldGrid = "grid grid-cols-[repeat(auto-fill,minmax(min(220px,100%),1fr))] gap-4";
+
+/** A captioned group of fields inside the asset form, ruled from the previous group. */
+function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-rule-2 pt-4 first:border-t-0 first:pt-0">
+      <h3 className="cap text-ink-3">{title}</h3>
+      <div className={fieldGrid}>{children}</div>
+    </div>
+  );
+}
 
 export default function AssetDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { isAdmin } = useAuth();
   const { toast } = useToast();
+  const { opening, openReceipt } = useReceiptOpener();
   const [asset, setAsset] = useState<AssetDetail | null>(null);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [events, setEvents] = useState<AssetEvent[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [form, setForm] = useState<EditForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [openingReceipt, setOpeningReceipt] = useState(false);
   const [reversing, setReversing] = useState(false);
   useTitle(asset?.name || "Asset");
 
@@ -131,7 +132,7 @@ export default function AssetDetailPage() {
           requests.push(api.get("/api/lookups?include=departments"));
         }
         const results = await Promise.all(requests);
-        const assetData = results[0] as { asset: AssetDetail; assignments: Assignment[]; events: AssetEvent[] };
+        const assetData = results[0] as { asset: AssetDetail; assignments: AssetAssignment[]; events: AssetEvent[] };
         const loaded = assetData.asset;
         setAsset(loaded);
         setAssignments(assetData.assignments || []);
@@ -232,92 +233,301 @@ export default function AssetDetailPage() {
     }
   };
 
-  const openReceipt = async () => {
-    if (!asset?.purchaseExpense.receiptKey) return;
-    setOpeningReceipt(true);
-    try {
-      const data = await api.get(
-        `/api/upload?key=${encodeURIComponent(asset.purchaseExpense.receiptKey)}`
-      );
-      window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
-    } catch {
-      toast("Failed to open purchase receipt", "error");
-    } finally {
-      setOpeningReceipt(false);
-    }
-  };
-
   if (loading || !asset || !form) return <FormSkeleton />;
-  const currencyCode = asset.purchaseExpense.currency?.code || "INR";
+  const purchase = asset.purchaseExpense;
+  const currencyCode = purchase.currency?.code || "INR";
+  const currencySymbol = purchase.currency?.symbol || "₹";
+  const money = (value: number) => formatCurrency(value, currencyCode);
+  const showValuation =
+    asset.canViewFinancials &&
+    asset.capitalizedCost != null &&
+    asset.accumulatedDepreciation != null &&
+    asset.bookValue != null;
+  const method = asset.depreciationMethod || "none";
+  const depreciationSummary =
+    method === "none" ? "Not depreciated" : `${DEPRECIATION_LABELS[method]} · ${asset.depreciationRate ?? 0}% a year`;
+  const depreciatedShare =
+    showValuation && asset.capitalizedCost! > 0
+      ? Math.round((asset.accumulatedDepreciation! / asset.capitalizedCost!) * 1000) / 10
+      : 0;
 
   return (
-    <div className="animate-fade-in space-y-6">
-      <div>
-        <Link href="/dashboard/assets" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to Assets
-        </Link>
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><Package className="h-6 w-6" /></div>
-            <div><h1 className="text-2xl font-bold text-foreground">{asset.name}</h1><p className="mt-1 font-mono text-sm font-semibold text-brand-600 dark:text-brand-400">{asset.assetTag}</p></div>
-          </div>
-          <span className="inline-flex self-start rounded-full border border-line bg-subtle px-3 py-1.5 text-xs font-semibold capitalize text-muted">{asset.status.replaceAll("_", " ")}</span>
-        </div>
-      </div>
+    <div className="animate-fade-in flex flex-col gap-6">
+      <PageHeader
+        breadcrumb={[{ label: "Assets", href: "/dashboard/assets" }, { label: asset.name }]}
+        title={asset.name}
+        meta={
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="num font-medium text-accent">{asset.assetTag}</span>
+            <span aria-hidden="true">·</span>
+            <span>{asset.assetCategory}</span>
+            {asset.department?.name && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{asset.department.name}</span>
+              </>
+            )}
+            <AssetStatusBadge status={asset.status} className="ml-1" />
+          </span>
+        }
+      />
 
-      {asset.canViewFinancials && asset.capitalizedCost != null && asset.accumulatedDepreciation != null && asset.bookValue != null && <div className="grid gap-4 sm:grid-cols-3">
-        <div className="card p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Capitalized cost</p><p className="mt-2 text-xl font-bold text-foreground">{formatCurrency(asset.capitalizedCost, currencyCode)}</p></div>
-        <div className="card p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Accumulated depreciation</p><p className="mt-2 text-xl font-bold text-foreground">{formatCurrency(asset.accumulatedDepreciation, currencyCode)}</p></div>
-        <div className="card p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current book value</p><p className="mt-2 text-xl font-bold text-foreground">{formatCurrency(asset.bookValue, currencyCode)}</p></div>
-      </div>}
+      {showValuation && (
+        <StatBand aria-label="Valuation">
+          <Stat headline label="Current book value" value={money(asset.bookValue!)} sub={depreciationSummary} />
+          <Stat
+            label="Capitalized cost"
+            value={money(asset.capitalizedCost!)}
+            sub={`Put to use ${format(new Date(asset.putToUseDate), "dd MMM yyyy")}`}
+          />
+          <Stat
+            label="Accumulated depreciation"
+            value={money(asset.accumulatedDepreciation!)}
+            sub={`${depreciatedShare}% of cost`}
+          />
+        </StatBand>
+      )}
 
-      <div className="card p-5">
-        <div className="mb-4 flex items-center justify-between"><div><h2 className="font-heading text-base font-bold text-foreground">Purchase record</h2><p className="mt-1 text-xs text-muted-foreground">{asset.canViewFinancials ? "Financial values come from the linked expense and are not entered again." : "Purchase financials and receipt are visible only to the expense owner and administrators."}</p></div>{asset.canViewFinancials && <Link href={`/dashboard/expenses/${asset.purchaseExpense._id}/edit`} className="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700">View expense <ExternalLink className="h-3.5 w-3.5" /></Link>}</div>
-        <div className="grid gap-4 border-t border-line pt-4 text-sm sm:grid-cols-4">
-          <div><p className="text-xs text-muted-foreground">Expense</p><p className="mt-1 font-medium text-foreground">{asset.purchaseExpense.title}</p></div>
-          <div><p className="text-xs text-muted-foreground">Purchase date</p><p className="mt-1 font-medium text-foreground">{format(new Date(asset.purchaseExpense.date), "dd MMM yyyy")}</p></div>
-          <div><p className="text-xs text-muted-foreground">Asset allocation</p><p className="mt-1 font-medium text-foreground">{asset.canViewFinancials && asset.allocatedAmount != null && asset.allocatedGstAmount != null ? <>{formatCurrency(asset.allocatedAmount, currencyCode)} <span className="text-xs text-muted-foreground">(GST {formatCurrency(asset.allocatedGstAmount, currencyCode)})</span></> : "Restricted"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Receipt</p>{asset.purchaseExpense.receiptKey ? <button type="button" onClick={openReceipt} disabled={openingReceipt} className="mt-1 inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:text-brand-700">{openingReceipt ? <Spinner size="sm" /> : <Download className="h-4 w-4" />} {asset.purchaseExpense.receiptFilename || "Open receipt"}</button> : <p className="mt-1 text-muted">No receipt</p>}</div>
-        </div>
-      </div>
+      <PanelGrid min={400}>
+        <Panel
+          grow={3}
+          title="Purchase record"
+          actions={
+            asset.canViewFinancials && (
+              <Link
+                href={`/dashboard/expenses/${purchase._id}/edit`}
+                className={cn(linkClass, "inline-flex items-center gap-1 text-[13px]")}
+              >
+                View expense <ExternalLink aria-hidden="true" size={13} strokeWidth={ICON_STROKE} />
+              </Link>
+            )
+          }
+        >
+          <p className="mb-2 text-xs text-ink-3">
+            {asset.canViewFinancials
+              ? "Financial values come from the linked expense and are not entered again."
+              : "Purchase financials and receipt are visible only to the expense owner and administrators."}
+          </p>
+          <DetailList
+            items={[
+              { label: "Expense", icon: FileText, value: <span className="font-medium">{purchase.title}</span> },
+              {
+                label: "Purchase date",
+                icon: CalendarDays,
+                value: <span className="num">{format(new Date(purchase.date), "dd MMM yyyy")}</span>,
+              },
+              {
+                label: "Asset allocation",
+                icon: Layers,
+                value:
+                  asset.canViewFinancials && asset.allocatedAmount != null && asset.allocatedGstAmount != null ? (
+                    <span className="flex flex-col items-end">
+                      <span className="num font-medium">{money(asset.allocatedAmount)}</span>
+                      <span className="num text-xs text-ink-3">GST {money(asset.allocatedGstAmount)}</span>
+                    </span>
+                  ) : (
+                    <span className="text-ink-3">Restricted</span>
+                  ),
+              },
+              {
+                label: "Receipt",
+                icon: Paperclip,
+                value: purchase.receiptKey ? (
+                  <button
+                    type="button"
+                    onClick={() => openReceipt(asset._id, purchase.receiptKey)}
+                    disabled={opening !== null}
+                    className={cn(linkClass, "inline-flex min-h-[40px] max-w-full items-center gap-1.5 text-left")}
+                  >
+                    {opening ? <Spinner size="sm" /> : <Download aria-hidden="true" size={15} strokeWidth={ICON_STROKE} />}
+                    <span className="ell">{purchase.receiptFilename || "Open receipt"}</span>
+                  </button>
+                ) : (
+                  <span className="text-ink-3">No receipt</span>
+                ),
+              },
+            ]}
+          />
+        </Panel>
+        <Panel grow={2} flush title="Assignment history" meta={asset.assignedTo ? `With ${asset.assignedTo.name}` : "Unassigned"}>
+          <AssignmentList assignments={assignments} />
+        </Panel>
+      </PanelGrid>
 
-      <form onSubmit={save} className="card p-5">
-        <div className="mb-5"><h2 className="font-heading text-base font-bold text-foreground">Asset details</h2><p className="mt-1 text-xs text-muted-foreground">{isAdmin ? "Update ownership, assignment and depreciation details." : "Contact an administrator to update this asset."}</p></div>
-        <fieldset disabled={!isAdmin || saving} className="grid gap-4 sm:grid-cols-2">
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Asset name</label><input aria-label="Asset name" required value={form.name} onChange={(e) => updateForm("name", e.target.value)} className="input-field" /></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Asset category</label><input aria-label="Asset category" required value={form.assetCategory} onChange={(e) => updateForm("assetCategory", e.target.value)} className="input-field" /></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Make</label><input aria-label="Asset make" value={form.make} onChange={(e) => updateForm("make", e.target.value)} className="input-field" /></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Model</label><input aria-label="Asset model" value={form.assetModel} onChange={(e) => updateForm("assetModel", e.target.value)} className="input-field" /></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Serial number</label><input aria-label="Asset serial number" value={form.serialNumber} onChange={(e) => updateForm("serialNumber", e.target.value)} className="input-field font-mono" /></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Status</label><select aria-label="Asset status" disabled={!isAdmin || TERMINAL_STATUSES.has(asset.status)} value={form.status} onChange={(e) => updateStatus(e.target.value)} className="input-field disabled:opacity-60">{STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Assigned to</label>{isAdmin ? <select aria-label="Asset assignee" value={form.assignedTo} onChange={(e) => updateForm("assignedTo", e.target.value)} className="input-field"><option value="">Unassigned</option>{users.map((user) => <option key={user._id} value={user._id}>{user.name} ({user.email})</option>)}</select> : <input aria-label="Asset assignee" value={asset.assignedTo?.name || "Unassigned"} readOnly className="input-field" />}</div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Department</label>{isAdmin ? <select aria-label="Asset department" required value={form.department} onChange={(e) => updateForm("department", e.target.value)} className="input-field">{departments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}</select> : <input aria-label="Asset department" value={asset.department?.name || ""} readOnly className="input-field" />}</div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Purpose</label><input aria-label="Asset purpose" value={form.purpose} onChange={(e) => updateForm("purpose", e.target.value)} className="input-field" /></div>
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Location</label><input aria-label="Asset location" value={form.location} onChange={(e) => updateForm("location", e.target.value)} className="input-field" /></div>
-          {asset.canViewFinancials && <>
-            <div><label className="mb-1.5 block text-sm font-medium text-muted">Depreciation method</label><select aria-label="Depreciation method" value={form.depreciationMethod} onChange={(e) => updateForm("depreciationMethod", e.target.value as EditForm["depreciationMethod"])} className="input-field"><option value="none">None</option><option value="straight_line">Straight-line</option><option value="written_down_value">Written-down value</option></select></div>
-            <div><label className="mb-1.5 block text-sm font-medium text-muted">Annual rate (%)</label><input aria-label="Annual depreciation rate" type="number" min="0" max="100" step="0.01" required={form.depreciationMethod !== "none"} disabled={!isAdmin || form.depreciationMethod === "none"} value={form.depreciationRate} onChange={(e) => updateForm("depreciationRate", e.target.value)} className="input-field tabular-nums disabled:opacity-50" /></div>
-            <div><label className="mb-1.5 block text-sm font-medium text-muted">Residual value ({asset.purchaseExpense.currency?.symbol || "₹"})</label><input aria-label="Residual value" type="number" min="0" step="0.01" value={form.residualValue} onChange={(e) => updateForm("residualValue", e.target.value)} className="input-field tabular-nums" /></div>
-          </>}
-          <div><label className="mb-1.5 block text-sm font-medium text-muted">Put-to-use date</label><input aria-label="Put-to-use date" type="date" required value={form.putToUseDate} onChange={(e) => updateForm("putToUseDate", e.target.value)} className="input-field" /></div>
-          {TERMINAL_STATUSES.has(form.status) && <>
-            <div><label className="mb-1.5 block text-sm font-medium text-muted">Effective lifecycle date</label><input aria-label="Effective lifecycle date" type="date" required value={form.lifecycleDate} onChange={(e) => updateForm("lifecycleDate", e.target.value)} className="input-field" /></div>
-            {form.status === "sold" && <div><label className="mb-1.5 block text-sm font-medium text-muted">Sale proceeds ({asset.purchaseExpense.currency?.symbol || "₹"})</label><input aria-label="Sale proceeds" type="number" min="0" step="0.01" value={form.disposalProceeds} onChange={(e) => updateForm("disposalProceeds", e.target.value)} className="input-field tabular-nums" /></div>}
-            <div className="sm:col-span-2"><label className="mb-1.5 block text-sm font-medium text-muted">Lifecycle notes</label><textarea aria-label="Lifecycle notes" rows={2} value={form.lifecycleNotes} onChange={(e) => updateForm("lifecycleNotes", e.target.value)} className="input-field resize-none" placeholder="Reason or disposal details" /></div>
-          </>}
-        </fieldset>
-        {isAdmin && <div className="mt-6 flex flex-wrap justify-between gap-3 border-t border-line pt-5"><button type="button" onClick={reverseAsset} disabled={saving || reversing} className="btn-secondary text-red-600 hover:text-red-700">{reversing ? <><Spinner size="sm" /> Reversing...</> : "Reverse mistaken entry"}</button><button type="submit" disabled={saving || reversing} className="btn-primary">{saving ? <><Spinner size="sm" /> Saving...</> : "Save asset"}</button></div>}
-      </form>
+      <PanelGrid min={440}>
+        <Panel
+          grow={2}
+          title="Asset details"
+          meta={isAdmin ? "Update ownership, assignment and depreciation details." : "Contact an administrator to update this asset."}
+        >
+          <form onSubmit={save} className="flex flex-col gap-5">
+            <fieldset disabled={!isAdmin || saving} className="flex min-w-0 flex-col gap-5">
+              <FormSection title="Identity">
+                <Field label="Asset name">
+                  <input required value={form.name} onChange={(e) => updateForm("name", e.target.value)} className={inputClass} />
+                </Field>
+                <Field label="Asset category">
+                  <input required value={form.assetCategory} onChange={(e) => updateForm("assetCategory", e.target.value)} className={inputClass} />
+                </Field>
+                <Field label="Make">
+                  <input value={form.make} onChange={(e) => updateForm("make", e.target.value)} className={inputClass} />
+                </Field>
+                <Field label="Model">
+                  <input value={form.assetModel} onChange={(e) => updateForm("assetModel", e.target.value)} className={inputClass} />
+                </Field>
+                <Field label="Serial number">
+                  <input value={form.serialNumber} onChange={(e) => updateForm("serialNumber", e.target.value)} className={cn(inputClass, "num")} />
+                </Field>
+              </FormSection>
 
-      <div className="card p-5">
-        <div className="mb-4 flex items-center gap-2"><History className="h-5 w-5 text-muted-foreground" /><h2 className="font-heading text-base font-bold text-foreground">Assignment history</h2></div>
-        {assignments.length === 0 ? <p className="border-t border-line pt-4 text-sm text-muted-foreground">This asset has not been assigned yet.</p> : <div className="divide-y divide-line border-t border-line">{assignments.map((assignment) => <div key={assignment._id} className="grid gap-2 py-4 text-sm sm:grid-cols-[1fr_1fr_1fr]"><div><p className="font-semibold text-foreground">{assignment.assignedTo.name}</p><p className="text-xs text-muted-foreground">{assignment.assignedTo.email}</p></div><div><p className="text-muted">{format(new Date(assignment.assignedAt), "dd MMM yyyy")}{assignment.returnedAt ? ` – ${format(new Date(assignment.returnedAt), "dd MMM yyyy")}` : " – Present"}</p><p className="text-xs text-muted-foreground">{assignment.department?.name}{assignment.location ? ` · ${assignment.location}` : ""}</p></div><div><p className="text-muted">{assignment.purpose || "No purpose recorded"}</p><p className="text-xs text-muted-foreground">Assigned by {assignment.assignedBy?.name || "Administrator"}</p></div></div>)}</div>}
-      </div>
+              <FormSection title="Assignment">
+                <Field label="Assigned to">
+                  {isAdmin ? (
+                    <select value={form.assignedTo} onChange={(e) => updateForm("assignedTo", e.target.value)} className={selectClass}>
+                      <option value="">Unassigned</option>
+                      {users.map((user) => (
+                        <option key={user._id} value={user._id}>
+                          {user.name} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={asset.assignedTo?.name || "Unassigned"} readOnly className={inputClass} />
+                  )}
+                </Field>
+                <Field label="Department">
+                  {isAdmin ? (
+                    <select required value={form.department} onChange={(e) => updateForm("department", e.target.value)} className={selectClass}>
+                      {departments.map((department) => (
+                        <option key={department._id} value={department._id}>
+                          {department.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={asset.department?.name || ""} readOnly className={inputClass} />
+                  )}
+                </Field>
+                <Field label="Purpose">
+                  <input value={form.purpose} onChange={(e) => updateForm("purpose", e.target.value)} className={inputClass} />
+                </Field>
+                <Field label="Location">
+                  <input value={form.location} onChange={(e) => updateForm("location", e.target.value)} className={inputClass} />
+                </Field>
+              </FormSection>
 
-      {isAdmin && <div className="card p-5">
-        <div className="mb-4 flex items-center gap-2"><History className="h-5 w-5 text-muted-foreground" /><h2 className="font-heading text-base font-bold text-foreground">Asset audit log</h2></div>
-        {events.length === 0 ? <p className="border-t border-line pt-4 text-sm text-muted-foreground">No audit events recorded.</p> : <div className="divide-y divide-line border-t border-line">{events.map((event) => <div key={event._id} className="py-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold capitalize text-foreground">{event.type.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground">{format(new Date(event.occurredAt), "dd MMM yyyy, HH:mm")}</p></div><p className="mt-1 text-xs text-muted-foreground">By {event.actor?.name || "Administrator"}{event.reason ? ` · ${event.reason}` : ""}</p>{Object.keys(event.changes || {}).length > 0 && <p className="mt-2 text-xs text-muted">Changed: {Object.keys(event.changes).join(", ")}</p>}</div>)}</div>}
-      </div>}
+              {asset.canViewFinancials && (
+                <FormSection title="Depreciation">
+                  <Field label="Depreciation method">
+                    <select
+                      value={form.depreciationMethod}
+                      onChange={(e) => updateForm("depreciationMethod", e.target.value as DepreciationMethod)}
+                      className={selectClass}
+                    >
+                      {(Object.keys(DEPRECIATION_LABELS) as DepreciationMethod[]).map((value) => (
+                        <option key={value} value={value}>
+                          {DEPRECIATION_LABELS[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Annual rate (%)">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      inputMode="decimal"
+                      required={form.depreciationMethod !== "none"}
+                      disabled={!isAdmin || form.depreciationMethod === "none"}
+                      value={form.depreciationRate}
+                      onChange={(e) => updateForm("depreciationRate", e.target.value)}
+                      className={cn(inputClass, "num text-right")}
+                    />
+                  </Field>
+                  <Field label={`Residual value (${currencySymbol})`}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={form.residualValue}
+                      onChange={(e) => updateForm("residualValue", e.target.value)}
+                      className={cn(inputClass, "num text-right")}
+                    />
+                  </Field>
+                </FormSection>
+              )}
+
+              <FormSection title="Status & lifecycle">
+                <Field label="Status">
+                  <select
+                    disabled={!isAdmin || TERMINAL_STATUSES.has(asset.status)}
+                    value={form.status}
+                    onChange={(e) => updateStatus(e.target.value)}
+                    className={selectClass}
+                  >
+                    {ASSET_STATUSES.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Put-to-use date">
+                  <input type="date" required value={form.putToUseDate} onChange={(e) => updateForm("putToUseDate", e.target.value)} className={inputClass} />
+                </Field>
+                {TERMINAL_STATUSES.has(form.status) && (
+                  <>
+                    <Field label="Effective lifecycle date">
+                      <input type="date" required value={form.lifecycleDate} onChange={(e) => updateForm("lifecycleDate", e.target.value)} className={inputClass} />
+                    </Field>
+                    {form.status === "sold" && (
+                      <Field label={`Sale proceeds (${currencySymbol})`}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={form.disposalProceeds}
+                          onChange={(e) => updateForm("disposalProceeds", e.target.value)}
+                          className={cn(inputClass, "num text-right")}
+                        />
+                      </Field>
+                    )}
+                    <Field label="Lifecycle notes" className="col-span-full">
+                      <textarea
+                        rows={2}
+                        value={form.lifecycleNotes}
+                        onChange={(e) => updateForm("lifecycleNotes", e.target.value)}
+                        className={cn(textareaClass, "resize-none")}
+                        placeholder="Reason or disposal details"
+                      />
+                    </Field>
+                  </>
+                )}
+              </FormSection>
+            </fieldset>
+
+            {isAdmin && (
+              <div className="flex flex-wrap justify-between gap-3 border-t border-rule pt-5">
+                <Button variant="danger" icon={Undo2} onClick={reverseAsset} disabled={saving} loading={reversing}>
+                  {reversing ? "Reversing..." : "Reverse mistaken entry"}
+                </Button>
+                <Button type="submit" icon={Save} disabled={reversing} loading={saving}>
+                  {saving ? "Saving..." : "Save asset"}
+                </Button>
+              </div>
+            )}
+          </form>
+        </Panel>
+
+        {isAdmin && (
+          <Panel flush title="Audit log" meta={`${events.length} ${events.length === 1 ? "event" : "events"}`}>
+            <AssetEventList events={events} />
+          </Panel>
+        )}
+      </PanelGrid>
     </div>
   );
 }
