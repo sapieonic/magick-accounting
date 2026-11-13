@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+import { cn } from "@/components/ui/cn";
+import { inputClass, linkClass, transition } from "@/components/ui/styles";
 
 interface Option {
   value: string;
@@ -16,6 +18,9 @@ interface MultiSelectProps {
   placeholder: string;
   icon?: ReactNode;
   ariaLabel?: string;
+  /** Id for the trigger button (lets a Field label point at it). */
+  id?: string;
+  "aria-describedby"?: string;
 }
 
 export default function MultiSelect({
@@ -25,6 +30,8 @@ export default function MultiSelect({
   placeholder,
   icon,
   ariaLabel,
+  id,
+  "aria-describedby": describedBy,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{
@@ -121,7 +128,7 @@ export default function MultiSelect({
         ref={menuRef}
         role="listbox"
         aria-label={ariaLabel || placeholder}
-        className="animate-slide-up fixed z-50 overflow-y-auto rounded-lg border border-line bg-surface-elevated p-1 shadow-lg dark:shadow-black/60"
+        className="animate-slide-up fixed z-50 overflow-y-auto rounded-panel border border-rule bg-surface p-1 shadow-elevated"
         style={{
           top: menuPosition.top,
           left: menuPosition.left,
@@ -133,13 +140,13 @@ export default function MultiSelect({
           <button
             type="button"
             onClick={() => onChange([])}
-            className="mb-1 w-full rounded-md px-3 py-1.5 text-left text-xs font-medium text-brand-600 transition-colors hover:bg-subtle dark:text-brand-400"
+            className={cn(linkClass, "mb-1 min-h-9 w-full rounded-control px-3 text-left text-xs hover:bg-hover")}
           >
             Clear selection
           </button>
         )}
         {options.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-muted-foreground">No options</p>
+          <p className="px-3 py-2 text-xs text-ink-3">No options</p>
         ) : (
           options.map((opt) => {
             const isSelected = selected.includes(opt.value);
@@ -148,20 +155,19 @@ export default function MultiSelect({
                 key={opt.value}
                 type="button"
                 onClick={() => toggle(opt.value)}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-subtle"
+                className={cn("flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-control px-3 text-left text-sm hover:bg-hover", transition)}
                 role="option"
                 aria-selected={isSelected}
               >
                 <span
-                  className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${
-                    isSelected
-                      ? "border-brand-500 bg-brand-500 text-white"
-                      : "border-line bg-surface"
-                  }`}
+                  className={cn(
+                    "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border",
+                    isSelected ? "border-accent bg-accent text-accent-ink" : "border-rule bg-surface"
+                  )}
                 >
-                  {isSelected && <Check className="h-3 w-3" />}
+                  {isSelected && <Check aria-hidden="true" className="h-3 w-3" strokeWidth={2.5} />}
                 </span>
-                <span className="truncate text-foreground">{opt.label}</span>
+                <span className="truncate text-ink">{opt.label}</span>
               </button>
             );
           })
@@ -175,19 +181,24 @@ export default function MultiSelect({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="input-field flex w-full items-center justify-between pl-10 pr-9 text-left text-sm"
+        id={id}
+        className={cn(inputClass, "flex items-center justify-between pr-9 text-left", icon ? "pl-10" : "pl-3")}
+        aria-describedby={describedBy}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
       >
-        <span className={`truncate ${selectedLabels.length === 0 ? "text-muted-foreground" : "text-foreground"}`}>
+        <span className={cn("truncate", selectedLabels.length === 0 ? "text-ink-3" : "text-ink")}>
           {summary}
         </span>
       </button>
       <ChevronDown
-        className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform ${
-          open ? "rotate-180" : ""
-        }`}
+        aria-hidden="true"
+        strokeWidth={1.75}
+        className={cn(
+          "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3 transition-transform duration-140",
+          open && "rotate-180"
+        )}
       />
 
       {menu ? createPortal(menu, document.body) : null}

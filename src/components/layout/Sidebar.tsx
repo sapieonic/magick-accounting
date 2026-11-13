@@ -2,203 +2,257 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import clsx from "clsx";
-import {
-  LayoutDashboard,
-  Receipt,
-  Building2,
-  Tag,
-  Users,
-  Shield,
-  FileText,
-  Package,
-  Plane,
-  X,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
 import BrandLogo from "@/components/layout/BrandLogo";
+import { ADMIN_ITEMS, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
+import { cn } from "@/components/ui/cn";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
+  /** Mobile drawer state (the desktop rail is always shown from lg up). */
   open: boolean;
   onClose: () => void;
 }
 
 const COLLAPSED_STORAGE_KEY = "sidebar-collapsed";
 
-const navItems = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard, color: "text-blue-500" },
-  { href: "/dashboard/expenses", label: "Expenses", icon: Receipt, color: "text-emerald-500" },
-  { href: "/dashboard/trips", label: "Trips", icon: Plane, color: "text-sky-500" },
-  { href: "/dashboard/assets", label: "Assets", icon: Package, color: "text-indigo-500" },
-  { href: "/dashboard/departments", label: "Departments", icon: Building2, color: "text-violet-500" },
-  { href: "/dashboard/categories", label: "Categories", icon: Tag, color: "text-amber-500" },
-];
+const ROLE_LABEL = { master_admin: "Master admin", admin: "Admin", user: "Member" } as const;
 
-const adminItems = [
-  { href: "/dashboard/invoices", label: "Invoices", icon: FileText, color: "text-cyan-500" },
-  { href: "/dashboard/admin/users", label: "Users", icon: Users, color: "text-rose-500" },
-  { href: "/dashboard/admin/settings", label: "Settings", icon: Shield, color: "text-slate-500 dark:text-slate-300" },
-];
+/** Light focus ring: the global indigo ring is too dark on the rail. */
+const railFocus = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-mark";
 
-export default function Sidebar({ open, onClose }: SidebarProps) {
+const railIconButton = cn(
+  "inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-control text-rail-muted",
+  "transition-colors duration-140 hover:bg-rail-hover hover:text-white",
+  railFocus
+);
+
+function initials(name?: string) {
+  return (name ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}
+
+function RailLink({
+  item,
+  active,
+  iconOnly,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  iconOnly: boolean;
+  onNavigate?: () => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      title={iconOnly ? item.label : undefined}
+      className={cn(
+        "relative flex min-h-11 items-center gap-2.5 rounded-control text-sm transition-colors duration-140",
+        railFocus,
+        iconOnly ? "justify-center" : "px-3",
+        active
+          ? "bg-rail-active font-medium text-white shadow-[inset_0_0_0_1px_rgba(155,165,248,.22)] before:absolute before:inset-y-[13px] before:left-0 before:w-[3px] before:rounded-r-[3px] before:bg-rail-mark"
+          : "text-rail-ink hover:bg-rail-hover"
+      )}
+    >
+      <Icon
+        aria-hidden="true"
+        size={18}
+        strokeWidth={1.5}
+        className={cn("shrink-0", active ? "text-rail-icon" : "text-rail-muted")}
+      />
+      {iconOnly ? <span className="sr-only">{item.label}</span> : <span className="ell flex-1">{item.label}</span>}
+    </Link>
+  );
+}
+
+function RailGroup({ label, iconOnly, children }: { label: string; iconOnly: boolean; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {iconOnly ? (
+        <span className="sr-only">{label}</span>
+      ) : (
+        <span className="cap px-2.5 text-rail-muted">{label}</span>
+      )}
+      <ul className="flex flex-col gap-0.5">{children}</ul>
+    </div>
+  );
+}
+
+function RailContent({
+  iconOnly,
+  control,
+  onNavigate,
+}: {
+  iconOnly: boolean;
+  /** Collapse toggle (desktop) or close button (drawer), right of the logo. */
+  control: ReactNode;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user, logout } = useAuth();
+  const link = (item: NavItem) => (
+    <li key={item.href}>
+      <RailLink item={item} active={isNavActive(pathname, item.href)} iconOnly={iconOnly} onNavigate={onNavigate} />
+    </li>
+  );
+  const profileActive = isNavActive(pathname, PROFILE_ITEM.href);
+
+  return (
+    <div className={cn("flex h-full flex-col gap-6 py-5", iconOnly ? "px-3" : "px-3.5")}>
+      <div className={cn("flex gap-2", iconOnly ? "flex-col items-center" : "items-center pl-1.5")}>
+        <Link href="/dashboard" onClick={onNavigate} className={cn("min-w-0 rounded-control", railFocus)}>
+          <BrandLogo variant="onDark" compact={iconOnly} />
+        </Link>
+        <div className={iconOnly ? undefined : "ml-auto"}>{control}</div>
+      </div>
+
+      <nav aria-label="Primary" className="-mx-1 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-1">
+        <RailGroup label="Workspace" iconOnly={iconOnly}>
+          {NAV_ITEMS.map(link)}
+        </RailGroup>
+        {isAdmin && (
+          <RailGroup label="Admin" iconOnly={iconOnly}>
+            {ADMIN_ITEMS.map(link)}
+          </RailGroup>
+        )}
+      </nav>
+
+      <div className="flex flex-col gap-1 border-t border-rail-line pt-2">
+        <div className={cn("flex items-center gap-1", iconOnly && "flex-col")}>
+          <Link
+            href={PROFILE_ITEM.href}
+            onClick={onNavigate}
+            aria-current={profileActive ? "page" : undefined}
+            title={iconOnly ? "Profile" : undefined}
+            className={cn(
+              "flex min-h-[52px] min-w-0 flex-1 items-center gap-2.5 rounded-control text-white transition-colors duration-140 hover:bg-rail-hover",
+              railFocus,
+              iconOnly ? "justify-center" : "px-2.5",
+              profileActive && "bg-rail-active"
+            )}
+          >
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="h-8 w-8 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rail-line text-xs font-semibold text-[#EEF0FF]"
+              >
+                {initials(user?.name) || "?"}
+              </span>
+            )}
+            {iconOnly ? (
+              <span className="sr-only">Profile</span>
+            ) : (
+              <span className="flex min-w-0 flex-col">
+                <span className="ell text-[13px] font-medium">{user?.name ?? "Profile"}</span>
+                <span className="ell text-xs text-rail-muted">
+                  {user ? `${ROLE_LABEL[user.role]} · Profile` : "Profile"}
+                </span>
+              </span>
+            )}
+          </Link>
+          <button type="button" onClick={() => logout()} className={railIconButton} aria-label="Sign out" title="Sign out">
+            <LogOut aria-hidden="true" size={18} strokeWidth={1.5} />
+          </button>
+        </div>
+        {!iconOnly && <p className="num px-2.5 text-[11px] text-rail-muted">v{pkg.version}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** Dark indigo rail (lg+) and the same content as a slide-in drawer below lg. */
+export default function Sidebar({ open, onClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   // Restore the persisted collapsed state on mount.
   useEffect(() => {
-    setCollapsed(localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true");
+    try {
+      setCollapsed(localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true");
+    } catch {
+      // Storage unavailable (private mode); keep the default.
+    }
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open, onClose]);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem(COLLAPSED_STORAGE_KEY, String(next));
+      try {
+        localStorage.setItem(COLLAPSED_STORAGE_KEY, String(next));
+      } catch {
+        // Not persisted; the toggle still works for this visit.
+      }
       return next;
     });
   };
 
-  const isActive = (href: string) => {
-    if (href === "/dashboard") return pathname === "/dashboard";
-    return pathname.startsWith(href);
-  };
-
-  const NavLink = ({
-    href,
-    label,
-    icon: Icon,
-    color,
-    iconOnly,
-  }: {
-    href: string;
-    label: string;
-    icon: typeof LayoutDashboard;
-    color: string;
-    iconOnly: boolean;
-  }) => (
-    <Link
-      href={href}
-      onClick={onClose}
-      title={iconOnly ? label : undefined}
-      className={clsx(
-        "group/navlink relative flex items-center gap-3 rounded-xl py-2.5 text-sm font-semibold transition-all duration-300",
-        iconOnly ? "justify-center px-0" : "px-3",
-        isActive(href)
-          ? "bg-gradient-to-br from-brand-600 to-brand-700 text-white shadow-soft shadow-brand-900/20"
-          : "text-muted hover:bg-subtle/60 hover:text-foreground"
-      )}
-    >
-      <Icon className={clsx("h-[18px] w-[18px] flex-shrink-0 transition-transform duration-300 group-hover/navlink:scale-110", isActive(href) ? "text-white" : color)} />
-      {!iconOnly && label}
-      {iconOnly && (
-        <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-semibold text-background opacity-0 shadow-elevated transition-opacity duration-200 group-hover/navlink:opacity-100">
-          {label}
-        </span>
-      )}
-    </Link>
-  );
-
-  const collapseControl = (iconOnly: boolean) => (
-    <button
-      type="button"
-      onClick={toggleCollapsed}
-      className={clsx(
-        "flex shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-background text-foreground shadow-sm transition-colors hover:border-brand-300 hover:bg-subtle hover:text-brand-600 dark:hover:border-brand-500/40 dark:hover:text-brand-400",
-        iconOnly ? "h-7 w-7" : "ml-auto h-7 w-7"
-      )}
-      aria-label={iconOnly ? "Expand sidebar" : "Collapse sidebar"}
-      title={iconOnly ? "Expand sidebar" : "Collapse sidebar"}
-    >
-      {iconOnly ? (
-        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
-      ) : (
-        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
-      )}
-    </button>
-  );
-
-  // `iconOnly` controls the compact desktop rail; the mobile overlay always shows full labels.
-  const sidebarContent = (iconOnly: boolean, showCollapse = false) => (
-    <div className="flex h-full flex-col">
-      <div
-        className={clsx(
-          "flex gap-2",
-          iconOnly
-            ? "flex-col items-center px-2 py-3"
-            : "h-20 items-center px-3"
-        )}
-      >
-        <BrandLogo compact={iconOnly} size="md" />
-        {showCollapse && collapseControl(iconOnly)}
-      </div>
-
-      <nav className={clsx("flex-1 space-y-1 py-4", iconOnly ? "px-2" : "px-3")}>
-        {!iconOnly && (
-          <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-            Main
-          </p>
-        )}
-        {navItems.map((item) => (
-          <NavLink key={item.href} {...item} iconOnly={iconOnly} />
-        ))}
-
-        {isAdmin && (
-          <>
-            <div className="my-6 border-t border-line/50" />
-            {!iconOnly && (
-              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-                Admin
-              </p>
-            )}
-            {adminItems.map((item) => (
-              <NavLink key={item.href} {...item} iconOnly={iconOnly} />
-            ))}
-          </>
-        )}
-      </nav>
-
-      {/* Sidebar footer decoration */}
-      {!iconOnly && (
-        <div className="mx-4 mb-6 rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50/50 to-white p-4 shadow-sm dark:border-brand-500/10 dark:from-brand-500/5 dark:to-transparent">
-          <p className="font-heading text-xs font-bold text-brand-800 dark:text-brand-300">Need help?</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-brand-600/70 dark:text-brand-300/60">Contact your administrator for support.</p>
-          <div className="mt-3 flex items-center justify-between border-t border-brand-100/50 pt-3 dark:border-brand-500/10">
-            <p className="font-mono text-[10px] font-medium text-brand-600/50 dark:text-brand-300/50">v{pkg.version}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const collapseLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
     <>
-      {/* Desktop sidebar */}
       <aside
-        className={clsx(
-          "relative hidden h-full flex-shrink-0 overflow-hidden border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-200 ease-in-out lg:block",
-          collapsed ? "w-[72px]" : "w-72"
+        className={cn(
+          "hidden h-full shrink-0 bg-rail transition-[width] duration-200 ease-out lg:block",
+          collapsed ? "w-[72px]" : "w-[232px]"
         )}
       >
-        {sidebarContent(collapsed, true)}
+        <RailContent
+          iconOnly={collapsed}
+          control={
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className={railIconButton}
+              aria-label={collapseLabel}
+              title={collapseLabel}
+            >
+              {collapsed ? (
+                <ChevronsRight aria-hidden="true" size={16} strokeWidth={1.75} />
+              ) : (
+                <ChevronsLeft aria-hidden="true" size={16} strokeWidth={1.75} />
+              )}
+            </button>
+          }
+        />
       </aside>
 
-      {/* Mobile sidebar overlay */}
       {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-          <aside className="animate-slide-in-right fixed inset-y-0 left-0 w-72 bg-surface shadow-2xl">
-            <button
-              onClick={onClose}
-              className="absolute right-3 top-4 cursor-pointer rounded-lg p-1.5 text-muted-foreground hover:bg-subtle hover:text-muted"
-              aria-label="Close navigation"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            {sidebarContent(false)}
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+          <div className="animate-fade-in absolute inset-0 bg-[#0B0B12]/50" onClick={onClose} aria-hidden="true" />
+          <aside className="animate-slide-in-left absolute inset-y-0 left-0 w-[min(288px,86vw)] bg-rail pb-[env(safe-area-inset-bottom)]">
+            <RailContent
+              iconOnly={false}
+              onNavigate={onClose}
+              control={
+                <button type="button" onClick={onClose} className={railIconButton} aria-label="Close navigation">
+                  <X aria-hidden="true" size={18} strokeWidth={1.75} />
+                </button>
+              }
+            />
           </aside>
         </div>
       )}

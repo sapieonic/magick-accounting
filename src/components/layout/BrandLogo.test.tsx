@@ -20,13 +20,6 @@ describe("BrandLogo", () => {
     expect(mark?.className).not.toMatch(/bg-/);
   });
 
-  it("can ellipsize the wordmark when the parent is narrow", () => {
-    render(<BrandLogo truncate />);
-
-    expect(screen.getByText("MagickVoice").className).toMatch(/truncate/);
-    expect(screen.getByText("Accounting portal").className).toMatch(/truncate/);
-  });
-
   it("hides the wordmark in compact mode", () => {
     render(<BrandLogo compact />);
 

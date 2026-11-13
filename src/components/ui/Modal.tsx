@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, ReactNode } from "react";
 import { X } from "lucide-react";
+import { IconButton } from "@/components/ui/Button";
 
 interface ModalProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0B0B12]/45 p-0 sm:items-center sm:p-4"
       onClick={(e) => e.target === overlayRef.current && onClose()}
       role="dialog"
       aria-modal="true"
@@ -49,19 +50,13 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
       <div
         ref={contentRef}
         tabIndex={-1}
-        className={`animate-slide-up w-full ${maxWidth} rounded-xl border border-line bg-surface-elevated shadow-2xl outline-none dark:shadow-black/60`}
+        className={`animate-slide-up flex max-h-[92dvh] w-full flex-col ${maxWidth} rounded-t-panel border border-rule bg-surface shadow-elevated outline-none sm:rounded-panel`}
       >
-        <div className="flex items-center justify-between border-b border-line px-6 py-4">
-          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <button
-            onClick={onClose}
-            className="cursor-pointer rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"
-            aria-label="Close dialog"
-          >
-            <X className="h-5 w-5" />
-          </button>
+        <div className="flex items-center justify-between gap-3 border-b border-rule py-2 pl-5 pr-2">
+          <h2 className="text-base font-semibold tracking-[-0.015em] text-ink">{title}</h2>
+          <IconButton icon={X} size="sm" onClick={onClose} aria-label="Close dialog" />
         </div>
-        <div className="px-6 py-4">{children}</div>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>
       </div>
     </div>
   );

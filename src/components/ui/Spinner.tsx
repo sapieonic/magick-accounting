@@ -1,67 +1,35 @@
 "use client";
 
-import clsx from "clsx";
+import { cn } from "@/components/ui/cn";
 
-export default function Spinner({ className, size = "md" }: { className?: string; size?: "sm" | "md" | "lg" }) {
-  const sizeClasses = {
-    sm: {
-      shell: "h-4 w-4",
-      ring: "border",
-      core: "h-1.5 w-1.5",
-      dot: "h-1.5 w-1.5",
-    },
-    md: {
-      shell: "h-6 w-6",
-      ring: "border-[1.5px]",
-      core: "h-2 w-2",
-      dot: "h-2 w-2",
-    },
-    lg: {
-      shell: "h-12 w-12",
-      ring: "border-2",
-      core: "h-3 w-3",
-      dot: "h-2.5 w-2.5",
-    },
-  };
+const SIZES = {
+  sm: "h-4 w-4 border-[1.5px]",
+  md: "h-6 w-6 border-2",
+  lg: "h-12 w-12 border-[2.5px]",
+} as const;
 
-  const sizeConfig = sizeClasses[size];
-
+/** Thin indigo ring with a rotating arc. */
+export default function Spinner({ className, size = "md" }: { className?: string; size?: keyof typeof SIZES }) {
   return (
     <div
-      className={clsx("relative inline-flex items-center justify-center", sizeConfig.shell, className)}
+      className={cn(
+        "inline-block shrink-0 animate-spin rounded-full border-accent/20 border-t-accent",
+        SIZES[size],
+        className
+      )}
       role="status"
       aria-label="Loading"
-    >
-      <span className={clsx("absolute inset-0 rounded-full border-brand-100/80 animate-loader-pulse", sizeConfig.ring)} />
-      <span className={clsx("absolute inset-[18%] rounded-full border border-brand-200/70", sizeConfig.ring)} />
-      <span className="absolute inset-0 animate-loader-orbit">
-        <span
-          className={clsx(
-            "absolute left-1/2 top-0 -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-500 to-accent-400 shadow-[0_0_14px_rgba(99,102,241,0.35)]",
-            sizeConfig.dot
-          )}
-        />
-      </span>
-      <span
-        className={clsx(
-          "relative rounded-full bg-gradient-to-br from-brand-600 via-brand-500 to-accent-400 shadow-[0_0_18px_rgba(99,102,241,0.2)] animate-loader-breathe",
-          sizeConfig.core
-        )}
-      />
-    </div>
+    />
   );
 }
 
 export function PageLoader() {
   return (
-    <div className="relative flex min-h-[16rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-brand-100/70 bg-gradient-to-b from-surface via-brand-50/40 to-accent-50/60 px-6 py-10 text-center dark:border-brand-500/20 dark:from-surface dark:via-brand-500/5 dark:to-accent-500/5">
-      <div className="absolute left-1/2 top-1/2 h-32 w-32 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-200/20 blur-3xl dark:bg-brand-500/10" />
-      <div className="relative flex flex-col items-center gap-4">
-        <div className="rounded-full bg-surface/80 p-4 shadow-lg shadow-brand-100/50 ring-1 ring-brand-100/80 backdrop-blur dark:shadow-black/40 dark:ring-brand-500/30">
-          <Spinner size="lg" />
-        </div>
-        <p className="text-sm font-medium text-foreground">Loading data...</p>
-        <p className="text-xs text-muted-foreground">Serverless APIs can take a few seconds to warm up.</p>
+    <div className="flex min-h-[16rem] flex-col items-center justify-center gap-4 rounded-panel border border-rule bg-surface bg-wash px-6 py-10 text-center">
+      <Spinner size="lg" />
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium text-ink">Loading data...</p>
+        <p className="text-xs text-ink-3">Serverless APIs can take a few seconds to warm up.</p>
       </div>
     </div>
   );
@@ -75,7 +43,7 @@ export function InlineLoader({
   className?: string;
 }) {
   return (
-    <div className={clsx("inline-flex items-center gap-2 text-sm text-muted-foreground", className)}>
+    <div className={cn("inline-flex items-center gap-2 text-sm text-ink-3", className)}>
       <Spinner size="sm" />
       <span>{label}</span>
     </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import Sidebar from "./Sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePathname } from "next/navigation";
@@ -28,12 +29,11 @@ describe("Sidebar", () => {
     expect(screen.getAllByText("Accounting portal").length).toBeGreaterThan(0);
   });
 
-  it("widens the expanded desktop rail so the lockup wordmark is not clipped", () => {
+  it("renders the 232px desktop rail", () => {
     const { container } = render(<Sidebar open={false} onClose={() => {}} />);
     const rail = container.querySelector("aside");
 
-    expect(rail?.className).toMatch(/\bw-72\b/);
-    expect(rail?.className).not.toMatch(/\bw-64\b/);
+    expect(rail?.className).toMatch(/\bw-\[232px\]/);
   });
 
   it("should render the app version from package.json", () => {
@@ -43,23 +43,46 @@ describe("Sidebar", () => {
     expect(screen.getByText(`v${pkg.version}`)).toBeInTheDocument();
   });
 
-  it("keeps the collapse control fully inside the logo row", () => {
-    render(<Sidebar open={false} onClose={() => {}} />);
-    const collapse = screen.getByRole("button", { name: "Collapse sidebar", hidden: true });
+  it("collapses the rail to icons and persists the choice", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Sidebar open={false} onClose={() => {}} />);
 
-    expect(collapse.className).toMatch(/\bml-auto\b/);
-    expect(collapse.className).toMatch(/rounded-full/);
-    expect(collapse.className).not.toMatch(/-right-/);
-    expect(collapse.parentElement?.className).toMatch(/\bh-20\b/);
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar", hidden: true }));
+
+    expect(localStorage.getItem("sidebar-collapsed")).toBe("true");
+    expect(container.querySelector("aside")?.className).toMatch(/\bw-\[72px\]/);
+    // Labels stay available to assistive tech while the rail shows icons only.
+    expect(screen.getByRole("link", { name: "Expenses" })).toBeInTheDocument();
   });
 
-  it("places the expand control below the mark when the rail is collapsed", async () => {
+  it("restores the collapsed rail and offers to expand it", async () => {
     localStorage.setItem("sidebar-collapsed", "true");
     render(<Sidebar open={false} onClose={() => {}} />);
 
-    const expand = await screen.findByRole("button", { name: "Expand sidebar", hidden: true });
-    expect(expand.className).not.toMatch(/\bml-auto\b/);
-    expect(expand.parentElement?.className).toMatch(/flex-col/);
+    expect(await screen.findByRole("button", { name: "Expand sidebar", hidden: true })).toBeInTheDocument();
+  });
+
+  it("hides the admin group from non-admins", () => {
+    vi.mocked(useAuth).mockReturnValue({ isAdmin: false, isMasterAdmin: false } as any);
+    render(<Sidebar open={false} onClose={() => {}} />);
+
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Expenses" })).toBeInTheDocument();
+  });
+
+  it("signs out from the profile block", async () => {
+    const logout = vi.fn();
+    vi.mocked(useAuth).mockReturnValue({
+      isAdmin: false,
+      user: { name: "Ada Lovelace", role: "user" },
+      logout,
+    } as any);
+    const user = userEvent.setup();
+    render(<Sidebar open={false} onClose={() => {}} />);
+
+    expect(screen.getByRole("link", { name: /Ada Lovelace/ })).toHaveAttribute("href", "/dashboard/profile");
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(logout).toHaveBeenCalled();
   });
 
   it("lists Trips right after Expenses", () => {
@@ -74,8 +97,8 @@ describe("Sidebar", () => {
     vi.mocked(usePathname).mockReturnValue("/dashboard/trips/66c1884c0853f8a76a4da201");
     render(<Sidebar open={false} onClose={() => {}} />);
 
-    expect(screen.getByRole("link", { name: "Trips" }).className).toMatch(/from-brand-600/);
-    expect(screen.getByRole("link", { name: "Expenses" }).className).not.toMatch(/from-brand-600/);
+    expect(screen.getByRole("link", { name: "Trips" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Expenses" })).not.toHaveAttribute("aria-current");
   });
 
   it("should collapse sidebar on mobile when close button is clicked", () => {

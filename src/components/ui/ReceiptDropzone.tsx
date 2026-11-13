@@ -2,7 +2,7 @@
 
 import { useEffect, useState, ReactNode } from "react";
 import { Upload } from "lucide-react";
-import clsx from "clsx";
+import { cn } from "@/components/ui/cn";
 
 export const RECEIPT_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 
@@ -66,29 +66,29 @@ export default function ReceiptDropzone({
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
-      className={clsx(
-        "flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 transition-colors",
-        dragging
-          ? "border-brand-400 bg-brand-50/60 dark:border-brand-500/60 dark:bg-brand-500/15"
-          : "border-line hover:border-brand-300 hover:bg-brand-50/30 dark:hover:bg-brand-500/10",
+      className={cn(
+        "relative flex cursor-pointer flex-col items-center gap-1 rounded-panel border-[1.5px] border-dashed px-4 py-6 text-center",
+        "transition-[background-color,border-color] duration-150",
+        "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent",
+        dragging ? "border-accent bg-tint-2" : "border-accent-line bg-tint hover:border-accent hover:bg-tint-2",
         disabled && "pointer-events-none opacity-60",
         className
       )}
     >
       {children ?? (
         <>
-          <Upload className="h-8 w-8 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
+          <Upload aria-hidden="true" size={22} strokeWidth={1.5} className="mb-1 text-accent" />
+          <span className="text-sm font-medium text-ink">
             {dragging ? "Drop your receipt here" : "Click, drag & drop, or paste a receipt"}
           </span>
-          <span className="text-xs text-muted-foreground">JPEG, PNG, WebP, or PDF up to 10MB</span>
+          <span className="text-xs text-ink-3">JPEG, PNG, WebP, or PDF up to 10MB</span>
         </>
       )}
       <input
         type="file"
         accept={RECEIPT_ACCEPT}
         onChange={handleSelect}
-        className="hidden"
+        className="sr-only"
         disabled={disabled}
         aria-label="Upload receipt"
       />
