@@ -215,10 +215,12 @@ export function useDialogLayer(
       // A popup closed by Tab or a click elsewhere: focus has already moved on.
       if (popup && !focusLost()) return;
       const target = opener();
-      if (target?.isConnected && target !== document.body) {
+      const rendered = !!target?.isConnected && (!hasLayout() || target.getClientRects().length > 0);
+      if (target && rendered && target !== document.body) {
         target.focus();
       } else if (focusLost()) {
-        // The opener is gone (e.g. its row was deleted): stay in the layer below, or the page.
+        // The opener is gone (its row was deleted) or hidden (the drawer's "More"
+        // button from lg up): stay in the layer below, or the page.
         const fallback = topLayer()?.focusTarget() ?? document.getElementById("main");
         fallback?.focus({ preventScroll: true });
       }

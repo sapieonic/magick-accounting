@@ -101,6 +101,7 @@ export function FormFooter({ children, className }: { children: ReactNode; class
   return (
     <div
       ref={ref}
+      data-form-footer=""
       className={cn(
         "sticky bottom-[var(--tabbar-h)] z-10 mt-auto flex flex-wrap items-center gap-3 rounded-b-panel border-t border-rule bg-surface py-3",
         panelPadX,

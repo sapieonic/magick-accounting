@@ -447,6 +447,14 @@ describe("MultiSelect", () => {
       );
     }
 
+    it("portals the menu inside the aria-modal dialog, not body", async () => {
+      const user = userEvent.setup();
+      render(<TripForm />);
+      await user.click(screen.getByRole("button", { name: "Travelers" }));
+      const dialog = screen.getByRole("dialog", { name: "Trip" });
+      expect(dialog).toContainElement(screen.getByRole("listbox"));
+    });
+
     it("lets the keyboard select an option of a portalled menu", async () => {
       const user = userEvent.setup();
       render(<TripForm />);

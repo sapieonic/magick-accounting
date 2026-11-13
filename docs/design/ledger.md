@@ -185,7 +185,9 @@ buttons) / `InlineLoader` (one status, named by its label),
 `Toast` (`toast(message, type?, { action?, durationMs? })` from `useToast`; at the bottom: full width with 16px
 gutters on phones, bottom-right and at most 24rem wide from `sm`; it sits 12px above the mobile tab bar and any
 mounted `FormFooter` (`--tabbar-h` + `--form-footer-h`), and from `lg` at least 112px up so it clears a list's
-"Load more" strip: it never covers Save, a total or page-header actions),
+"Load more" strip; on phones, pages without a `FormFooter` end with extra room for the same reason: it never
+covers Save, a total, Load more or page-header actions). `#main` has scroll padding for the tab bar and a
+mounted `FormFooter`, so a focused field never scrolls under them,
 `MultiSelect`, `CommandPalette`,
 `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
 

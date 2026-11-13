@@ -103,6 +103,26 @@ describe("useDialogLayer", () => {
       expect(document.getElementById("main")).toHaveFocus();
     });
 
+    it("falls back to #main when the opener is still there but hidden (More at lg)", () => {
+      withLayout((el) => el.hasAttribute("data-hidden"));
+      function Harness({ open, hidden }: { open: boolean; hidden: boolean }) {
+        return (
+          <MainShell>
+            <button data-hidden={hidden ? "" : undefined}>More</button>
+            <Layer open={open} label="Drawer">
+              <a href="#x">Trips</a>
+            </Layer>
+          </MainShell>
+        );
+      }
+      const { rerender } = render(<Harness open={false} hidden={false} />);
+      screen.getByRole("button", { name: "More" }).focus();
+      rerender(<Harness open hidden={false} />);
+      rerender(<Harness open hidden />);
+      rerender(<Harness open={false} hidden />);
+      expect(document.getElementById("main")).toHaveFocus();
+    });
+
     it("falls back to the layer below when one is still open", () => {
       function Harness({ inner, withOpener }: { inner: boolean; withOpener: boolean }) {
         return (

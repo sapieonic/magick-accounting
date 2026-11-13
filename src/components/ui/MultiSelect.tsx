@@ -284,7 +284,12 @@ export default function MultiSelect({
         )}
       />
 
-      {menu ? createPortal(menu, document.body) : null}
+      {/* Portal into the enclosing aria-modal dialog (its fixed, untransformed
+          overlay) so assistive tech doesn't treat the menu as inert content
+          outside the dialog; otherwise into body. */}
+      {menu
+        ? createPortal(menu, containerRef.current?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body)
+        : null}
     </div>
   );
 }
