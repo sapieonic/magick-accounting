@@ -60,17 +60,6 @@ const config: Config = {
           2: v("accent-2"),
           soft: v("accent-soft"),
           line: v("accent-line"),
-          // Legacy numeric shades (were teal) now follow the indigo brand.
-          50: "#f8f9ff",
-          100: "#eff1fe",
-          200: "#e0e4fd",
-          300: "#c1c9fb",
-          400: "#9ba5f8",
-          500: "#7b83f5",
-          600: "#5c5fed",
-          700: "#4b49d1",
-          800: "#3e3ba8",
-          900: "#35328b",
         },
         tint: {
           DEFAULT: "var(--tint)",
@@ -92,38 +81,9 @@ const config: Config = {
           mk: v("c-mk"),
           "mk-soft": v("c-mk-s"),
         },
-
-        // Legacy names, remapped to Ledger values in globals.css.
-        "surface-elevated": v("surface-elevated"),
-        "surface-muted": v("surface-muted"),
-        foreground: v("foreground"),
-        muted: {
-          DEFAULT: v("muted"),
-          foreground: v("muted-foreground"),
-        },
-        subtle: v("subtle"),
-        "subtle-hover": v("subtle-hover"),
-        line: v("line"),
-        "line-strong": v("line-strong"),
-        brand: {
-          50: "#f8f9ff",
-          100: "#eff1fe",
-          200: "#e0e4fd",
-          300: "#c1c9fb",
-          400: "#9ba5f8",
-          500: "#7b83f5",
-          600: "#5c5fed",
-          700: "#4b49d1",
-          800: "#3e3ba8",
-          900: "#35328b",
-          950: "#1f1d53",
-        },
       },
       fontFamily: {
         sans: ["Geist", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        // Old classes alias Geist so nothing pulls a serif.
-        heading: ["Geist", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        display: ["Geist", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         mono: ["Geist Mono", "ui-monospace", "Menlo", "Consolas", "monospace"],
       },
       borderRadius: {

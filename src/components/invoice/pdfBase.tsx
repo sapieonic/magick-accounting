@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Font } from "@react-pdf/renderer";
 
 // Roboto is registered because the default PDF font (Helvetica) has no rupee
 // glyph (₹). Files live in public/invoice/ so they ship with every deployment.
-export const ASSET_DIR = path.join(process.cwd(), "public", "invoice");
+const ASSET_DIR = path.join(process.cwd(), "public", "invoice");
 
 Font.register({
   family: "Roboto",
@@ -23,11 +23,11 @@ Font.registerHyphenationCallback((word) => [word]);
 
 export const LOGO_PATH = path.join(ASSET_DIR, "logo.png");
 
-export const INK = "#33373d";
-export const MUTED = "#7b8087";
-export const LINE = "#e4e6e9";
-export const HEADER_BG = "#3f444b";
-export const PAID_GREEN = "#1f9d57";
+const INK = "#33373d";
+const MUTED = "#7b8087";
+const LINE = "#e4e6e9";
+const HEADER_BG = "#3f444b";
+const PAID_GREEN = "#1f9d57";
 
 // Column widths (pt); sum = 525 = A4 width minus horizontal padding.
 export const COL = {

@@ -83,7 +83,7 @@ const GROUP_LABELS: Record<TripStatus, string> = {
  * Trips grouped for the picker: ongoing first, then upcoming (soonest first),
  * then completed (most recent first).
  */
-export function groupTripsForPicker<T extends TripOption>(
+function groupTripsForPicker<T extends TripOption>(
   trips: T[],
   now: Date = new Date()
 ): { status: TripStatus; trips: T[] }[] {

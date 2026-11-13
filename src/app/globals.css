@@ -53,18 +53,6 @@
     --c-mk: 166 53 102;
     --c-mk-s: 248 225 235;
 
-    /* Legacy names, remapped so un-migrated pages match the Ledger look. */
-    --background: var(--bg);
-    --surface-elevated: var(--surface);
-    --surface-muted: 249 249 252;
-    --foreground: var(--ink);
-    --muted: var(--ink-2);
-    --muted-foreground: var(--ink-3);
-    --subtle: var(--sunk);
-    --subtle-hover: 226 226 234;
-    --line: var(--rule);
-    --line-strong: 196 196 210;
-
     --pad: clamp(16px, 2.6vw, 40px);
     color-scheme: light;
   }
@@ -112,10 +100,6 @@
     --c-mk: 238 148 184;
     --c-mk-s: 63 27 43;
 
-    --surface-muted: 16 16 24;
-    --subtle-hover: 40 40 56;
-    --line-strong: 62 62 82;
-
     color-scheme: dark;
   }
 
@@ -152,46 +136,7 @@
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(var(--line-strong)) transparent;
-  }
-}
-
-@layer components {
-  /* Legacy button/input/card classes, restyled flat for un-migrated pages.
-     New code should use the primitives in src/components/ui. */
-  .btn-primary {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink transition-colors duration-[140ms] hover:bg-accent-hover disabled:pointer-events-none disabled:opacity-50;
-  }
-
-  .btn-secondary {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-rule bg-surface px-4 text-sm font-medium text-ink transition-colors duration-[140ms] hover:border-accent-line hover:bg-hover disabled:pointer-events-none disabled:opacity-50;
-  }
-
-  .btn-danger {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md bg-danger px-4 text-sm font-medium text-white transition-colors duration-[140ms] hover:brightness-95 disabled:pointer-events-none disabled:opacity-50 dark:text-[#2A0C09];
-  }
-
-  .btn-ghost {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md px-4 text-sm font-medium text-ink-2 transition-colors duration-[140ms] hover:bg-tint-2 hover:text-ink disabled:pointer-events-none disabled:opacity-50;
-  }
-
-  .input-field {
-    @apply min-h-10 w-full rounded-md border border-rule bg-surface px-3 py-2 text-sm text-ink placeholder-ink-3 transition-[border-color,box-shadow] duration-[140ms] hover:border-accent-line focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/15 disabled:bg-sunk disabled:text-ink-3;
-  }
-
-  .card {
-    @apply overflow-hidden rounded-lg border border-rule bg-surface;
-  }
-
-  .card-hover {
-    @apply transition-colors duration-[140ms] hover:border-accent-line;
-  }
-
-  /* Legacy: every amount already carries .tabular-nums, so it stays mono.
-     New code uses .num instead. */
-  .tabular-nums {
-    font-family: theme(fontFamily.mono);
-    letter-spacing: -0.02em;
+    scrollbar-color: rgb(var(--ink-3) / 0.35) transparent;
   }
 }
 
@@ -256,7 +201,6 @@
   .animate-slide-in-left {
     animation: slideInLeft 0.2s ease-out;
   }
-
 }
 
 @media (prefers-reduced-motion: reduce) {

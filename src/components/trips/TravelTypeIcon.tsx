@@ -41,8 +41,8 @@ const TRAVEL_TYPE_TONES: Record<TravelType | "none", CategoryTone> = {
   none: "neutral",
 };
 
-/** Soft chip classes (background + glyph colour) per type, for selectable chips. */
-export const TRAVEL_TYPE_CHIP_CLASSES = Object.fromEntries(
+/** Soft chip classes (background + glyph colour) per type. */
+const TRAVEL_TYPE_CHIP_CLASSES = Object.fromEntries(
   Object.entries(TRAVEL_TYPE_TONES).map(([type, tone]) => [type, `${CATEGORY_STYLES[tone].bg} ${CATEGORY_STYLES[tone].fg}`])
 ) as Record<TravelType | "none", string>;
 

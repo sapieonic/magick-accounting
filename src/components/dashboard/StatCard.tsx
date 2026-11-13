@@ -16,7 +16,7 @@ export function StatCard({ label, value, icon: Icon, gradient, bgGlow, href }: S
   return (
     <Link
       href={href}
-      className="group relative overflow-hidden rounded-2xl border border-line bg-surface/80 p-5 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-line-strong hover:shadow-elevated dark:bg-surface/50 dark:shadow-black/40"
+      className="group relative overflow-hidden rounded-2xl border border-rule bg-surface/80 p-5 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-accent-line hover:shadow-elevated dark:bg-surface/50 dark:shadow-black/40"
     >
       <div
         className={`absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100 ${bgGlow}`}
@@ -28,15 +28,15 @@ export function StatCard({ label, value, icon: Icon, gradient, bgGlow, href }: S
           <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
         </div>
         <div className="flex-1">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-widest text-ink-3">
             {label}
           </p>
-          <p className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <p className="mt-1 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
             {value}
           </p>
         </div>
         <div className="absolute right-5 top-5 sm:static sm:right-auto sm:top-auto">
-          <ArrowUpRight className="h-5 w-5 text-line-strong transition-all duration-300 group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:text-foreground" />
+          <ArrowUpRight className="h-5 w-5 text-ink-3 transition-all duration-300 group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:text-ink" />
         </div>
       </div>
     </Link>

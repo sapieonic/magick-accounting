@@ -23,18 +23,6 @@ export default function Spinner({ className, size = "md" }: { className?: string
   );
 }
 
-export function PageLoader() {
-  return (
-    <div className="flex min-h-[16rem] flex-col items-center justify-center gap-4 rounded-panel border border-rule bg-surface bg-wash px-6 py-10 text-center">
-      <Spinner size="lg" />
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-ink">Loading data...</p>
-        <p className="text-xs text-ink-3">Serverless APIs can take a few seconds to warm up.</p>
-      </div>
-    </div>
-  );
-}
-
 export function InlineLoader({
   label = "Loading...",
   className,

@@ -13,7 +13,7 @@ export const ASSET_STATUSES: { value: string; label: string; tone: Tone }[] = [
 /** Statuses that end an asset's life; they cannot be changed afterwards. */
 export const TERMINAL_STATUSES = new Set(["retired", "sold", "lost", "disposed"]);
 
-export function assetStatusLabel(status: string): string {
+function assetStatusLabel(status: string): string {
   return ASSET_STATUSES.find((s) => s.value === status)?.label ?? status.replaceAll("_", " ");
 }
 

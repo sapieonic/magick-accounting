@@ -4,7 +4,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { Upload } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 
-export const RECEIPT_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
+const RECEIPT_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 
 interface ReceiptDropzoneProps {
   onFile: (file: File) => void;
