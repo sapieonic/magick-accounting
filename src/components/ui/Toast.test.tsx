@@ -97,7 +97,7 @@ describe("Toast", () => {
     });
   });
 
-  it("anchors toasts to the top below lg, clear of the tab bar and sticky form footers", () => {
+  it("anchors toasts to the top at every width, clear of the tab bar and sticky form footers", () => {
     render(
       <ToastProvider>
         <p>page</p>
@@ -105,7 +105,7 @@ describe("Toast", () => {
     );
     const region = screen.getByTestId("toast-region");
     expect(region.className).toMatch(/(^|\s)top-\[calc\(72px/);
-    expect(region.className).not.toMatch(/(^|\s)bottom-/);
-    expect(region).toHaveClass("lg:bottom-5", "lg:top-auto");
+    expect(region.className).not.toMatch(/(^|\s|:)bottom-/);
+    expect(region.className).not.toMatch(/top-auto/);
   });
 });

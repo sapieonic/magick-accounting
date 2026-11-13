@@ -59,10 +59,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Below lg the bottom edge belongs to the tab bar and sticky form footers,
-          so toasts drop in under the top bar instead; bottom-right from lg up. */}
+      {/* The bottom edge belongs to the tab bar and sticky form footers (with
+          their Save buttons), so toasts drop in under the top bar at every width. */}
       <div
-        className="fixed inset-x-4 top-[calc(72px+env(safe-area-inset-top))] z-50 flex flex-col items-end gap-2 lg:inset-x-auto lg:bottom-5 lg:right-5 lg:top-auto"
+        className="fixed inset-x-4 top-[calc(72px+env(safe-area-inset-top))] z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-5"
         aria-live="polite"
         data-testid="toast-region"
       >

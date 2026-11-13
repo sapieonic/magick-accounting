@@ -80,7 +80,7 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
         <div className="flex min-w-0 flex-col gap-0.5">
           <Link
             href={`/dashboard/assets/${asset._id}`}
-            className="ell font-medium text-ink after:absolute after:inset-0 after:content-[''] hover:text-accent"
+            className="line-clamp-2 break-words font-medium text-ink after:absolute after:inset-0 after:content-[''] hover:text-accent"
           >
             {asset.name}
           </Link>

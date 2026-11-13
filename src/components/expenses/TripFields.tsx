@@ -231,7 +231,7 @@ export default function TripFields({
             href="/dashboard/trips"
             target="_blank"
             rel="noopener noreferrer"
-            className={cn(linkClass, "inline-flex items-center gap-1")}
+            className={cn(linkClass, "inline-flex min-h-6 items-center gap-1")}
           >
             {trips.length > 0 ? "Manage trips" : "New trip"}
             <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />

@@ -33,7 +33,7 @@ Utilities: `.num` (Geist Mono, tabular, -0.02em: every amount, count, date in a 
 `.figure` (Geist sans, tabular, nowrap: big headline totals) · `.cap` (11px uppercase caption,
 .07em, 500: labels, column heads, eyebrows) · `.ell` (single-line ellipsis) · `bg-wash` / `bg-wash-r`
 (faint radial indigo from the top-left / top-right corner, behind headline totals and detail heads).
-Page padding is `var(--pad)` = `clamp(16px, 2.6vw, 40px)`; the layout already applies it to `<main>`.
+Page padding is `var(--pad)` = `clamp(16px, 2.6vw, 40px)`; the layout already applies it on a wrapper inside `<main>` (not on the scroller itself, so `sticky` offsets mean what they say).
 
 Fonts: `font-sans` = Geist, `font-mono` = Geist Mono. No serif anywhere.
 
@@ -155,7 +155,7 @@ its left side only, for rows with trailing icon buttons), `transition`,
 
 Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Skeleton` (+ page skeletons),
 `Spinner` (`decorative` when visible text says what is loading) / `InlineLoader` (one status, named by its label),
-`Toast` (under the top bar below `lg`, clear of the tab bar and sticky form footers; bottom-right from `lg`),
+`Toast` (top-right under the top bar at every width, clear of the tab bar and sticky form footers),
 `MultiSelect`, `CommandPalette`,
 `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
 

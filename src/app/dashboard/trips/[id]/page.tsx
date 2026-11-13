@@ -594,15 +594,16 @@ export default function TripDetailPage() {
                   >
                     <CategoryGlyph name={expense.category?.name} />
                     <span className="flex min-w-0 flex-1 flex-col">
-                      {/* The amount sits beside the title, outside the ellipsis, so it's never clipped. */}
-                      <span className="flex min-w-0 items-baseline justify-between gap-2">
-                        <span className="ell font-medium text-ink">{expense.title}</span>
+                      {/* The title may wrap to two lines in the narrow side column; the
+                          amount sits outside the sub-line's ellipsis so it's never clipped. */}
+                      <span className="line-clamp-2 font-medium text-ink">{expense.title}</span>
+                      <span className="flex min-w-0 items-baseline justify-between gap-2 text-xs text-ink-3">
+                        <span className="ell">
+                          {expenseDate(expense)} · {expense.createdBy?.name}
+                        </span>
                         <span className="num shrink-0 whitespace-nowrap text-[13px] text-ink">
                           {formatBaseCurrency(baseAmount(expense))}
                         </span>
-                      </span>
-                      <span className="ell text-xs text-ink-3">
-                        {expenseDate(expense)} · {expense.createdBy?.name}
                       </span>
                     </span>
                     <Button

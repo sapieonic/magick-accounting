@@ -292,7 +292,7 @@ export default function AssetDetailPage() {
             asset.canViewFinancials && (
               <Link
                 href={`/dashboard/expenses/${purchase._id}/edit`}
-                className={cn(linkClass, "inline-flex items-center gap-1 text-[13px]")}
+                className={cn(linkClass, "inline-flex min-h-6 items-center gap-1 text-[13px]")}
               >
                 View expense <ExternalLink aria-hidden="true" size={13} strokeWidth={ICON_STROKE} />
               </Link>
