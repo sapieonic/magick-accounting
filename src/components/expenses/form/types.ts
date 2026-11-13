@@ -18,6 +18,8 @@ export interface CurrencyOption {
   name: string;
   symbol: string;
   isBase: boolean;
+  /** Today's rate to INR, for the form's preview; the server converts on save. */
+  rateToBase: number;
 }
 
 /** Options the expense forms pick from (`LOOKUPS_URL`). */

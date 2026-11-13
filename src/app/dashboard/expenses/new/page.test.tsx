@@ -478,3 +478,32 @@ describe("NewExpensePage receipt auto-fill", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 });
+
+describe("NewExpensePage foreign currency", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem("expense-upload-modal-skip", "true");
+    vi.mocked(useAuth).mockReturnValue({ user: null, isAdmin: false } as any);
+    vi.mocked(api.get).mockResolvedValue({
+      departments: [{ _id: "department-1", name: "Engineering", isDefault: true }],
+      categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+      currencies: [
+        { _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true, rateToBase: 1 },
+        { _id: "currency-2", code: "USD", name: "US Dollar", symbol: "$", isBase: false, rateToBase: 83.5 },
+      ],
+    });
+  });
+
+  it("previews the INR amount at today's rate", async () => {
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    const amount = await screen.findByLabelText(/^amount/i);
+    expect(screen.getByText("Base currency, no conversion.")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Currency"), "currency-2");
+    expect(screen.getByText("Converted to INR at the current USD rate when you save.")).toBeInTheDocument();
+
+    await user.type(amount, "100");
+    expect(amount).toHaveAccessibleDescription(/≈ ₹8,350\.00 at today's rate/);
+  });
+});

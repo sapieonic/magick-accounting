@@ -9,11 +9,20 @@ import { cn } from "@/components/ui/cn";
 import { panelClass } from "@/components/ui/styles";
 import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
 import TripFields, { type TripOption } from "@/components/expenses/TripFields";
-import { formatCurrency } from "@/lib/currency";
+import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import type { TravelType } from "@/lib/trip";
 import FormSection, { FieldGrid, FormFooter } from "@/components/ui/FormSection";
 import { getPaymentErrors } from "./expense-form";
-import type { AiField, ExpenseFormValues, ExpenseLookups } from "./types";
+import type { AiField, CurrencyOption, ExpenseFormValues, ExpenseLookups } from "./types";
+
+/** The amount's hint: the INR equivalent at today's rate for a foreign currency. */
+function amountHint(currency: CurrencyOption | undefined, amount: number | null): string {
+  if (!currency || currency.isBase) return "Base currency, no conversion.";
+  if (amount !== null && currency.rateToBase > 0) {
+    return `≈ ${formatBaseCurrency(amount * currency.rateToBase)} at today's rate. Converted when you save.`;
+  }
+  return `Converted to INR at the current ${currency.code} rate when you save.`;
+}
 
 /** "from receipt" marker for a Field's label row. */
 function FromReceipt() {
@@ -161,11 +170,7 @@ export default function ExpenseForm({
                 <Field
                   label="Amount"
                   aside={aside("amount", "currency")}
-                  hint={
-                    currency && !currency.isBase
-                      ? `Converted to INR at the current ${currency.code} rate when you save.`
-                      : "Base currency, no conversion."
-                  }
+                  hint={amountHint(currency, hasAmount ? amountValue : null)}
                 >
                   <AmountControl
                     id="amount"
