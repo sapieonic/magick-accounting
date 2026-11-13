@@ -200,4 +200,3 @@ use the nav icons from `nav.ts` for sections and `CategoryGlyph` for categories.
 - Don't: gradient banners, coloured icon tiles on every card, shadows on panels, `rounded-xl/2xl`,
   serif or extra font families, `max-w-6xl mx-auto` wrappers, raw hex colours, tailwind palette colours
   (`emerald-500`, `blue-400`…) for meaning, per-page re-implementations of buttons/inputs.
-- Don't use `dashboard/StatCard`: it has no importers and only awaits removal; use `Stat` in a `StatBand`.

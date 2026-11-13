@@ -13,8 +13,10 @@ Single-tenant by design — one organization per deployment.
 | Database       | MongoDB (Mongoose ODM)              |
 | Authentication | Firebase Auth (Google sign-in)      |
 | File Storage   | AWS S3 (presigned URLs)             |
-| Styling        | Tailwind CSS                        |
+| Styling        | Tailwind CSS, "Ledger" design system (`docs/design/ledger.md`) |
+| Fonts          | Geist, Geist Mono                   |
 | Icons          | Lucide React                        |
+| Testing        | Vitest, Testing Library             |
 
 ## Features
 
@@ -93,9 +95,10 @@ Single-tenant by design — one organization per deployment.
 - Admins can add or remove allowed email domains from the Settings page
 
 ### Dashboard
-- Overview with total expenses, total amount, department count, and category count
-- Recent expenses at a glance
-- Quick navigation to all sections
+- Overview: total spend, month to date, pocket share and average expense in one totals band
+- Monthly spend bars, ranked categories and departments (each links to the filtered expense list)
+- Company vs pocket split and pocket spend by person (admins)
+- Your latest entries, with quick navigation to every section from the side rail (bottom tab bar on phones)
 
 ## Prerequisites
 
@@ -351,18 +354,21 @@ src/
 │   ├── TelegramDraft.ts                  # expense being added via Telegram, until saved
 │   └── TelegramUpdate.ts                 # processed webhook updates (dedupe)
 ├── components/
-│   ├── layout/
-│   │   ├── Sidebar.tsx                   # Desktop sidebar + mobile drawer
-│   │   └── Header.tsx                    # Top bar with user dropdown
-│   ├── profile/TelegramLinkCard.tsx      # Link / unlink Telegram
-│   ├── settings/TelegramBotSettings.tsx  # Admin: connect the Telegram bot
-│   └── ui/
-│       ├── Toast.tsx                     # Toast notification system (context-based)
-│       ├── Modal.tsx                     # Accessible modal dialog
-│       ├── Spinner.tsx                   # Loading spinner + full-page loader
-│       └── EmptyState.tsx                # Empty state placeholder
+│   ├── ui/                               # Ledger primitives: Button, PageHeader, Panel, StatBand, Field,
+│   │                                     #   Badge/Chip, CategoryGlyph, SplitBar, RankedBar, Modal, Toast, ...
+│   ├── layout/                           # Side rail + drawer, top bar, mobile tab bar, nav config
+│   ├── dashboard/overview/               # Overview panels
+│   ├── expenses/                         # Ledger rows + detail panel, shared ExpenseForm, payment/trip fields
+│   ├── trips/                            # Trip clusters, timeline, trip form and pickers
+│   ├── assets/                           # Asset rows, history, purchase section
+│   ├── org/                              # Shared departments/categories list, user spend panels
+│   ├── settings/                         # Settings sections incl. TelegramBotSettings
+│   ├── profile/                          # Avatar, TelegramLinkCard
+│   └── invoice/                          # PDF documents + invoice builder UI
+├── hooks/                                # useMediaQuery, useDialogLayer, useTitle
 └── contexts/
-    └── AuthContext.tsx                    # Auth state, sign-in/out, role helpers
+    ├── AuthContext.tsx                    # Auth state, sign-in/out, role helpers
+    └── ThemeContext.tsx                   # Light/dark theme
 ```
 
 ## API Reference
@@ -423,8 +429,9 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 
 ```bash
 npm run dev       # Start development server
-npm run build     # Production build
+npm run build     # Production build (also type-checks)
 npm run start     # Start production server
+npm test          # Vitest (backend + UI suites)
 npm run migrate:assets # Backfill asset allocation/index data before first asset-feature deploy
 npm run lint      # Run ESLint
 ```

@@ -12,7 +12,7 @@ Magick Accounting is a single-tenant expense management app (one organization pe
 - `npm run build` — production build **and type check**. Run it after changes.
 - `npm test` — Vitest. `npm run test:backend` runs `src/**/*.test.ts` in Node; `npm run test:ui` runs `src/**/*.test.tsx` in jsdom with Testing Library.
 - `npm run start` — serve the production build
-- `npm run seed` — run `src/scripts/seed.ts` via ts-node to seed default data
+- `npm run migrate:assets` — backfill asset allocation/index data (`scripts/migrate-assets.mjs`)
 - `npm run lint` — `next lint`; no ESLint config is committed, so this opens setup
 - `npx serverless deploy --stage prod` — provision the S3 receipts bucket from `serverless.yaml`
 

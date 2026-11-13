@@ -10,7 +10,10 @@ Use `npm install` to install dependencies. Use `npm run dev` to start the app at
 Follow the existing style: TypeScript with `strict` mode, 2-space indentation, semicolons, and double quotes. Use PascalCase for React components and Mongoose models (`Sidebar.tsx`, `Expense.ts`), camelCase for functions and variables, and route folders that match the URL structure (`src/app/api/expenses/[id]`). Prefer the `@/*` path alias for imports from `src`. Keep route handlers thin and move shared logic into `src/lib` when it can be reused. No formatter config is committed today, so match the surrounding file.
 
 ## Testing Guidelines
-There is no committed automated test suite and no `tests/` directory. Until one is added, validate changes with `npm run build` plus focused manual checks in auth, expense CRUD, role checks, and receipt uploads. If you add tests, place them close to the feature or under a new `tests/` tree and name them `*.test.ts` or `*.test.tsx`.
+Tests use Vitest and sit next to the code they cover. `npm test` runs everything; `npm run test:backend` runs `src/**/*.test.ts` in Node and `npm run test:ui` runs `src/**/*.test.tsx` in jsdom with Testing Library. Run `npm test` and `npm run build` after changes, plus focused manual checks in auth, expense CRUD, role checks and receipt uploads.
+
+## UI Guidelines
+Build pages from the "Ledger" primitives in `src/components/ui`; tokens, components and layout rules are documented in `docs/design/ledger.md`. Extend a primitive rather than re-implementing it in a page, and use the theme tokens (never raw hex) so light and dark mode both work.
 
 ## Commit & Pull Request Guidelines
 Recent commits use short Conventional Commit prefixes such as `fix:` and `feat:`. Keep commit subjects imperative and specific, for example `fix: validate currency before saving expense`. PRs should include a concise summary, note any env or schema changes, link the related issue when applicable, and attach screenshots for UI changes in the dashboard.
