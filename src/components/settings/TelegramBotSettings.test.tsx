@@ -83,6 +83,9 @@ describe("TelegramBotSettings", () => {
     render(<TelegramBotSettings />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+    // The stored token is never echoed back into the form.
+    expect(screen.getByLabelText("Bot token")).toHaveValue("");
+    expect(screen.getByLabelText("Bot token")).toHaveAttribute("type", "password");
     await userEvent.click(screen.getByRole("button", { name: "Reconnect" }));
 
     expect(api.put).toHaveBeenCalledWith("/api/telegram/settings", { appUrl: "https://app.example.com" });
