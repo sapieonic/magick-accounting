@@ -1,11 +1,11 @@
 "use client";
 
 import "./globals.css";
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { RotateCcw } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { buttonClass } from "@/components/ui/styles";
-import { THEME_STORAGE_KEY } from "@/contexts/ThemeContext";
+import { applyStoredTheme } from "@/contexts/ThemeContext";
 
 // global-error replaces the root layout when an unrecoverable error is thrown,
 // so it must render its own <html> and <body> (and load the styles itself).
@@ -16,13 +16,10 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  // The root layout's theme boot script is gone too; honour a saved dark theme.
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(THEME_STORAGE_KEY) === "dark") document.documentElement.classList.add("dark");
-    } catch {
-      // localStorage can throw in private mode; stay light.
-    }
+  // React strips the root layout's <html> class and color-scheme when this
+  // takes over; restore the saved theme before paint (no light flash).
+  useLayoutEffect(() => {
+    applyStoredTheme();
   }, []);
 
   return (
@@ -46,7 +43,7 @@ export default function GlobalError({
               </Button>
               {/* A plain link: the app's router may be what failed. */}
               <a href="/dashboard" className={buttonClass({ variant: "ghost" })}>
-                Go to Dashboard
+                Go to dashboard
               </a>
             </div>
           </div>

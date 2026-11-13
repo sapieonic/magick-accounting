@@ -73,7 +73,7 @@ export function Chip({ pressed = false, icon: Icon, className, children, type = 
         focusRing,
         pressed
           ? "border-accent bg-accent-soft font-semibold text-accent"
-          : "border-rule bg-surface text-ink hover:border-accent-line hover:bg-hover",
+          : "border-control-line bg-surface text-ink hover:border-accent-2 hover:bg-hover",
         className
       )}
       {...rest}

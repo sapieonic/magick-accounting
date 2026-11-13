@@ -59,10 +59,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Clears the mobile tab bar below lg. */}
+      {/* Below lg the bottom edge belongs to the tab bar and sticky form footers,
+          so toasts drop in under the top bar instead; bottom-right from lg up. */}
       <div
-        className="fixed inset-x-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-50 flex flex-col items-end gap-2 lg:inset-x-auto lg:bottom-5 lg:right-5"
+        className="fixed inset-x-4 top-[calc(72px+env(safe-area-inset-top))] z-50 flex flex-col items-end gap-2 lg:inset-x-auto lg:bottom-5 lg:right-5 lg:top-auto"
         aria-live="polite"
+        data-testid="toast-region"
       >
         {toasts.map((t) => (
           <div

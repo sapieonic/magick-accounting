@@ -80,8 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (fbUser) {
         await verifyUser(fbUser);
       } else {
+        // Keep any error: a rejected sign-in (blocked domain) signs out right
+        // after setting it. signInWithGoogle clears it when a new attempt starts.
         setUser(null);
-        setError(null);
       }
 
       setLoading(false);
@@ -102,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    setError(null);
     await signOut(auth);
     setUser(null);
   };

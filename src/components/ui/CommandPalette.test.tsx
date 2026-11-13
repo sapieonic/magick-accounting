@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CommandPalette, { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
+import Modal from "@/components/ui/Modal";
 
 const push = vi.fn();
 let isAdmin = false;
@@ -93,5 +94,42 @@ describe("CommandPalette", () => {
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("focuses the search box and returns focus to the opener on close", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button>Search</button>
+        <CommandPalette />
+      </>
+    );
+    const opener = screen.getByRole("button", { name: "Search" });
+    opener.focus();
+    openPalette();
+    expect(screen.getByLabelText("Search commands")).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(opener).toHaveFocus();
+  });
+
+  it("stacks above the nav drawer and closes alone on Escape", async () => {
+    const user = userEvent.setup();
+    const closeDrawer = vi.fn();
+    render(
+      <>
+        <Modal isOpen onClose={closeDrawer} title="Navigation">
+          <a href="/dashboard">Overview</a>
+        </Modal>
+        <CommandPalette />
+      </>
+    );
+    openPalette();
+    const palette = screen.getByRole("dialog", { name: /command palette/i });
+    expect(palette.className).toMatch(/\bz-\[60\]/);
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
+    expect(closeDrawer).not.toHaveBeenCalled();
   });
 });

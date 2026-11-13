@@ -162,7 +162,7 @@ export default function MultiSelect({
                 <span
                   className={cn(
                     "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border",
-                    isSelected ? "border-accent bg-accent text-accent-ink" : "border-rule bg-surface"
+                    isSelected ? "border-accent bg-accent text-accent-ink" : "border-control-line bg-surface"
                   )}
                 >
                   {isSelected && <Check aria-hidden="true" className="h-3 w-3" strokeWidth={2.5} />}

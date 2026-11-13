@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type InputHTMLAttributes } from "react";
+import { useState, type InputHTMLAttributes } from "react";
 import { Save } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -53,7 +53,11 @@ export function normalizeInvoiceSettings(raw: Record<string, unknown>): InvoiceS
 
 interface InvoiceDefaultsSettingsProps {
   id: string;
-  /** Saved settings from the page load; replaces the form whenever it changes. */
+  /**
+   * Saved settings from the page load: the form's starting values only. The
+   * form then owns its state (a save refreshes it from the server's reply), so
+   * reloads elsewhere on the page never wipe unsaved edits.
+   */
   settings: InvoiceSettings;
 }
 
@@ -62,8 +66,6 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
   const { toast } = useToast();
   const [values, setValues] = useState(settings);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => setValues(settings), [settings]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +97,7 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
       id={id}
       className={settingsSectionClass}
       title="Invoice defaults"
-      meta="Seller and bank details used to pre-fill new invoices."
+      description="Seller and bank details used to pre-fill new invoices."
     >
       <form onSubmit={handleSave} className="flex flex-col gap-5">
         <FieldGrid min={240}>

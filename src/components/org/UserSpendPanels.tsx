@@ -8,7 +8,7 @@ import { linkClass } from "@/components/ui/styles";
 import { formatBaseCurrency } from "@/lib/currency";
 import Avatar from "@/components/ui/Avatar";
 
-export interface UserSpend {
+interface UserSpend {
   _id: string;
   name: string;
   photoURL?: string;
@@ -21,7 +21,7 @@ export interface UserSpend {
 const TOP = 8;
 
 /** Users with spend, largest first. */
-export function spendRows(users: UserSpend[]) {
+function spendRows(users: UserSpend[]) {
   return users
     .filter((u) => (u.totalSpend ?? 0) > 0)
     .map((u) => ({ user: u, value: u.totalSpend ?? 0 }))
@@ -29,7 +29,7 @@ export function spendRows(users: UserSpend[]) {
 }
 
 /** Users with a company/pocket breakdown, largest first. */
-export function sourceRows(users: UserSpend[]) {
+function sourceRows(users: UserSpend[]) {
   return users
     .map((u) => ({ user: u, company: u.companySpend ?? 0, pocket: u.pocketSpend ?? 0 }))
     .filter((r) => r.company + r.pocket > 0)

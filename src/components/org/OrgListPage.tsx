@@ -17,7 +17,7 @@ import Panel from "@/components/ui/Panel";
 import Badge from "@/components/ui/Badge";
 import Field, { inputClass, textareaClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
-import { rowClass } from "@/components/ui/styles";
+import { panelPadL, rowClass } from "@/components/ui/styles";
 import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 
 export interface OrgItem {
@@ -27,7 +27,7 @@ export interface OrgItem {
   isDefault: boolean;
 }
 
-export interface OrgForm {
+interface OrgForm {
   name: string;
   description: string;
 }
@@ -73,6 +73,8 @@ const EMPTY_FORM: OrgForm = { name: "", description: "" };
 export default function OrgListPage<T extends OrgItem>({ config }: { config: OrgListConfig<T> }) {
   const { title, noun, endpoint, responseKey } = config;
   const pluralLower = title.toLowerCase();
+  // Sentence case in buttons and dialog titles ("Add department").
+  const nounLower = noun.toLowerCase();
   useTitle(title);
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -158,7 +160,7 @@ export default function OrgListPage<T extends OrgItem>({ config }: { config: Org
   const defaults = items.filter((item) => item.isDefault).length;
   const addButton = (
     <Button icon={Plus} onClick={openCreate}>
-      Add {noun}
+      Add {nounLower}
     </Button>
   );
 
@@ -203,7 +205,7 @@ export default function OrgListPage<T extends OrgItem>({ config }: { config: Org
                   <Link
                     href={`/dashboard/expenses?${config.filterParam}=${item._id}`}
                     aria-label={`View expenses in ${item.name}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 self-stretch py-2.5 pl-[clamp(16px,2vw,24px)]"
+                    className={cn(panelPadL, "flex min-w-0 flex-1 items-center gap-3 self-stretch py-2.5")}
                   >
                     {config.glyph(item)}
                     <span className="flex min-w-0 flex-col gap-0.5">
@@ -242,7 +244,7 @@ export default function OrgListPage<T extends OrgItem>({ config }: { config: Org
       <Modal
         isOpen={showForm}
         onClose={() => setShowForm(false)}
-        title={editTarget ? `Edit ${noun}` : `New ${noun}`}
+        title={editTarget ? `Edit ${nounLower}` : `New ${nounLower}`}
       >
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Field label="Name">
@@ -279,7 +281,7 @@ export default function OrgListPage<T extends OrgItem>({ config }: { config: Org
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title={`Delete ${noun}`}
+        title={`Delete ${nounLower}`}
         confirmLabel="Delete"
         busy={submitting}
       >

@@ -20,7 +20,7 @@ export default function StatBand({ children, className, "aria-label": label = "T
   );
 }
 
-export type StatTone = "default" | "accent" | "amber";
+export type StatTone = "default" | "amber";
 
 interface StatProps {
   label: ReactNode;
@@ -29,7 +29,7 @@ interface StatProps {
   /** One muted line under the figure. */
   sub?: ReactNode;
   icon?: LucideIcon;
-  /** amber = pocket/owed money; accent colours the icon only. */
+  /** amber = pocket/owed money (figure and icon); default has an indigo icon. */
   tone?: StatTone;
   /** The large figure with the indigo wash; use once per band, first. */
   headline?: boolean;
@@ -44,7 +44,8 @@ export function Stat({ label, value, sub, icon: Icon, tone = "default", headline
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col justify-between gap-1.5 bg-surface py-[22px] [container-type:inline-size]",
+        // Top-aligned, so a stat without `sub` lines up with its neighbours.
+        "flex min-w-0 flex-col justify-start gap-1.5 bg-surface py-[22px] [container-type:inline-size]",
         headline ? "basis-[380px] grow-[2] bg-wash px-6" : "basis-[220px] grow px-5",
         className
       )}
@@ -81,7 +82,7 @@ export function Stat({ label, value, sub, icon: Icon, tone = "default", headline
  */
 export function BandCell({ label, children, className }: { label: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex min-w-0 basis-[300px] grow flex-col justify-between gap-3 bg-surface px-5 py-[22px]", className)}>
+    <div className={cn("flex min-w-0 basis-[300px] grow flex-col justify-start gap-3 bg-surface px-5 py-[22px]", className)}>
       <span className="cap flex items-center gap-1.5 text-ink-3">{label}</span>
       {children}
     </div>

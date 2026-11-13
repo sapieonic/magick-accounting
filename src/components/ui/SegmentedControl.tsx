@@ -44,7 +44,7 @@ export default function SegmentedControl<T extends string>({
       role="group"
       aria-label={label}
       className={cn(
-        "inline-flex max-w-full overflow-x-auto rounded-control border border-rule bg-surface",
+        "inline-flex max-w-full overflow-x-auto rounded-control border border-control-line bg-surface",
         fullWidth && "flex w-full",
         disabled && "opacity-60",
         className

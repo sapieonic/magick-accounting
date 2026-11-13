@@ -72,7 +72,7 @@ function SignInError({ message }: { message: string }) {
 export default function LoginPage() {
   const { user, loading, error, signInWithGoogle } = useAuth();
   const router = useRouter();
-  useTitle("Sign In");
+  useTitle("Sign in");
 
   useEffect(() => {
     if (user) router.replace("/dashboard");

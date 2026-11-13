@@ -3,16 +3,19 @@
 import { Plus, Trash2 } from "lucide-react";
 import Button, { IconButton } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
-import { inputClass } from "@/components/ui/styles";
+import { inputClass, panelPadX } from "@/components/ui/styles";
 import { formatRupees, lineItemAmount } from "@/lib/invoice";
 
 export interface LineRow {
+  /** Stable React key, so removing a row doesn't shift focus or state onto its neighbour. */
+  id: string;
   description: string;
   quantity: string;
   rate: string;
 }
 
-export const newLineRow = (): LineRow => ({ description: "", quantity: "1", rate: "" });
+let nextRowId = 0;
+export const newLineRow = (): LineRow => ({ id: `line-${++nextRowId}`, description: "", quantity: "1", rate: "" });
 
 interface LineItemsTableProps {
   rows: LineRow[];
@@ -21,15 +24,15 @@ interface LineItemsTableProps {
   onRemove: (index: number) => void;
 }
 
-const pad = "px-[clamp(16px,2vw,24px)]";
-
 /**
- * Columns: # · description · qty · rate · amount · remove. Below 560px of
- * table width each row stacks into a small two-column card (container query).
+ * Columns: # · description · qty · rate · amount · remove. Description takes
+ * all the free width; the number columns are only as wide as their figures.
+ * Below 560px of table width each row stacks into a small two-column card
+ * (container query).
  */
 const rowGrid = cn(
   "grid grid-cols-2 gap-x-3 gap-y-2 [grid-template-areas:'idx_del'_'desc_desc'_'qty_rate'_'amt_amt']",
-  "[@container_(min-width:560px)]:grid-cols-[2rem_minmax(0,1fr)_5.5rem_8.5rem_8.5rem_2.75rem]",
+  "[@container_(min-width:560px)]:grid-cols-[1.5rem_minmax(0,1fr)_4.5rem_7rem_7.5rem_2.75rem]",
   "[@container_(min-width:560px)]:items-center",
   "[@container_(min-width:560px)]:[grid-template-areas:'idx_desc_qty_rate_amt_del']"
 );
@@ -43,7 +46,7 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
     <div className="[container-type:inline-size]">
       <div
         aria-hidden="true"
-        className={cn(rowGrid, "cap hidden border-y border-rule-2 bg-sunk py-2 text-ink-3 [@container_(min-width:560px)]:grid", pad)}
+        className={cn(rowGrid, "cap hidden border-y border-rule-2 bg-sunk py-2 text-ink-3 [@container_(min-width:560px)]:grid", panelPadX)}
       >
         <span className="[grid-area:idx]">#</span>
         <span className="[grid-area:desc]">Description</span>
@@ -58,8 +61,8 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
           const amount = lineItemAmount(parseFloat(row.quantity) || 0, parseFloat(row.rate) || 0);
           return (
             <li
-              key={i}
-              className={cn(rowGrid, "border-b border-rule-2 py-3 [@container_(min-width:560px)]:py-2", pad)}
+              key={row.id}
+              className={cn(rowGrid, "border-b border-rule-2 py-3 [@container_(min-width:560px)]:py-2", panelPadX)}
             >
               <span className="cap self-center text-ink-3 [grid-area:idx]">
                 <span className={narrowOnly}>Item </span>
@@ -110,7 +113,7 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
         })}
       </ol>
 
-      <div className={cn("pt-3", pad)}>
+      <div className={cn("pt-3", panelPadX)}>
         <Button variant="ghost" size="sm" icon={Plus} onClick={onAdd} className="-ml-3">
           Add item
         </Button>

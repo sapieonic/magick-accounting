@@ -70,9 +70,9 @@ export default function InvoiceSummary({
       </dl>
 
       <dl className="border-t border-rule-2 pt-2 text-sm">
-        <Row label="Sub Total" value={formatRupees(totals.subTotal)} />
+        <Row label="Sub total" value={formatRupees(totals.subTotal)} />
         {hasDiscount && <Row label={discountLabel} value={`-${formatRupees(totals.discountAmount)}`} />}
-        {hasDiscount && <Row label="Taxable Amount" value={formatRupees(totals.taxableAmount)} />}
+        {hasDiscount && <Row label="Taxable amount" value={formatRupees(totals.taxableAmount)} />}
         <Row label={`CGST (${totals.cgstRate}%)`} value={formatRupees(totals.cgstAmount)} />
         <Row label={`SGST (${totals.sgstRate}%)`} value={formatRupees(totals.sgstAmount)} />
         <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-rule pt-3">

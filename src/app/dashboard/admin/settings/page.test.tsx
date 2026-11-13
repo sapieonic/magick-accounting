@@ -25,6 +25,8 @@ const responses: Record<string, unknown> = {
   "/api/telegram/settings": { telegram: { configured: false, appUrl: "", linkedUsers: 0 } },
 };
 
+const getCalls = (url: string) => vi.mocked(api.get).mock.calls.filter(([u]) => u === url);
+
 describe("AdminSettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -64,11 +66,39 @@ describe("AdminSettingsPage", () => {
     const rate = screen.getByLabelText("1 USD = ? INR");
     await userEvent.clear(rate);
     await userEvent.type(rate, "84.25");
-    await userEvent.click(screen.getByRole("button", { name: "Update Rate" }));
+    await userEvent.click(screen.getByRole("button", { name: "Update rate" }));
 
     expect(api.put).toHaveBeenCalledWith("/api/currencies/usd", { rateToBase: 84.25 });
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Exchange rate updated"));
-    await waitFor(() => expect(vi.mocked(api.get).mock.calls.filter(([u]) => u === "/api/domains")).toHaveLength(2));
+    // Only the currencies are re-fetched.
+    await waitFor(() => expect(getCalls("/api/currencies")).toHaveLength(2));
+    expect(getCalls("/api/domains")).toHaveLength(1);
+    expect(getCalls("/api/invoice-settings")).toHaveLength(1);
+  });
+
+  it("keeps unsaved invoice defaults when a domain is added", async () => {
+    vi.mocked(api.post).mockResolvedValue({});
+    render(<AdminSettingsPage />);
+    const seller = await screen.findByLabelText("Seller name");
+    await userEvent.clear(seller);
+    await userEvent.type(seller, "Unsaved LLP");
+
+    await userEvent.click(screen.getByRole("button", { name: "Add domain" }));
+    await userEvent.type(screen.getByLabelText("Domain"), "acme.com");
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Add email domain" })).getByRole("button", { name: "Add domain" }));
+
+    await waitFor(() => expect(getCalls("/api/domains")).toHaveLength(2));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Domain added"));
+    expect(screen.getByLabelText("Seller name")).toHaveValue("Unsaved LLP");
+    expect(getCalls("/api/invoice-settings")).toHaveLength(1);
+  });
+
+  it("explains why the last domain can't be removed", async () => {
+    render(<AdminSettingsPage />);
+    const remove = await screen.findByRole("button", { name: "Remove @example.com" });
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAccessibleDescription("The last domain can't be removed; add another first.");
+    expect(screen.getByText("The last domain can't be removed; add another first.")).toBeVisible();
   });
 
   it("saves invoice defaults", async () => {
@@ -83,7 +113,8 @@ describe("AdminSettingsPage", () => {
       "/api/invoice-settings",
       expect.objectContaining({ sellerName: "Magick LLP", cgstRate: "9", sgstRate: "9" })
     );
-    expect(await screen.findByLabelText("CGST %")).toHaveValue(6);
+    await waitFor(() => expect(screen.getByLabelText("CGST %")).toHaveValue(6));
+    expect(screen.getByLabelText("Seller name")).toHaveValue("Magick LLP");
     expect(toast).toHaveBeenCalledWith("Invoice defaults saved");
   });
 });

@@ -40,9 +40,15 @@ describe("InlineLoader", () => {
     expect(screen.getByText("Fetching data")).toBeInTheDocument();
   });
 
-  it("contains a Spinner (status role) with the sm size", () => {
-    render(<InlineLoader />);
-    expect(screen.getByRole("status")).toHaveClass("h-4", "w-4");
+  it("is one status named by its visible label, with a decorative sm spinner", () => {
+    const { container } = render(<InlineLoader label="Refreshing..." />);
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toHaveTextContent("Refreshing...");
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    const ring = container.querySelector(".animate-spin");
+    expect(ring).toHaveAttribute("aria-hidden", "true");
+    expect(ring).toHaveClass("h-4", "w-4");
   });
 
   it("applies a custom className to the wrapper", () => {

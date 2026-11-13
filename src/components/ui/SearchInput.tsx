@@ -1,6 +1,6 @@
 "use client";
 
-import type { InputHTMLAttributes } from "react";
+import { useRef, type InputHTMLAttributes } from "react";
 import { Search, X } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
@@ -19,6 +19,7 @@ interface SearchInputProps
  * text. Wrap it in a `Field` for a visible label, or give it an `aria-label`.
  */
 export default function SearchInput({ value, onValueChange, className, ...input }: SearchInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className={cn("relative min-w-0", className)}>
       <Search
@@ -31,6 +32,7 @@ export default function SearchInput({ value, onValueChange, className, ...input 
         type="search"
         autoComplete="off"
         {...input}
+        ref={inputRef}
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         className={cn(inputClass, "pl-9 pr-11 [&::-webkit-search-cancel-button]:appearance-none")}
@@ -39,7 +41,11 @@ export default function SearchInput({ value, onValueChange, className, ...input 
         <IconButton
           icon={X}
           size="sm"
-          onClick={() => onValueChange("")}
+          onClick={() => {
+            onValueChange("");
+            // The button unmounts once the value is empty; keep focus in the box.
+            inputRef.current?.focus();
+          }}
           aria-label="Clear search"
           className="absolute right-0.5 top-1/2 -translate-y-1/2"
         />

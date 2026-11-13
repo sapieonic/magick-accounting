@@ -21,12 +21,13 @@ export default function BrandLogo({ compact = false, variant = "default", size =
 
   return (
     <div className={cn("flex min-w-0 items-center gap-2.5", className)}>
-      {/* On the dark rail the colourful mark sits on a light tile for contrast. */}
+      {/* On dark surfaces (the rail, the sign-in hero, any page in dark mode) the
+          colourful mark sits on a light tile for contrast. */}
       <div
         className={cn(
           "flex shrink-0 items-center justify-center",
           s.mark,
-          onDark && "rounded-md bg-white p-[3px]"
+          onDark ? "rounded-md bg-white p-[3px]" : "dark:rounded-md dark:bg-white dark:p-[3px]"
         )}
       >
         <img src="/logo.png" alt={compact ? "MagickVoice Accounting portal" : ""} className="h-full w-full object-contain" />

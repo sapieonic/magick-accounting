@@ -50,7 +50,9 @@ function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Revoking right after click() can cancel the download in some browsers;
+  // release the blob once the download has had time to start.
+  setTimeout(() => URL.revokeObjectURL(url), 40_000);
 }
 
 const safeFilePart = (s: string) => s.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -259,7 +261,7 @@ export default function InvoicesPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Generate Tax Invoice"
+        title="Generate tax invoice"
         meta="Fill in the details and download a tax invoice or payment receipt PDF. Nothing is stored."
       />
 
@@ -346,7 +348,7 @@ export default function InvoicesPage() {
               <>
                 HSN/SAC and GST rates default from{" "}
                 <Link href="/dashboard/admin/settings" className={linkClass}>
-                  Settings → Invoice Defaults
+                  Settings → Invoice defaults
                 </Link>{" "}
                 and apply to the whole invoice. A discount is deducted from the sub-total before CGST and SGST.
               </>
@@ -447,7 +449,8 @@ export default function InvoicesPage() {
             title="Payment received"
             description="Only used for the payment receipt. Leave amount received blank to use the full invoice total."
           >
-            <FieldGrid>
+            {/* Wider minimum than the other grids so the long placeholders fit. */}
+            <FieldGrid min={240}>
               <Field label="Receipt number">
                 <input type="text" {...bindPayment("receiptNumber")} className={numClass} />
               </Field>
@@ -486,7 +489,8 @@ export default function InvoicesPage() {
         </div>
 
         <InvoiceSummary
-          className="grow basis-[min(320px,100%)] lg:sticky lg:top-20"
+          // <main> is the scroll container, so top-6 sits 24px below the header.
+          className="grow basis-[min(320px,100%)] lg:sticky lg:top-6"
           totals={totals}
           discountLabel={formatDiscountLabel(buildInvoiceData(), totals.discountAmount)}
           invoiceNumber={form.invoiceNumber.trim()}
@@ -497,7 +501,7 @@ export default function InvoicesPage() {
         >
           <div className="flex flex-col gap-2">
             <Button type="submit" icon={FileText} loading={generating} fullWidth>
-              {generating ? "Generating…" : "Generate Invoice"}
+              {generating ? "Generating…" : "Generate invoice"}
             </Button>
             <Button
               variant="secondary"
@@ -506,7 +510,7 @@ export default function InvoicesPage() {
               onClick={handleGenerateReceipt}
               fullWidth
             >
-              {receiptGenerating ? "Generating…" : "Generate Receipt"}
+              {receiptGenerating ? "Generating…" : "Generate receipt"}
             </Button>
             <p className="text-xs text-ink-3">The receipt reuses these invoice details and adds the payment received.</p>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, Coins, FileText, Shield } from "lucide-react";
 import { api } from "@/lib/api";
@@ -37,36 +37,69 @@ export default function AdminSettingsPage() {
   const [currencies, setCurrencies] = useState<CurrencyRecord[]>([]);
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(EMPTY_INVOICE_SETTINGS);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [pendingReloads, setPendingReloads] = useState(0);
+  // Latest request per section, so a slow older reload can't overwrite a newer one.
+  const requestSeq = useRef({ domains: 0, currencies: 0 });
 
   useEffect(() => {
     if (!isAdmin) router.replace("/dashboard");
   }, [isAdmin, router]);
 
-  const loadData = useCallback(async (showRefreshing = false) => {
-    if (showRefreshing) setRefreshing(true);
-    try {
-      const [domainData, currencyData, invoiceData] = await Promise.all([
-        api.get("/api/domains"),
-        api.get("/api/currencies"),
-        api.get("/api/invoice-settings"),
-      ]);
-      setDomains(domainData.domains);
-      setCurrencies(currencyData.currencies);
-      setInvoiceSettings(normalizeInvoiceSettings(invoiceData.settings));
-    } catch {
-      toast("Failed to load settings", "error");
-    } finally {
-      setLoading(false);
-      if (showRefreshing) setRefreshing(false);
-    }
-  }, [toast]);
-
+  // First load fetches every section; invoice defaults are loaded only here,
+  // so later reloads never reset that form while it has unsaved edits.
   useEffect(() => {
-    if (isAdmin) loadData();
-  }, [isAdmin, loadData]);
+    if (!isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [domainData, currencyData, invoiceData] = await Promise.all([
+          api.get("/api/domains"),
+          api.get("/api/currencies"),
+          api.get("/api/invoice-settings"),
+        ]);
+        if (cancelled) return;
+        setDomains(domainData.domains);
+        setCurrencies(currencyData.currencies);
+        setInvoiceSettings(normalizeInvoiceSettings(invoiceData.settings));
+      } catch {
+        if (!cancelled) toast("Failed to load settings", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, toast]);
 
-  const reload = useCallback(() => loadData(true), [loadData]);
+  /** Re-fetches one section after a change to it, leaving the others alone. */
+  const reloadSection = useCallback(
+    async <T,>(key: "domains" | "currencies", url: string, apply: (data: T) => void) => {
+      const seq = ++requestSeq.current[key];
+      setPendingReloads((n) => n + 1);
+      try {
+        const data = (await api.get(url)) as T;
+        if (seq === requestSeq.current[key]) apply(data);
+      } catch {
+        toast("Failed to load settings", "error");
+      } finally {
+        setPendingReloads((n) => n - 1);
+      }
+    },
+    [toast]
+  );
+
+  const reloadDomains = useCallback(
+    () => reloadSection<{ domains: AllowedDomain[] }>("domains", "/api/domains", (d) => setDomains(d.domains)),
+    [reloadSection]
+  );
+  const reloadCurrencies = useCallback(
+    () =>
+      reloadSection<{ currencies: CurrencyRecord[] }>("currencies", "/api/currencies", (d) =>
+        setCurrencies(d.currencies)
+      ),
+    [reloadSection]
+  );
 
   if (loading) return <ListPageSkeleton />;
 
@@ -77,7 +110,7 @@ export default function AdminSettingsPage() {
         meta={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             Manage application access, currencies, and integrations.
-            {refreshing && <InlineLoader label="Refreshing..." />}
+            {pendingReloads > 0 && <InlineLoader label="Refreshing..." />}
           </span>
         }
       />
@@ -85,8 +118,8 @@ export default function AdminSettingsPage() {
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
         <SettingsNav sections={SECTIONS} />
         <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <DomainSettings id="access" domains={domains} onChanged={reload} />
-          <CurrencySettings id="currencies" currencies={currencies} onChanged={reload} />
+          <DomainSettings id="access" domains={domains} onChanged={reloadDomains} />
+          <CurrencySettings id="currencies" currencies={currencies} onChanged={reloadCurrencies} />
           <TelegramBotSettings id="telegram" />
           <InvoiceDefaultsSettings id="invoices" settings={invoiceSettings} />
         </div>

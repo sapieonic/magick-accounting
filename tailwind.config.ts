@@ -26,6 +26,9 @@ const config: Config = {
           DEFAULT: v("rule"),
           2: v("rule-2"),
         },
+        // Boundary of form controls (inputs, selects, chips): >= 3:1 against the surface.
+        "control-line": v("control-line"),
+        overlay: v("overlay"),
         hover: v("hover"),
         bar: v("bar"),
         rail: {

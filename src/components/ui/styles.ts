@@ -12,9 +12,10 @@ export const transition = "transition-[background-color,border-color,color,box-s
 export const focusRing =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
+/** Form controls get the `control-line` border (>= 3:1, WCAG 1.4.11); hover darkens it, never lightens it. */
 const control = cn(
-  "w-full rounded-control border border-rule bg-surface text-sm text-ink placeholder:text-ink-3",
-  "hover:border-accent-line focus-visible:outline-none focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--tint-2)]",
+  "w-full rounded-control border border-control-line bg-surface text-sm text-ink placeholder:text-ink-3",
+  "hover:border-accent-2 focus-visible:outline-none focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--tint-2)]",
   "disabled:cursor-not-allowed disabled:bg-sunk disabled:text-ink-3",
   "aria-[invalid=true]:border-danger",
   transition
@@ -43,6 +44,9 @@ export const linkClass = cn("font-medium text-accent hover:text-ink", transition
 
 /** Side padding of a panel's head, body and footer; reuse it for edge-to-edge rows inside a flush panel. */
 export const panelPadX = "px-[clamp(16px,2vw,24px)]";
+
+/** Left side only of `panelPadX`, for rows whose trailing icon buttons sit closer to the edge. */
+export const panelPadL = "pl-[clamp(16px,2vw,24px)]";
 
 /** Ruled surface: 1px rule, 8px radius, no shadow. */
 export const panelClass = "rounded-panel border border-rule bg-surface";

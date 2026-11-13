@@ -36,6 +36,12 @@ describe("Header", () => {
     expect(screen.getByAltText("MagickVoice Accounting portal")).toBeInTheDocument();
   });
 
+  it("gives the mobile logo link a 44px hit area", () => {
+    renderHeader();
+
+    expect(screen.getByRole("link", { name: "MagickVoice Accounting portal" })).toHaveClass("h-11", "w-11");
+  });
+
   it("opens the command palette from the search trigger", async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();

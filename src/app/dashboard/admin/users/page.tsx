@@ -17,7 +17,7 @@ import Button from "@/components/ui/Button";
 import SegmentedControl from "@/components/ui/SegmentedControl";
 import SearchInput from "@/components/ui/SearchInput";
 import { cn } from "@/components/ui/cn";
-import { rowClass } from "@/components/ui/styles";
+import { panelPadX, rowClass } from "@/components/ui/styles";
 import Avatar from "@/components/ui/Avatar";
 import UserSpendPanels from "@/components/org/UserSpendPanels";
 
@@ -139,7 +139,7 @@ export default function AdminUsersPage() {
             }
             flush
           >
-            <div className="flex flex-wrap items-center gap-2 px-[clamp(16px,2vw,24px)] pb-3">
+            <div className={cn(panelPadX, "flex flex-wrap items-center gap-2 pb-3")}>
               <SearchInput
                 aria-label="Search users"
                 value={query}
@@ -160,7 +160,7 @@ export default function AdminUsersPage() {
             </div>
 
             {visible.length === 0 ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule-2 px-[clamp(16px,2vw,24px)] py-6 text-sm text-ink-3">
+              <div className={cn(panelPadX, "flex flex-wrap items-center justify-between gap-3 border-t border-rule-2 py-6 text-sm text-ink-3")}>
                 No users match these filters.
                 {filtered && (
                   <Button
@@ -188,7 +188,8 @@ export default function AdminUsersPage() {
                       key={user._id}
                       className={cn(
                         rowClass,
-                        "flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 px-[clamp(16px,2vw,24px)] py-2.5"
+                        panelPadX,
+                        "flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 py-2.5"
                       )}
                     >
                       <span className="flex min-w-0 flex-[1_1_240px] items-center gap-3">

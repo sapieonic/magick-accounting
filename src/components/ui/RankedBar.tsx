@@ -34,7 +34,9 @@ export default function RankedBar({
   tone = "ramp",
   className,
 }: RankedBarProps) {
-  const width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+  // NaN would survive Math.min/max and fill the whole bar.
+  const fill = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+  const width = `${fill * 100}%`;
   return (
     <div
       className={cn(
@@ -44,9 +46,12 @@ export default function RankedBar({
       )}
     >
       {leading && <span className="row-span-2 flex">{leading}</span>}
-      <span className="ell">
-        {label}
-        {share !== undefined && <span className="ml-1.5 text-xs text-ink-3">{share.toFixed(1)}%</span>}
+      {/* The label truncates; the share stays whole beside it. */}
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="ell">{label}</span>
+        {share !== undefined && Number.isFinite(share) && (
+          <span className="shrink-0 text-xs text-ink-3">{share.toFixed(1)}%</span>
+        )}
       </span>
       <span className="num whitespace-nowrap text-right text-[13px]">{amount}</span>
       <div className={cn("h-1.5 overflow-hidden rounded-[3px] bg-sunk", leading ? "col-[2/-1]" : "col-span-full")}>

@@ -4,6 +4,7 @@ import { useEffect, useRef, ReactNode } from "react";
 import { X } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
+import { useDialogLayer } from "@/hooks/useDialogLayer";
 
 interface ModalProps {
   isOpen: boolean;
@@ -17,12 +18,14 @@ interface ModalProps {
 /**
  * The dialog's action row, pinned to the bottom of the scrolling sheet; put it
  * last inside the form or body. Buttons stack (primary on top) on phones.
+ * `-bottom-4 -mb-4` cancel the body's bottom padding, so the footer sits flush
+ * with the sheet's edge instead of leaving a strip of scrolled content below it.
  */
 export function ModalFooter({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={cn(
-        "sticky bottom-0 -mx-5 mt-1 flex flex-col-reverse gap-2 border-t border-rule bg-surface px-5 py-3 sm:flex-row sm:items-center sm:justify-end",
+        "sticky -bottom-4 -mx-5 -mb-4 mt-1 flex flex-col-reverse gap-2 border-t border-rule bg-surface px-5 py-3 sm:flex-row sm:items-center sm:justify-end",
         className
       )}
     >
@@ -38,7 +41,6 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
-      contentRef.current?.focus();
     } else {
       document.body.style.overflow = "";
     }
@@ -47,20 +49,15 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) onClose();
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
+  // Focus in + trapped, Escape closes only the topmost layer, focus back to the opener.
+  useDialogLayer(isOpen, contentRef, onClose);
 
   if (!isOpen) return null;
 
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0B0B12]/45 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-overlay/45 p-0 sm:items-center sm:p-4"
       onClick={(e) => e.target === overlayRef.current && onClose()}
       role="dialog"
       aria-modal="true"

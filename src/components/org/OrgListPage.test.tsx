@@ -43,7 +43,7 @@ describe("Departments / Categories (OrgListPage)", () => {
 
     await screen.findByText("Engineering");
     expect(screen.queryByRole("button", { name: /^(Edit|Delete) / })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add Department" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add department" })).toBeInTheDocument();
   });
 
   it("edits a department and deletes after confirmation", async () => {
@@ -83,7 +83,7 @@ describe("Departments / Categories (OrgListPage)", () => {
     expect(screen.queryByRole("button", { name: "Edit Travel" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete Travel" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Add Category" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add category" }));
     expect(screen.queryByLabelText(/Description/)).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Name"), "  Team Events ");
     await userEvent.click(screen.getByRole("button", { name: "Create" }));

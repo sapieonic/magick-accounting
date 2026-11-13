@@ -181,7 +181,7 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink">Linked to {linkedName}</p>
               <p className="text-[13px] text-ink-3">
-                Since <span className="num">{format(new Date(status.link.linkedAt), "d MMM yyyy")}</span>
+                Since <span className="tabular-nums">{format(new Date(status.link.linkedAt), "d MMM yyyy")}</span>
                 {status.botUrl && (
                   <>
                     {" "}
@@ -237,8 +237,8 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
               Cancel
             </Button>
             <span role="status" className="flex items-center gap-2 text-[13px] text-ink-3">
-              <Spinner size="sm" /> Waiting… link expires at{" "}
-              <span className="num">{format(new Date(pending.expiresAt), "h:mm a")}</span>
+              <Spinner size="sm" decorative /> Waiting… link expires at{" "}
+              <span className="tabular-nums">{format(new Date(pending.expiresAt), "h:mm a")}</span>
             </span>
           </div>
         </div>

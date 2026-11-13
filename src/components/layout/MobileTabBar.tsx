@@ -21,13 +21,16 @@ const TABS = ["/dashboard", "/dashboard/expenses", "/dashboard/trips"].map(
   (href) => NAV_ITEMS.find((item) => item.href === href)!
 );
 
+const tabActive = "font-semibold text-accent before:bg-accent";
+const tabIdle = "text-ink-3 hover:text-ink";
+
 function Tab({ item, active }: { item: NavItem; active: boolean }) {
   const Icon = item.icon;
   return (
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      className={cn(tab, active ? "font-semibold text-accent before:bg-accent" : "text-ink-3 hover:text-ink")}
+      className={cn(tab, active ? tabActive : tabIdle)}
     >
       <Icon aria-hidden="true" size={20} strokeWidth={1.5} />
       {item.label}
@@ -41,6 +44,8 @@ export default function MobileTabBar({ onMore, moreOpen }: MobileTabBarProps) {
   const [overview, expenses, trips] = TABS;
   // "New expense" lives under /expenses but the Add button, not the tab, represents it.
   const onNew = pathname === NEW_EXPENSE_HREF;
+  // Pages reached through the drawer (Assets, Settings, Profile...) light up More.
+  const moreActive = !onNew && !TABS.some((item) => isNavActive(pathname, item.href));
 
   return (
     <nav
@@ -63,7 +68,7 @@ export default function MobileTabBar({ onMore, moreOpen }: MobileTabBarProps) {
         onClick={onMore}
         aria-haspopup="dialog"
         aria-expanded={moreOpen}
-        className={cn(tab, "cursor-pointer text-ink-3 hover:text-ink")}
+        className={cn(tab, "cursor-pointer", moreActive ? tabActive : tabIdle)}
       >
         <Menu aria-hidden="true" size={20} strokeWidth={1.5} />
         More

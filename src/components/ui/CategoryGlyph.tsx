@@ -35,15 +35,19 @@ export const CATEGORY_STYLES: Record<CategoryTone, CategoryStyle> = {
   neutral: { icon: Tag, fg: "text-ink-3", bg: "bg-sunk", fill: "bg-ink-3" },
 };
 
-// First match wins ("Training" must hit education before travel's "train").
+// Whole words only ("Facebook ads" is not a book, "Headphones" not a phone).
+// First match wins, so a name with keywords from two families takes the earlier one.
 const KEYWORDS: [CategoryTone, RegExp][] = [
-  ["sw", /software|subscription|saas|cloud|hosting|licen[cs]e|domain|server|api\b/],
-  ["co", /communication|phone|mobile|internet|telecom|broadband|wifi/],
-  ["ed", /training|education|course|learning|book|certification|conference/],
-  ["tr", /travel|transport|\bcabs?\b|taxi|flight|airfare|hotel|lodging|fuel|uber|\bola\b|trains?\b|conveyance/],
-  ["me", /meal|food|entertainment|dining|restaurant|snack|refreshment|coffee/],
-  ["of", /office|supplies|stationery|equipment|furniture|printing/],
-  ["mk", /marketing|advertis|\bads?\b|promotion|branding|campaign/],
+  ["sw", /\b(software|subscriptions?|saas|cloud|hosting|licen[cs]e[sd]?|licensing|domains?|servers?|apis?)\b/],
+  ["co", /\b(communications?|(tele)?phones?|mobiles?|internet|telecom|broadband|wi-?fi)\b/],
+  ["ed", /\b(training|education|courses?|learning|books?|certifications?|conferences?)\b/],
+  [
+    "tr",
+    /\b(travel\w*|transport\w*|cabs?|taxis?|flights?|airfares?|hotels?|lodging|fuel|uber|ola|trains?|conveyance|automobiles?|vehicles?)\b/,
+  ],
+  ["me", /\b(meals?|food|entertainment|dining|restaurants?|snacks?|refreshments?|coffee)\b/],
+  ["of", /\b(office|supplies|stationery|equipment|furniture|printing|notebooks?|headphones?|headsets?)\b/],
+  ["mk", /\b(marketing|advertis\w*|ads?|promotions?|branding|campaigns?)\b/],
 ];
 
 /** Maps a category name to its colour family by keyword; unknown names are neutral. */

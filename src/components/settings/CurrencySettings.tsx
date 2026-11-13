@@ -11,7 +11,7 @@ import Button, { IconButton } from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Field, { inputClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
-import { rowClass } from "@/components/ui/styles";
+import { panelPadL, rowClass } from "@/components/ui/styles";
 import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
@@ -109,7 +109,7 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
       id={id}
       className={settingsSectionClass}
       title="Currencies & exchange rates"
-      meta="Rates convert each expense to INR when it is entered."
+      description="Rates convert each expense to INR when it is entered."
       actions={
         <Button
           size="sm"
@@ -137,7 +137,8 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
               key={curr._id}
               className={cn(
                 rowClass,
-                "flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 py-2 pl-[clamp(16px,2vw,24px)] pr-2 sm:pr-3"
+                panelPadL,
+                "flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 py-2 pr-2 sm:pr-3"
               )}
             >
               <span className="flex min-w-0 flex-[1_1_200px] items-center gap-3">
@@ -183,7 +184,7 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
         </ul>
       )}
 
-      <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Add Currency">
+      <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Add currency">
         <form onSubmit={handleAdd} className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <Field label="Code" hint="3-letter ISO code">
@@ -233,11 +234,11 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
               className={cn(inputClass, "num")}
             />
           </Field>
-          <DialogActions onCancel={() => setShowForm(false)} confirmLabel="Add Currency" busy={submitting} />
+          <DialogActions onCancel={() => setShowForm(false)} confirmLabel="Add currency" busy={submitting} />
         </form>
       </Modal>
 
-      <Modal isOpen={!!editRateTarget} onClose={() => setEditRateTarget(null)} title="Edit Exchange Rate">
+      <Modal isOpen={!!editRateTarget} onClose={() => setEditRateTarget(null)} title="Edit exchange rate">
         <form onSubmit={handleUpdateRate} className="flex flex-col gap-4">
           <Field
             label={`1 ${editRateTarget?.code ?? ""} = ? INR`}
@@ -255,7 +256,7 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
               autoFocus
             />
           </Field>
-          <DialogActions onCancel={() => setEditRateTarget(null)} confirmLabel="Update Rate" busy={submitting} />
+          <DialogActions onCancel={() => setEditRateTarget(null)} confirmLabel="Update rate" busy={submitting} />
         </form>
       </Modal>
 
@@ -263,7 +264,7 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title="Delete Currency"
+        title="Delete currency"
         confirmLabel="Delete"
         busyLabel="Deleting..."
         busy={submitting}

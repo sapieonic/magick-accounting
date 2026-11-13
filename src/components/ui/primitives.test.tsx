@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -86,6 +87,18 @@ describe("layout primitives", () => {
     );
     expect(screen.getByRole("region", { name: "Totals" })).toHaveTextContent("₹18,01,807.59");
   });
+
+  it("top-aligns stats so one without a sub line sits level with the rest", () => {
+    render(
+      <StatBand>
+        <Stat label="Capitalized value" value="₹6,01,423.72" sub="All company assets" />
+        <Stat label="Active assets" value="3" />
+      </StatBand>
+    );
+    const cell = screen.getByText("Active assets").parentElement!;
+    expect(cell).toHaveClass("justify-start");
+    expect(cell).not.toHaveClass("justify-between");
+  });
 });
 
 describe("SegmentedControl", () => {
@@ -122,6 +135,35 @@ describe("data primitives", () => {
     expect(screen.getByText("₹1,02,769.18")).toBeInTheDocument();
   });
 
+  it("truncates a ranked row's label, never its share", () => {
+    render(<RankedBar label="Food & drinks 1 item" amount="₹10" share={12.5} ratio={0.5} />);
+    const label = screen.getByText("Food & drinks 1 item");
+    const share = screen.getByText("12.5%");
+    expect(label).toHaveClass("ell");
+    expect(label).not.toContainElement(share);
+    expect(share).toHaveClass("shrink-0");
+    expect(share.closest(".ell")).toBeNull();
+  });
+
+  it.each([
+    [Number.NaN, "0%"],
+    [-0.4, "0%"],
+    [1.7, "100%"],
+    [0.25, "25%"],
+  ])("fills a ranked bar with ratio %s as %s", (ratio, width) => {
+    const { container } = render(<RankedBar label="Travel" amount="₹1" ratio={ratio} />);
+    expect(container.querySelector<HTMLElement>("[style]")?.style.width).toBe(width);
+  });
+
+  it("ignores negative and non-finite split amounts in the shares", () => {
+    const { rerender } = render(<SplitBar company={-100} pocket={500} format={(n) => `₹${n}`} />);
+    expect(screen.getByRole("img", { name: "Company paid 0.0%, pocket 100.0%" })).toBeInTheDocument();
+
+    rerender(<SplitBar company={Number.NaN} pocket={Number.POSITIVE_INFINITY} format={(n) => `₹${n}`} />);
+    expect(screen.getByRole("img", { name: "Company paid 0.0%, pocket 0.0%" })).toBeInTheDocument();
+    expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument();
+  });
+
   it.each([
     ["Software & Subscriptions", "sw"],
     ["Communication", "co"],
@@ -133,6 +175,39 @@ describe("data primitives", () => {
     ["Miscellaneous", "neutral"],
     [undefined, "neutral"],
   ])("maps %s to the %s colour family", (name, tone) => {
+    expect(categoryTone(name)).toBe(tone);
+  });
+
+  it.each([
+    ["Office Supplies", "of"],
+    ["Travel", "tr"],
+    ["Meals & Entertainment", "me"],
+    ["Software & Subscriptions", "sw"],
+    ["Equipment & Hardware", "of"],
+    ["Marketing & Advertising", "mk"],
+    ["Professional Services", "neutral"],
+    ["Utilities", "neutral"],
+    ["Rent & Facilities", "neutral"],
+    ["Training & Education", "ed"],
+    ["Communication", "co"],
+    ["Insurance", "neutral"],
+    ["Miscellaneous", "neutral"],
+  ])("keeps the default category %s on %s", (name, tone) => {
+    expect(categoryTone(name)).toBe(tone);
+  });
+
+  it.each([
+    ["Hotel booking", "tr"],
+    ["Flight bookings", "tr"],
+    ["Facebook ads", "mk"],
+    ["Notebooks", "of"],
+    ["Headphones", "of"],
+    ["Automobile", "tr"],
+    ["Books", "ed"],
+    ["Mobile phone", "co"],
+    ["Cab rides", "tr"],
+    ["Travelling allowance", "tr"],
+  ])("matches whole words: %s is %s", (name, tone) => {
     expect(categoryTone(name)).toBe(tone);
   });
 
@@ -220,6 +295,17 @@ describe("primitive options", () => {
     rerender(<SearchInput aria-label="Search users" value="asha" onValueChange={onValueChange} />);
     await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
     expect(onValueChange).toHaveBeenCalledWith("");
+  });
+
+  it("keeps focus in the search box after Clear unmounts", async () => {
+    function Controlled() {
+      const [value, setValue] = useState("asha");
+      return <SearchInput aria-label="Search users" value={value} onValueChange={setValue} />;
+    }
+    render(<Controlled />);
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.queryByRole("button", { name: "Clear search" })).not.toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search users" })).toHaveFocus();
   });
 });
 

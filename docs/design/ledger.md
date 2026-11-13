@@ -7,13 +7,18 @@ Principles: **numbers first** (Geist Mono, tabular, right-aligned, never clipped
 
 ## Tokens (Tailwind)
 
-All colours are CSS variables in `src/app/globals.css` (light + `.dark`) and support `/alpha`.
+Colours are CSS variables in `src/app/globals.css` (light + `.dark`). Most are RGB channels and support
+`/alpha` (`bg-accent/10`). Two exceptions: `tint` / `tint-2` are fixed-alpha accent tints (no `/alpha`),
+and the `rail-*` shades (`rail-hover`, `rail-active`, `rail-line`, `rail-ink`, `rail-muted`, `rail-icon`,
+`rail-mark`) are fixed hex: the rail is dark in both themes, so they don't change with `.dark`.
 
 | Use | Class |
 | --- | --- |
 | Page / panel / sunk (table heads, tracks) | `bg-background` · `bg-surface` · `bg-sunk` |
 | Text: primary / secondary / muted | `text-ink` · `text-ink-2` · `text-ink-3` |
-| Rules: outer / inner row divider | `border-rule` · `border-rule-2` |
+| Rules: outer / inner row divider | `border-rule` · `border-rule-2` (panels, hairlines: decorative) |
+| Form control boundary | `border-control-line` (≥ 3:1 on surface in both themes, WCAG 1.4.11; inputs, selects, chips, checkboxes) |
+| Backdrop behind dialogs / the drawer | `bg-overlay/45` |
 | Accent (indigo) | `bg-accent text-accent-ink` · `hover:bg-accent-hover` · `bg-accent-soft` · `border-accent-line` · `bg-accent-2` |
 | Row hover / tints | `hover:bg-hover` · `bg-tint` (5%) · `bg-tint-2` (10%) |
 | Pocket / owed (amber) | `text-amber` · `bg-pocket` (fill) · `bg-amber-soft` |
@@ -58,8 +63,9 @@ delete icons in rows), `size?`, `loading?` (spinner in place of the icon, disabl
   <Stat label="Paid from pocket" icon={Wallet} tone="amber" value={formatBaseCurrency(pocket)} sub="18.8% of spend" />
 </StatBand>
 ```
-`Stat`: `label`, `value` (pre-formatted), `sub?`, `icon?`, `tone?: "default" | "accent" | "amber"`, `headline?`.
-Figures are nowrap and sized with container units, so they shrink instead of clipping. `BandCell` (`label`,
+`Stat`: `label`, `value` (pre-formatted), `sub?`, `icon?`, `tone?: "default" | "amber"` (amber colours the figure
+and icon; default has an indigo icon), `headline?`. Stats are top-aligned, so one without `sub` lines up with its
+neighbours. Figures are nowrap and sized with container units, so they shrink instead of clipping. `BandCell` (`label`,
 children) is a band cell for content that isn't one figure: a `SplitBar`, a budget meter.
 
 ```tsx
@@ -68,7 +74,8 @@ children) is a band cell for content that isn't one figure: a `SplitBar`, a budg
   <Panel title="Latest entries" flush footer="Showing 1–10 of 309">{rows}</Panel>
 </PanelGrid>
 ```
-`Panel`: `title?`, `description?` (one quiet line under the title), `meta?`, `actions?`, `footer?`, `flush?`
+`Panel`: `title?`, `description?` (one quiet line under the title: sentences go here), `meta?` (a short note
+right of the title: a count, a unit, a status), `actions?`, `footer?`, `flush?`
 (no body padding, for row lists), `grow?` (relative width in a grid), `wash?`, `className?`, `bodyClassName?`, `id?`.
 Standalone it has its own border. Rows inside a flush panel use `panelPadX` (from `styles`) for the same side padding.
 `PanelGrid`: `min?` (px before wrapping, default 440), `className?`. One ruled sheet: shared border, 1px rule gaps.
@@ -107,17 +114,22 @@ value or active filter; the whole chip removes it. `Dot`: `tone?` (7px legend do
 `Avatar`: `name?`, `photoURL?`, `size?: 24 | 28 | 32 | 36 | 56` (default 32), `tone?: "accent" | "amber" | "rail"`,
 `title?`. Decorative: print the name beside it. `initials(name)` → first + last initial, `"?"` when empty.
 
-`DetailList`: `items: { label; icon?; value }[]`: ruled caption/value rows for detail panels.
+`DetailList`: `items: { label; icon?; value }[]`, `layout?: "justified" | "columns"`: ruled caption/value rows
+for detail panels. `justified` (default) right-aligns the value; `columns` puts values in a left-aligned column
+after a 7rem caption column (longer values, e.g. the profile's account details).
 
-`CategoryGlyph`: `name?` (matched by keyword), `tone?` (force), `size?: "sm" 26 | "md" 28 | "lg" 32 | "xl" 36`.
+`CategoryGlyph`: `name?` (matched by whole-word keyword, so "Facebook ads" is marketing, not a book),
+`tone?` (force), `size?: "sm" 26 | "md" 28 | "lg" 32 | "xl" 36`.
 `CategoryDot` (6px). `categoryTone(name)` → `"sw" | "co" | "tr" | "ed" | "me" | "of" | "mk" | "neutral"`;
 `CATEGORY_STYLES[tone]` gives `{ icon, fg, bg, fill }` class strings.
 
 `SplitBar`: `company`, `pocket` (numbers, base currency), `format?` (default `formatBaseCurrency`),
-`legend?: "detail" | "inline" | "none"`, `size?: "sm" | "md"`. Accessible as one `role="img"` with percentages.
+`legend?: "detail" | "inline" | "none"`, `size?: "sm" | "md"`. Accessible as one `role="img"` with percentages;
+negative or non-finite amounts count as 0 in the bar and percentages.
 
-`RankedBar`: `label`, `amount` (formatted), `ratio` (0–1 bar fill), `share?` (percent), `leading?`
-(e.g. `<CategoryGlyph />` or initials), `tone?: "ramp" | "accent" | "muted" | "pocket"`.
+`RankedBar`: `label`, `amount` (formatted), `ratio` (0–1 bar fill; clamped, NaN = empty), `share?` (percent),
+`leading?` (e.g. `<CategoryGlyph />` or initials), `tone?: "ramp" | "accent" | "muted" | "pocket"`. The label
+truncates; the share and amount never do.
 
 `SegmentedControl<T>`: `options: { value; label; icon? }[]`, `value`, `onChange`, required `aria-label`, `fullWidth?`,
 `size?: "sm" (40px) | "md"`, `compact?` (tighter segments, icons only from `sm` up), `disabled?`.
@@ -128,25 +140,31 @@ value or active filter; the whole chip removes it. `Dot`: `tone?` (7px legend do
 <form onSubmit={save}>{fields}<DialogActions onCancel={close} confirmLabel="Create trip" busy={saving} /></form>
 ```
 `ConfirmDialog` (from `@/components/ui/ConfirmDialog`): destructive confirmation; can't be dismissed while `busy`.
-`DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
+`Modal` (and the palette and the phone nav drawer) move focus in, trap Tab, close on Escape only when they are
+the topmost layer, and return focus to the opener (`useDialogLayer` in `@/hooks/useDialogLayer`; reuse it for
+any new overlay). `DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
 `variant?`, `icon?`, `disabled?`, `busyLabel?`, children (e.g. a selection summary) go before the buttons.
 Every dialog with actions ends with one of these (or `ModalFooter` from `Modal` for anything else).
 
 Helpers in `@/components/ui/styles`: `buttonClass()`, `iconButtonClass()`, `rowClass` (hairline + hover
-tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass`, `panelClass`, `panelPadX`, `transition`,
+tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass`, `panelClass`, `panelPadX` (and `panelPadL`,
+its left side only, for rows with trailing icon buttons), `transition`,
 `focusRing`, `ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
 `className` can't override a class the primitive already sets; add a prop or variant instead).
 `useMediaQuery(query)` lives in `@/hooks/useMediaQuery`.
 
 Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Skeleton` (+ page skeletons),
-`Spinner`/`InlineLoader`, `Toast` (sits above the mobile tab bar), `MultiSelect`, `CommandPalette`,
+`Spinner` (`decorative` when visible text says what is loading) / `InlineLoader` (one status, named by its label),
+`Toast` (under the top bar below `lg`, clear of the tab bar and sticky form footers; bottom-right from `lg`),
+`MultiSelect`, `CommandPalette`,
 `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
 
 ## Shell
 
 `dashboard/layout.tsx` renders the rail (`Sidebar`, 232px, collapsible to 72px), the top bar (`Header`:
 section context, ⌘K search, theme, New expense) and on phones the `MobileTabBar` (Overview, Expenses,
-Add, Trips, More → drawer). Nav items live in `src/components/layout/nav.ts` (shared with ⌘K). Pages
+Add, Trips, More → drawer; More is highlighted on pages only the drawer links to). Nav items live in
+`src/components/layout/nav.ts` (shared with ⌘K). Pages
 render straight into `<main>`; **do not** add a max-width wrapper or page padding of your own, and start
 each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the page root.
 
@@ -160,6 +178,7 @@ each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the pa
   2 columns (title block · amount) when the panel is under ~620px; the date and category move into the
   sub-line. Row height ≥ 56px, hairline `border-rule-2` between rows, `rowClass` for hover.
 - Touch targets ≥ 44px (40px minimum for dense secondary controls).
+- Copy is sentence case everywhere: buttons, dialog titles, labels ("Add department", "Update rate").
 
 ## Amounts
 

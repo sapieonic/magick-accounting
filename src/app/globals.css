@@ -18,6 +18,7 @@
     --ink-3: 88 88 105; /* #585869 */
     --rule: 214 214 224; /* #D6D6E0 */
     --rule-2: 232 232 239; /* #E8E8EF */
+    --control-line: 133 133 154; /* #85859A  form control borders: >= 3:1 on surface, bg and sunk */
     --accent: 75 73 209; /* #4B49D1 */
     --accent-ink: 255 255 255; /* text on accent fills */
     --accent-hover: 63 61 186; /* #3F3DBA */
@@ -27,6 +28,7 @@
     --bar: 193 201 251; /* #C1C9FB */
     --hover: 243 243 251; /* #F3F3FB */
     --rail: 31 29 83; /* #1F1D53 */
+    --overlay: 11 11 18; /* #0B0B12  dialog / drawer backdrop, used with /alpha */
     --amber: 143 69 5; /* #8F4505  text */
     --pocket: 217 138 43; /* #D98A2B  fill */
     --amber-soft: 248 233 214; /* #F8E9D6 */
@@ -66,6 +68,7 @@
     --ink-3: 157 157 176; /* #9D9DB0 */
     --rule: 45 45 61; /* #2D2D3D */
     --rule-2: 32 32 48; /* #202030 */
+    --control-line: 108 108 132; /* #6C6C84 */
     --accent: 155 165 248; /* #9BA5F8 */
     --accent-ink: 20 18 58; /* #14123A */
     --accent-hover: 180 188 250; /* #B4BCFA */

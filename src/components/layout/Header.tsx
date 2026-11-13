@@ -21,7 +21,11 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b border-rule bg-background px-[var(--pad)] py-2.5 sm:gap-3">
       <div className="mr-auto flex min-w-0 items-center gap-2.5 lg:mr-0">
-        <Link href="/dashboard" className="shrink-0 rounded-control lg:hidden">
+        {/* 44px hit area around the 28px mark; -ml-2 keeps the mark on the page edge. */}
+        <Link
+          href="/dashboard"
+          className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control lg:hidden"
+        >
           <BrandLogo compact size="sm" />
         </Link>
         {section && (

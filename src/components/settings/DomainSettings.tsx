@@ -10,7 +10,7 @@ import Button, { IconButton } from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Field, { inputClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE, rowClass } from "@/components/ui/styles";
+import { ICON_STROKE, panelPadL, rowClass } from "@/components/ui/styles";
 import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
@@ -75,7 +75,7 @@ export default function DomainSettings({ id, domains, onChanged }: DomainSetting
       id={id}
       className={settingsSectionClass}
       title="Allowed email domains"
-      meta="Only users from these domains can sign in."
+      description="Only users from these domains can sign in."
       actions={
         <Button
           size="sm"
@@ -101,12 +101,18 @@ export default function DomainSettings({ id, domains, onChanged }: DomainSetting
           {domains.map((domain) => (
             <li
               key={domain._id}
-              className={cn(rowClass, "flex min-h-14 items-center gap-3 py-2 pl-[clamp(16px,2vw,24px)] pr-2 sm:pr-3")}
+              className={cn(rowClass, panelPadL, "flex min-h-14 items-center gap-3 py-2 pr-2 sm:pr-3")}
             >
               <Globe aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="ell font-medium text-ink">@{domain.domain}</span>
                 {domain.addedBy && <span className="ell text-[13px] text-ink-3">Added by {domain.addedBy.name}</span>}
+                {/* A disabled button can't show a tooltip, so the reason is visible text. */}
+                {lastOne && (
+                  <span id={`${id}-last-domain`} className="text-[13px] text-ink-3">
+                    The last domain can&apos;t be removed; add another first.
+                  </span>
+                )}
               </span>
               <IconButton
                 icon={Trash2}
@@ -115,14 +121,14 @@ export default function DomainSettings({ id, domains, onChanged }: DomainSetting
                 onClick={() => setDeleteTarget(domain)}
                 disabled={lastOne}
                 aria-label={`Remove @${domain.domain}`}
-                title={lastOne ? "Cannot remove the last domain" : `Remove @${domain.domain}`}
+                aria-describedby={lastOne ? `${id}-last-domain` : undefined}
               />
             </li>
           ))}
         </ul>
       )}
 
-      <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Add Email Domain">
+      <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Add email domain">
         <form onSubmit={handleAdd} className="flex flex-col gap-4">
           <Field
             label="Domain"
@@ -139,7 +145,7 @@ export default function DomainSettings({ id, domains, onChanged }: DomainSetting
               autoFocus
             />
           </Field>
-          <DialogActions onCancel={() => setShowForm(false)} confirmLabel="Add Domain" busy={submitting} />
+          <DialogActions onCancel={() => setShowForm(false)} confirmLabel="Add domain" busy={submitting} />
         </form>
       </Modal>
 
@@ -147,8 +153,8 @@ export default function DomainSettings({ id, domains, onChanged }: DomainSetting
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title="Remove Domain"
-        confirmLabel="Remove Domain"
+        title="Remove domain"
+        confirmLabel="Remove domain"
         busyLabel="Removing..."
         busy={submitting}
       >

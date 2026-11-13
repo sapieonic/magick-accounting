@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import BrandLogo from "@/components/layout/BrandLogo";
 import Avatar from "@/components/ui/Avatar";
 import { ADMIN_ITEMS, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
+import { useDialogLayer } from "@/hooks/useDialogLayer";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
@@ -156,25 +157,33 @@ function RailContent({
   );
 }
 
+/** The persisted collapsed state. The shell renders only on the client (behind auth), so it can be read on first render. */
+function readCollapsed(): boolean {
+  try {
+    return typeof window !== "undefined" && localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    // Storage unavailable (private mode); keep the default.
+    return false;
+  }
+}
+
 /** Dark indigo rail (lg+) and the same content as a slide-in drawer below lg. */
 export default function Sidebar({ open, onClose }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Initialised synchronously so the rail doesn't animate 232 -> 72px on every load.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const drawerRef = useRef<HTMLElement>(null);
+  const pathname = usePathname();
+  const lastPathname = useRef(pathname);
 
-  // Restore the persisted collapsed state on mount.
-  useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true");
-    } catch {
-      // Storage unavailable (private mode); keep the default.
-    }
-  }, []);
+  // Focus into the drawer, trap Tab, Escape closes it, focus back to "More".
+  useDialogLayer(open, drawerRef, onClose);
 
+  // Close the drawer whenever the route changes, however it changed (link, ⌘K, back).
   useEffect(() => {
-    if (!open) return;
-    const handleEscape = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [open, onClose]);
+    if (pathname === lastPathname.current) return;
+    lastPathname.current = pathname;
+    onClose();
+  }, [pathname, onClose]);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -220,8 +229,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
-          <div className="animate-fade-in absolute inset-0 bg-[#0B0B12]/50" onClick={onClose} aria-hidden="true" />
-          <aside className="animate-slide-in-left absolute inset-y-0 left-0 w-[min(288px,86vw)] bg-rail pb-[env(safe-area-inset-bottom)]">
+          <div className="animate-fade-in absolute inset-0 bg-overlay/50" onClick={onClose} aria-hidden="true" />
+          <aside
+            ref={drawerRef}
+            tabIndex={-1}
+            className="animate-slide-in-left absolute inset-y-0 left-0 w-[min(288px,86vw)] bg-rail pb-[env(safe-area-inset-bottom)] outline-none"
+          >
             <RailContent
               iconOnly={false}
               onNavigate={onClose}

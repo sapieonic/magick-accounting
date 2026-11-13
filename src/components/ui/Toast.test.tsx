@@ -96,4 +96,16 @@ describe("Toast", () => {
       expect(screen.queryByText("Boom")).not.toBeInTheDocument();
     });
   });
+
+  it("anchors toasts to the top below lg, clear of the tab bar and sticky form footers", () => {
+    render(
+      <ToastProvider>
+        <p>page</p>
+      </ToastProvider>
+    );
+    const region = screen.getByTestId("toast-region");
+    expect(region.className).toMatch(/(^|\s)top-\[calc\(72px/);
+    expect(region.className).not.toMatch(/(^|\s)bottom-/);
+    expect(region).toHaveClass("lg:bottom-5", "lg:top-auto");
+  });
 });

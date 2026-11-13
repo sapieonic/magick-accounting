@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { renderToStaticMarkup } from "react-dom/server";
 import Sidebar from "./Sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePathname } from "next/navigation";
@@ -110,5 +111,70 @@ describe("Sidebar", () => {
     closeButton.click();
     
     expect(onCloseMock).toHaveBeenCalled();
+  });
+
+  it("moves focus into the drawer, traps Tab and returns focus to More on close", async () => {
+    const user = userEvent.setup();
+    function Harness({ open }: { open: boolean }) {
+      return (
+        <>
+          <button>More</button>
+          <Sidebar open={open} onClose={() => {}} />
+        </>
+      );
+    }
+    const { rerender } = render(<Harness open={false} />);
+    const more = screen.getByRole("button", { name: "More" });
+    more.focus();
+
+    rerender(<Harness open />);
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    expect(drawer).toContainElement(document.activeElement as HTMLElement);
+
+    const close = screen.getByRole("button", { name: "Close navigation" });
+    const signOut = within(drawer).getByRole("button", { name: "Sign out" });
+    signOut.focus();
+    await user.tab();
+    expect(drawer).toContainElement(document.activeElement as HTMLElement);
+    expect(more).not.toHaveFocus();
+    await user.tab({ shift: true });
+    expect(signOut).toHaveFocus();
+    expect(close).toBeInTheDocument();
+
+    rerender(<Harness open={false} />);
+    expect(more).toHaveFocus();
+  });
+
+  it("closes the drawer on Escape", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<Sidebar open onClose={onClose} />);
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the drawer when the route changes by other means (⌘K, back)", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<Sidebar open onClose={onClose} />);
+    expect(onClose).not.toHaveBeenCalled();
+
+    vi.mocked(usePathname).mockReturnValue("/dashboard/trips");
+    rerender(<Sidebar open onClose={onClose} />);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts collapsed without animating from the wide rail", () => {
+    localStorage.setItem("sidebar-collapsed", "true");
+    // The very first render (no effects run) already has the collapsed width,
+    // so the rail never transitions 232 -> 72px on load.
+    const html = renderToStaticMarkup(<Sidebar open={false} onClose={() => {}} />);
+    expect(html).toMatch(/\bw-\[72px\]/);
+    expect(html).not.toMatch(/\bw-\[232px\]/);
+  });
+
+  it("uses the overlay token for the drawer backdrop", () => {
+    render(<Sidebar open onClose={() => {}} />);
+    const backdrop = screen.getByRole("dialog", { name: "Navigation" }).firstElementChild;
+    expect(backdrop?.className).toMatch(/\bbg-overlay\/50\b/);
   });
 });
