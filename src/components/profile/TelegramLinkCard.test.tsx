@@ -117,4 +117,15 @@ describe("TelegramLinkCard", () => {
     expect(screen.getByRole("button", { name: /Unlink/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Open bot/ })).not.toBeInTheDocument();
   });
+
+  it("labels the link state in the header badge", async () => {
+    vi.mocked(api.get).mockResolvedValue(linked);
+    const { unmount } = render(<TelegramLinkCard isAdmin={false} />);
+    expect(await screen.findByText("Linked")).toBeInTheDocument();
+    unmount();
+
+    vi.mocked(api.get).mockResolvedValue({ ...linked, available: false, botUsername: null, botUrl: null });
+    render(<TelegramLinkCard isAdmin={false} />);
+    expect(await screen.findByText("Bot offline")).toBeInTheDocument();
+  });
 });

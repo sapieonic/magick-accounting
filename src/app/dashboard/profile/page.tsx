@@ -1,50 +1,78 @@
 "use client";
 
+import type { ReactNode } from "react";
+import { Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme, type Theme } from "@/contexts/ThemeContext";
 import { useTitle } from "@/hooks/useTitle";
+import PageHeader from "@/components/ui/PageHeader";
+import Panel, { PanelGrid } from "@/components/ui/Panel";
+import Badge, { type Tone } from "@/components/ui/Badge";
+import SegmentedControl from "@/components/ui/SegmentedControl";
+import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import TelegramLinkCard from "@/components/profile/TelegramLinkCard";
-import clsx from "clsx";
 
-const ROLE_LABELS = {
-  master_admin: { label: "Master Admin", color: "bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300" },
-  admin: { label: "Admin", color: "bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" },
-  user: { label: "Member", color: "bg-subtle text-muted" },
-} as const;
+const ROLES: Record<"master_admin" | "admin" | "user", { label: string; tone: Tone; note: string }> = {
+  master_admin: {
+    label: "Master admin",
+    tone: "accent",
+    note: "Sees every expense, has the admin pages and can change people's roles.",
+  },
+  admin: { label: "Admin", tone: "accent", note: "Sees every expense and has the admin pages: invoices, users and settings." },
+  user: { label: "Member", tone: "neutral", note: "Sees and manages the expenses you submit." },
+};
+
+const THEMES = [
+  { value: "light" as Theme, label: "Light", icon: Sun },
+  { value: "dark" as Theme, label: "Dark", icon: Moon },
+];
+
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-baseline gap-3 border-t border-rule-2 py-3 first:border-t-0 first:pt-0">
+      <dt className="cap text-ink-3">{label}</dt>
+      <dd className="min-w-0 break-words text-sm text-ink">{children}</dd>
+    </div>
+  );
+}
 
 export default function ProfilePage() {
   useTitle("Profile");
   const { user, isAdmin } = useAuth();
+  const { theme, setTheme } = useTheme();
   if (!user) return null;
-  const role = ROLE_LABELS[user.role];
+  const role = ROLES[user.role];
 
   return (
-    <div className="animate-fade-in space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Profile</h1>
-        <p className="text-sm text-muted-foreground">Your account and connected apps.</p>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-4">
+        <ProfileAvatar name={user.name} photoURL={user.photoURL} />
+        <PageHeader
+          className="min-w-0 flex-1"
+          eyebrow="Profile"
+          title={user.name}
+          meta={<span className="ell block">{user.email}</span>}
+        />
       </div>
 
-      <div className="card flex items-center gap-4 px-6 py-5">
-        {user.photoURL ? (
-          <img
-            src={user.photoURL}
-            alt={user.name}
-            className="h-14 w-14 rounded-full border border-line object-cover"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-100 to-brand-200 text-lg font-bold text-brand-700 dark:from-brand-500/20 dark:to-brand-500/30 dark:text-brand-300">
-            {user.name.charAt(0).toUpperCase()}
-          </div>
-        )}
-        <div className="min-w-0">
-          <p className="truncate font-heading text-base font-bold text-foreground">{user.name}</p>
-          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-          <span className={clsx("mt-2 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", role.color)}>
-            {role.label}
-          </span>
-        </div>
-      </div>
+      <PanelGrid min={340}>
+        <Panel title="Account" grow={2}>
+          <dl>
+            <DetailRow label="Name">{user.name}</DetailRow>
+            <DetailRow label="Email">{user.email}</DetailRow>
+            <DetailRow label="Role">
+              <span className="flex flex-col items-start gap-1.5">
+                <Badge tone={role.tone}>{role.label}</Badge>
+                <span className="text-[13px] text-ink-3">{role.note}</span>
+              </span>
+            </DetailRow>
+            <DetailRow label="Sign-in">Google account</DetailRow>
+          </dl>
+        </Panel>
+        <Panel title="Appearance" meta="Saved on this device">
+          <SegmentedControl aria-label="Theme" options={THEMES} value={theme} onChange={setTheme} fullWidth />
+        </Panel>
+      </PanelGrid>
 
       <TelegramLinkCard isAdmin={isAdmin} />
     </div>

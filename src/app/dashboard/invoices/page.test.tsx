@@ -168,3 +168,37 @@ describe("InvoicesPage discounts", () => {
     });
   });
 });
+
+describe("InvoicesPage builder", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("adds and removes line items, keeping at least one", async () => {
+    const user = userEvent.setup();
+    await renderInvoiceForm();
+
+    expect(screen.getByRole("button", { name: "Remove item 1" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add item" }));
+    expect(screen.getByLabelText("Item 2 description")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Remove item 2" }));
+    expect(screen.queryByLabelText("Item 2 description")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove item 1" })).toBeDisabled();
+  });
+
+  it("previews the customer and counted items in the summary", async () => {
+    const user = userEvent.setup();
+    await renderInvoiceForm();
+
+    expect(screen.getByText("No customer yet")).toBeInTheDocument();
+    expect(screen.getByText("0 items")).toBeInTheDocument();
+
+    await fillLineItem(user, "1000");
+    await user.type(screen.getByPlaceholderText("e.g. Mr. Ashish Chauhan"), "Acme Ltd");
+
+    expect(screen.getByText("Acme Ltd")).toBeInTheDocument();
+    expect(screen.getByText("1 item")).toBeInTheDocument();
+    expect(screen.getByText("Indian Rupee One Thousand One Hundred Eighty Only")).toBeInTheDocument();
+  });
+});
