@@ -30,8 +30,7 @@ Utilities: `.num` (Geist Mono, tabular, -0.02em: every amount, count, date in a 
 (faint radial indigo from the top-left / top-right corner, behind headline totals and detail heads).
 Page padding is `var(--pad)` = `clamp(16px, 2.6vw, 40px)`; the layout already applies it to `<main>`.
 
-Fonts: `font-sans` = Geist, `font-mono` = Geist Mono. `font-heading` / `font-display` are aliases of Geist
-(legacy; don't add new uses). No serif anywhere.
+Fonts: `font-sans` = Geist, `font-mono` = Geist Mono. No serif anywhere.
 
 ## Primitives (`src/components/ui`)
 
@@ -44,7 +43,8 @@ import Button, { IconButton } from "@/components/ui/Button";
 ```
 `Button` props: `variant?: "primary" | "secondary" | "ghost" | "danger"`, `size?: "sm" (40px) | "md" (44px)`,
 `icon?` / `iconRight?: LucideIcon`, `loading?`, `fullWidth?`, `href?` + native button/anchor props.
-`IconButton`: `icon`, required `aria-label` (also the tooltip), `variant?` (default ghost), `size?`, `href?`.
+`IconButton`: `icon`, required `aria-label` (also the tooltip), `variant?` (default ghost; `"ghost-danger"` for
+delete icons in rows), `size?`, `loading?` (spinner in place of the icon, disabled), `href?`.
 
 ```tsx
 <PageHeader title="Expenses" meta="Everyone · all time" actions={<Button …/>} />
@@ -59,7 +59,8 @@ import Button, { IconButton } from "@/components/ui/Button";
 </StatBand>
 ```
 `Stat`: `label`, `value` (pre-formatted), `sub?`, `icon?`, `tone?: "default" | "accent" | "amber"`, `headline?`.
-Figures are nowrap and sized with container units, so they shrink instead of clipping.
+Figures are nowrap and sized with container units, so they shrink instead of clipping. `BandCell` (`label`,
+children) is a band cell for content that isn't one figure: a `SplitBar`, a budget meter.
 
 ```tsx
 <PanelGrid min={440}>
@@ -67,8 +68,9 @@ Figures are nowrap and sized with container units, so they shrink instead of cli
   <Panel title="Latest entries" flush footer="Showing 1–10 of 309">{rows}</Panel>
 </PanelGrid>
 ```
-`Panel`: `title?`, `meta?`, `actions?`, `footer?`, `flush?` (no body padding, for row lists), `grow?`
-(relative width in a grid), `wash?`, `className?`, `bodyClassName?`, `id?`. Standalone it has its own border.
+`Panel`: `title?`, `description?` (one quiet line under the title), `meta?`, `actions?`, `footer?`, `flush?`
+(no body padding, for row lists), `grow?` (relative width in a grid), `wash?`, `className?`, `bodyClassName?`, `id?`.
+Standalone it has its own border. Rows inside a flush panel use `panelPadX` (from `styles`) for the same side padding.
 `PanelGrid`: `min?` (px before wrapping, default 440), `className?`. One ruled sheet: shared border, 1px rule gaps.
 
 ```tsx
@@ -77,12 +79,35 @@ Figures are nowrap and sized with container units, so they shrink instead of cli
 </Field>
 ```
 `Field`: `label`, one child control, `hint?`, `error?`, `icon?`, `aside?`, `optional?`, `htmlFor?`. It injects
-`id`, `aria-describedby`, `aria-invalid` into the child. Style helpers (from `Field` or `styles`):
-`inputClass`, `selectClass`, `textareaClass`, `aiFilledClass`. `MultiSelect` also accepts `id`.
+`id`, `aria-describedby`, `aria-invalid` into the child. With `htmlFor` (a compound child, e.g. chips + input)
+it leaves the child alone; point the inner control at `${htmlFor}-hint` / `${htmlFor}-error` yourself.
+Style helpers (from `Field` or `styles`): `inputClass`, `selectClass`, `textareaClass`, `aiFilledClass`.
+`MultiSelect` also accepts `id`. `SearchInput` (`value`, `onValueChange`, input props, `className` for the
+wrapper): magnifier inside, Clear button once there is text; wrap it in a `Field` or give it an `aria-label`.
+
+```tsx
+<form className={cn(panelClass, "flex flex-col")}>
+  <div className="flex flex-col divide-y divide-rule-2">
+    <FormSection title="Details" description="…"><FieldGrid>{fields}</FieldGrid></FormSection>
+    <SectionRow><FormSection title="From">…</FormSection><FormSection title="Bill to">…</FormSection></SectionRow>
+  </div>
+  <FormFooter className="justify-end"><Button type="submit">Save</Button></FormFooter>
+</form>
+```
+From `@/components/ui/FormSection`: `FormSection` (`title?`, `description?`, `actions?`, `flush?`; a ruled group
+of fields, stacked with 16px gaps), `FieldGrid` (`min?` px, default 200: auto-fit columns of fields; use it for
+every side-by-side field row), `SectionRow` (`min?`: sections side by side, split by a rule), `FormFooter`
+(the sticky action strip at the foot of a form sheet, above the mobile tab bar).
 
 `Badge` (static): `tone?: "neutral" | "accent" | "amber" | "success" | "danger"`, `icon?`, `dot?`.
-`Chip` (44px toggle filter, `aria-pressed`): `pressed?`, `icon?` + button props. `Dot`: `tone?` (7px legend dot).
-All three from `@/components/ui/Badge`.
+`Chip` (44px toggle filter, `aria-pressed`): `pressed?`, `icon?` + button props; with `role="radio"` (inside a
+`radiogroup`) it reports `aria-checked` instead. `RemovableChip` (`onRemove`, `removeLabel?`, children): a picked
+value or active filter; the whole chip removes it. `Dot`: `tone?` (7px legend dot). All from `@/components/ui/Badge`.
+
+`Avatar`: `name?`, `photoURL?`, `size?: 24 | 28 | 32 | 36 | 56` (default 32), `tone?: "accent" | "amber" | "rail"`,
+`title?`. Decorative: print the name beside it. `initials(name)` → first + last initial, `"?"` when empty.
+
+`DetailList`: `items: { label; icon?; value }[]`: ruled caption/value rows for detail panels.
 
 `CategoryGlyph`: `name?` (matched by keyword), `tone?` (force), `size?: "sm" 26 | "md" 28 | "lg" 32 | "xl" 36`.
 `CategoryDot` (6px). `categoryTone(name)` → `"sw" | "co" | "tr" | "ed" | "me" | "of" | "mk" | "neutral"`;
@@ -94,15 +119,28 @@ All three from `@/components/ui/Badge`.
 `RankedBar`: `label`, `amount` (formatted), `ratio` (0–1 bar fill), `share?` (percent), `leading?`
 (e.g. `<CategoryGlyph />` or initials), `tone?: "ramp" | "accent" | "muted" | "pocket"`.
 
-`SegmentedControl<T>`: `options: { value; label; icon? }[]`, `value`, `onChange`, required `aria-label`, `fullWidth?`.
+`SegmentedControl<T>`: `options: { value; label; icon? }[]`, `value`, `onChange`, required `aria-label`, `fullWidth?`,
+`size?: "sm" (40px) | "md"`, `compact?` (tighter segments, icons only from `sm` up), `disabled?`.
+
+```tsx
+<ConfirmDialog isOpen={open} onClose={close} onConfirm={remove} title="Delete trip" icon={Trash2}
+  confirmLabel="Delete trip" busyLabel="Deleting..." busy={deleting}>Expenses are kept.</ConfirmDialog>
+<form onSubmit={save}>{fields}<DialogActions onCancel={close} confirmLabel="Create trip" busy={saving} /></form>
+```
+`ConfirmDialog` (from `@/components/ui/ConfirmDialog`): destructive confirmation; can't be dismissed while `busy`.
+`DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
+`variant?`, `icon?`, `disabled?`, `busyLabel?`, children (e.g. a selection summary) go before the buttons.
+Every dialog with actions ends with one of these (or `ModalFooter` from `Modal` for anything else).
 
 Helpers in `@/components/ui/styles`: `buttonClass()`, `iconButtonClass()`, `rowClass` (hairline + hover
-tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass`, `panelClass`, `transition`, `focusRing`,
-`ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn`.
+tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass`, `panelClass`, `panelPadX`, `transition`,
+`focusRing`, `ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
+`className` can't override a class the primitive already sets; add a prop or variant instead).
+`useMediaQuery(query)` lives in `@/hooks/useMediaQuery`.
 
-Restyled, same APIs: `Modal` (bottom sheet below `sm`), `EmptyState`, `Skeleton` (+ page skeletons),
-`Spinner`/`PageLoader`/`InlineLoader`, `Toast` (sits above the mobile tab bar), `MultiSelect`,
-`CommandPalette`, `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
+Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Skeleton` (+ page skeletons),
+`Spinner`/`InlineLoader`, `Toast` (sits above the mobile tab bar), `MultiSelect`, `CommandPalette`,
+`ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
 
 ## Shell
 
@@ -143,19 +181,4 @@ use the nav icons from `nav.ts` for sections and `CategoryGlyph` for categories.
 - Don't: gradient banners, coloured icon tiles on every card, shadows on panels, `rounded-xl/2xl`,
   serif or extra font families, `max-w-6xl mx-auto` wrappers, raw hex colours, tailwind palette colours
   (`emerald-500`, `blue-400`…) for meaning, per-page re-implementations of buttons/inputs.
-
-## Deprecated (remove as pages migrate; delete once the last user is gone)
-
-- Components: `dashboard/StatCard` (+ test) → `Stat`; `dashboard/InsightsHeader` → `PageHeader` + `StatBand`;
-  `dashboard/charts/{TopCategoriesCard,DepartmentSpendCard,PaymentSourceCard,MonthlyTrendCard}` and
-  `chartTheme.ts` (cyan/emerald palettes) → `Panel` + `RankedBar` / `SplitBar` / div bars with `bg-bar`,
-  `bg-ramp`, `bg-hatch`; `dashboard/ExpenseAnalytics` (check its chart colours). `trips/TripBadges` →
-  `Badge`; `expenses/ExpenseCard` → ledger rows.
-- CSS classes in `globals.css` (restyled flat, kept only for un-migrated pages): `.btn-primary`,
-  `.btn-secondary`, `.btn-danger`, `.btn-ghost` → `Button`; `.input-field` → `inputClass`/`selectClass`;
-  `.card`, `.card-hover` → `Panel`; `.tabular-nums` mono override → `.num`.
-- Token names (remapped to Ledger values): `foreground`, `muted`, `muted-foreground`, `subtle`,
-  `subtle-hover`, `line`, `line-strong`, `surface-elevated`, `surface-muted`, numeric `accent-50…900`
-  (now indigo), direct `brand-*` shades, `font-heading`, `font-display`.
-- Gone already: `bg-ledger`, `bg-ledger-contrast` (now no-ops; still referenced by `src/app/page.tsx` and
-  `InsightsHeader`), `shadow-soft`, `animate-loader-*`, `animate-slide-in-right`, BrandLogo `truncate`.
+- Don't use `dashboard/StatCard`: it has no importers and only awaits removal; use `Stat` in a `StatBand`.
