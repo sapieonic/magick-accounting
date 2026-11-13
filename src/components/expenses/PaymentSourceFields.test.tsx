@@ -180,6 +180,35 @@ describe("PaymentSourceFields", () => {
     expect(screen.getByText("₹250.00 is credited to you. ₹750.00 goes to the company.")).toBeInTheDocument();
   });
 
+  it("names the submitter when the form is for someone else's expense", () => {
+    const { rerender } = render(
+      <PaymentSourceFields
+        paymentSource="pocket"
+        pocketAmount="250"
+        amount="1000"
+        currencySymbol="₹"
+        onPaymentSourceChange={() => undefined}
+        onPocketAmountChange={() => undefined}
+        submitterName="Ravi"
+      />
+    );
+    expect(screen.getByText("The full ₹1,000.00 is credited to Ravi for reimbursement.")).toBeInTheDocument();
+
+    rerender(
+      <PaymentSourceFields
+        paymentSource="split"
+        pocketAmount="250"
+        amount="1000"
+        currencySymbol="₹"
+        onPaymentSourceChange={() => undefined}
+        onPocketAmountChange={() => undefined}
+        submitterName="Ravi"
+      />
+    );
+    expect(screen.getByText("₹250.00 is credited to Ravi. ₹750.00 goes to the company.")).toBeInTheDocument();
+    expect(screen.queryByText(/credited to you/)).not.toBeInTheDocument();
+  });
+
   it("disables every option while locked", () => {
     render(
       <PaymentSourceFields

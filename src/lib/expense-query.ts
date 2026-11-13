@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Expense from "@/models/Expense";
 import type { AuthUser } from "./auth";
-import { paidByFilter, payerSpendPipeline } from "./expense";
+import { baseTotalExpr, companyBaseExpr, paidByFilter, payerSpendPipeline, pocketBaseExpr } from "./expense";
 
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -131,7 +131,10 @@ export async function getExpenseSummary(
         $group: {
           _id: null,
           totalExpenses: { $sum: 1 },
-          totalAmount: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          totalAmount: { $sum: baseTotalExpr },
+          // Company vs pocket, with the legacy fallbacks every aggregation uses.
+          companyAmount: { $sum: companyBaseExpr },
+          pocketAmount: { $sum: pocketBaseExpr },
         },
       },
     ]),
@@ -149,6 +152,8 @@ export async function getExpenseSummary(
   return {
     totalExpenses: summary?.totalExpenses ?? 0,
     totalAmount: summary?.totalAmount ?? 0,
+    companyAmount: summary?.companyAmount ?? 0,
+    pocketAmount: summary?.pocketAmount ?? 0,
     // With a payer filter: that person's own share, as Spend by User counts it.
     ...(payerSpend ? { payerSpend } : {}),
   };

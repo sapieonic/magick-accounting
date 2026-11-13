@@ -290,7 +290,7 @@ describe("NewExpensePage business trips", () => {
     const user = userEvent.setup();
     render(<NewExpensePage />);
 
-    expect(await screen.findByLabelText(/business trip/i)).toHaveValue(trip._id);
+    await waitFor(() => expect(screen.getByLabelText(/business trip/i)).toHaveValue(trip._id));
     expect(screen.getByLabelText(/^department/i)).toHaveValue("department-2");
     expect(screen.getByLabelText(/^date/i)).toHaveValue("2025-01-10");
     expect(screen.getByRole("button", { name: /back to trip/i })).toBeInTheDocument();
@@ -376,7 +376,7 @@ describe("NewExpensePage business trips", () => {
     window.history.replaceState({}, "", `/dashboard/expenses/new?trip=${trip._id}`);
     const user = userEvent.setup();
     render(<NewExpensePage />);
-    expect(await screen.findByLabelText(/business trip/i)).toHaveValue(trip._id);
+    await waitFor(() => expect(screen.getByLabelText(/business trip/i)).toHaveValue(trip._id));
 
     await user.type(screen.getByLabelText(/^title/i), "Office snacks");
     await user.type(screen.getByLabelText(/^amount/i), "300");
@@ -445,11 +445,32 @@ describe("NewExpensePage receipt auto-fill", () => {
     await uploadReceipt(user);
 
     expect(await screen.findByText("Auto-fill read 3 fields.")).toBeInTheDocument();
-    expect(screen.getAllByText("from receipt")).toHaveLength(3);
+    expect(screen.getAllByText(/from receipt$/)).toHaveLength(3);
+    // The currency wasn't read, so the amount's mark names the amount alone.
+    expect(screen.getByText("amount from receipt")).toBeInTheDocument();
     expect(screen.getByLabelText(/^title/i)).toHaveValue("Dinner");
 
     await user.type(screen.getByLabelText(/^title/i), " with client");
+    expect(screen.getAllByText(/from receipt$/)).toHaveLength(2);
+  });
+
+  it("keeps the read count as fields are edited, and marks amount and currency separately", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.postFormData).mockResolvedValue({ title: "Dinner", amount: 1873, currency: "currency-1" });
+    render(<NewExpensePage />);
+    await uploadReceipt(user);
+
+    expect(await screen.findByText("Auto-fill read 3 fields.")).toBeInTheDocument();
     expect(screen.getAllByText("from receipt")).toHaveLength(2);
+
+    await user.type(screen.getByLabelText(/^title/i), " with client");
+    const amount = screen.getByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "1900");
+
+    expect(screen.getByText("Auto-fill read 3 fields.")).toBeInTheDocument();
+    expect(screen.queryByText("from receipt")).not.toBeInTheDocument();
+    expect(screen.getByText("currency from receipt")).toBeInTheDocument();
   });
 
   it("reads the receipt again on request, and clears the marks when it's removed", async () => {
@@ -494,6 +515,19 @@ describe("NewExpensePage foreign currency", () => {
     });
   });
 
+  it("sizes the currency select with a wrapper, so it can't squeeze the amount", async () => {
+    render(<NewExpensePage />);
+    const currency = await screen.findByLabelText("Currency");
+
+    // cn() has no tailwind-merge: a width passed next to selectClass's w-full loses to it.
+    expect(currency.parentElement).toHaveClass("w-[7.5rem]", "shrink-0");
+    const form = screen.getByRole("form", { name: "Expense details" });
+    for (const element of form.querySelectorAll("[class]")) {
+      const widths = [...element.classList].filter((c) => /^w-/.test(c));
+      if (widths.includes("w-full")) expect(widths).toEqual(["w-full"]);
+    }
+  });
+
   it("previews the INR amount at today's rate", async () => {
     const user = userEvent.setup();
     render(<NewExpensePage />);
@@ -505,5 +539,28 @@ describe("NewExpensePage foreign currency", () => {
 
     await user.type(amount, "100");
     expect(amount).toHaveAccessibleDescription(/≈ ₹8,350\.00 at today's rate/);
+  });
+});
+
+describe("NewExpensePage without form options", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem("expense-upload-modal-skip", "true");
+    vi.mocked(useAuth).mockReturnValue({ user: null, isAdmin: false } as any);
+  });
+
+  it("doesn't present an unknown currency as INR", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockRejectedValue(new Error("offline"));
+    render(<NewExpensePage />);
+
+    const amount = await screen.findByLabelText(/^amount/i);
+    await user.type(amount, "100");
+
+    expect(toastMock).toHaveBeenCalledWith("Failed to load form options", "error");
+    expect(amount).toHaveAccessibleDescription("Converted to INR when you save.");
+    expect(screen.queryByText(/base currency/i)).not.toBeInTheDocument();
+    expect(screen.getByText("100.00")).toBeInTheDocument();
+    expect(screen.queryByText("₹100.00")).not.toBeInTheDocument();
   });
 });

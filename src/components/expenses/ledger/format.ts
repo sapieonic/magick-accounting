@@ -11,7 +11,9 @@ export function expenseDate(expense: Pick<ExpenseListItem, "date">, pattern = "d
 }
 
 /** Paid in a currency other than the base one, with a stored conversion. */
-export function isForeign(expense: ExpenseListItem): boolean {
+export function isForeign(
+  expense: { currency?: { isBase: boolean } | null } & Pick<ExpenseListItem, "amountInBaseCurrency">
+): boolean {
   return Boolean(expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null);
 }
 

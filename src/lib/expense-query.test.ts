@@ -250,10 +250,10 @@ describe("getExpenseSummary", () => {
 
   it("returns totals from the aggregate result", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([
-      { _id: null, totalExpenses: 7, totalAmount: 1234.5 },
+      { _id: null, totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 },
     ] as never);
     const result = await getExpenseSummary({ foo: "bar" });
-    expect(result).toEqual({ totalExpenses: 7, totalAmount: 1234.5 });
+    expect(result).toEqual({ totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 });
   });
 
   it("passes the filter into the $match stage", async () => {
@@ -266,16 +266,35 @@ describe("getExpenseSummary", () => {
     expect(pipeline[0]).toEqual({ $match: filter });
   });
 
-  it("falls back to {0,0} when aggregate returns []", async () => {
+  it("falls back to zeros when aggregate returns []", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([] as never);
     const result = await getExpenseSummary({});
-    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0 });
+    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
   });
 
   it("falls back to 0 for missing fields in the summary doc", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([{ _id: null }] as never);
     const result = await getExpenseSummary({});
-    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0 });
+    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
+  });
+
+  it("splits the total into company and pocket, legacy documents included", async () => {
+    const docs = [
+      // Current documents carry the pocket share.
+      { amount: 1000, amountInBaseCurrency: 1000, paymentSource: "split", pocketAmountInBaseCurrency: 400 },
+      { amount: 10, amountInBaseCurrency: 900, paymentSource: "company", pocketAmountInBaseCurrency: 0 },
+      // Legacy documents without it: company counts as company, anything else as pocket.
+      { amount: 300, paymentSource: "company" },
+      { amount: 200, amountInBaseCurrency: 200, paymentSource: "pocket" },
+    ];
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
+    );
+
+    const result = await getExpenseSummary({});
+
+    expect(result).toEqual({ totalExpenses: 4, totalAmount: 2400, companyAmount: 1800, pocketAmount: 600 });
   });
 });
 
@@ -317,6 +336,8 @@ describe("getExpenseSummary — payer share", () => {
     expect(result).toEqual({
       totalExpenses: 3,
       totalAmount: 900,
+      companyAmount: 0,
+      pocketAmount: 0,
       payerSpend: { totalSpend: 250, pocketSpend: 200, companySpend: 50 },
     });
   });

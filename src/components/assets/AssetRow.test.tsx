@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import AssetRow, { type AssetListItem } from "./AssetRow";
@@ -45,6 +45,31 @@ describe("AssetRow", () => {
     );
     expect(screen.getByText(/1,50,000/)).toBeInTheDocument();
     expect(screen.getAllByText("Under repair").length).toBeGreaterThan(0);
+  });
+
+  it("moves cost and status under the name when narrow, leaving the value column to the book value", () => {
+    renderRow(base);
+    const titleBlock = screen.getByRole("link", { name: "MacBook Pro" }).parentElement!;
+    const narrowLine = within(titleBlock).getByText("Under repair").closest("span.flex")!;
+    expect(narrowLine).toHaveClass("[@container(min-width:760px)]:hidden");
+    expect(within(narrowLine as HTMLElement).getByText(/Cost ₹2,00,000\.00/)).toBeInTheDocument();
+
+    const bookValue = screen.getByText("₹1,50,000.00");
+    const valueColumn = bookValue.parentElement!;
+    // There, the cost only shows once the columns do, and the status has its own column.
+    expect(within(valueColumn).getByText(/Cost/)).toHaveClass("hidden", "[@container(min-width:760px)]:block");
+    expect(within(valueColumn).queryByText("Under repair")).not.toBeInTheDocument();
+  });
+
+  it("dates the purchase by its calendar day, in the app's day-month format", () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      renderRow(base);
+      expect(screen.getAllByText("16 Aug 2026").length).toBeGreaterThan(0);
+    } finally {
+      process.env.TZ = tz;
+    }
   });
 
   it("hides financials and the expense link when the viewer cannot see them", () => {

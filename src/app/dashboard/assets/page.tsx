@@ -46,7 +46,7 @@ function ShowingCount({ shown, total, noun }: { shown: number; total: number; no
 }
 
 export default function AssetsPage() {
-  useTitle("Company Assets");
+  useTitle("Company assets");
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const { opening: loadingReceipt, openReceipt } = useReceiptOpener();
@@ -160,7 +160,7 @@ export default function AssetsPage() {
   return (
     <div className="animate-fade-in flex flex-col gap-6">
       <PageHeader
-        title={isAdmin ? "Company Assets" : "My Assets"}
+        title={isAdmin ? "Company assets" : "My assets"}
         meta="Purchases, assignments and depreciation in one linked register."
         actions={recordPurchase}
       />
@@ -269,7 +269,7 @@ export default function AssetsPage() {
         <Panel
           flush
           title="Recent corrections"
-          meta="Audited reversals of mistaken or duplicate asset entries."
+          description="Audited reversals of mistaken or duplicate asset entries."
           footer={
             <>
               <ShowingCount shown={corrections.length} total={correctionTotal} noun="corrections" />
@@ -303,7 +303,7 @@ export default function AssetsPage() {
                   <span className="text-xs text-ink-3">{correction.reason}</span>
                 </div>
                 <div className="ml-auto flex flex-col items-end text-right text-xs text-ink-3">
-                  <span className="num">{format(new Date(correction.occurredAt), "dd MMM yyyy, HH:mm")}</span>
+                  <span className="num">{format(new Date(correction.occurredAt), "d MMM yyyy, HH:mm")}</span>
                   <span>By {correction.actor?.name || "Administrator"}</span>
                 </div>
               </li>

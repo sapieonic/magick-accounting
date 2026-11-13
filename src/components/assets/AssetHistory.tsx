@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { History, PackagePlus, PencilLine, Undo2, UserMinus, UserPlus, type LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE } from "@/components/ui/styles";
+import { ICON_STROKE, panelPadX } from "@/components/ui/styles";
 
 interface Person {
   _id: string;
@@ -37,11 +37,12 @@ const EVENT_ICONS: Record<string, { icon: LucideIcon; className: string }> = {
   reversed: { icon: Undo2, className: "text-danger" },
 };
 
-const day = (value: string) => format(new Date(value), "dd MMM yyyy");
-const itemClass = "flex gap-3 border-t border-rule-2 px-[clamp(16px,2vw,24px)] py-3 first:border-t-0";
+// Timestamps (not calendar days), so the viewer's local day is right.
+const day = (value: string) => format(new Date(value), "d MMM yyyy");
+const itemClass = cn("flex gap-3 border-t border-rule-2 py-3 first:border-t-0", panelPadX);
 
 function Empty({ children }: { children: string }) {
-  return <p className="px-[clamp(16px,2vw,24px)] pb-5 text-sm text-ink-3">{children}</p>;
+  return <p className={cn("pb-5 text-sm text-ink-3", panelPadX)}>{children}</p>;
 }
 
 /** Ruled list of who held the asset, newest first as returned by the API. */
@@ -87,7 +88,7 @@ export function AssetEventList({ events }: { events: AssetEvent[] }) {
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <span className="font-medium capitalize text-ink">{event.type.replaceAll("_", " ")}</span>
-                <span className="num text-xs text-ink-3">{format(new Date(event.occurredAt), "dd MMM yyyy, HH:mm")}</span>
+                <span className="num text-xs text-ink-3">{format(new Date(event.occurredAt), "d MMM yyyy, HH:mm")}</span>
               </div>
               <span className="text-xs text-ink-3">
                 By {event.actor?.name || "Administrator"}

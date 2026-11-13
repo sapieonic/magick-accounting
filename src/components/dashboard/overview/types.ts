@@ -1,4 +1,4 @@
-/** Response shapes of /api/dashboard/stats and /api/dashboard/charts. */
+/** Response shapes of /api/dashboard/stats, /api/dashboard/charts and (admins) /api/users. */
 
 export interface RecentExpense {
   _id: string;
@@ -29,7 +29,7 @@ export interface MonthPoint {
   count: number;
 }
 
-export interface SpendRow {
+interface SpendRow {
   _id?: string | null;
   name: string;
   total: number;
@@ -42,4 +42,15 @@ export interface OverviewCharts {
   topCategories: SpendRow[];
   paymentSources: Array<{ name: string; total: number; count: number }>;
   departmentSpend: SpendRow[];
+}
+
+/** A person with their all-time spend, as `GET /api/users` lists them (base currency). */
+export interface PersonSpend {
+  _id: string;
+  name: string;
+  email: string;
+  photoURL?: string | null;
+  totalSpend: number;
+  pocketSpend: number;
+  companySpend: number;
 }

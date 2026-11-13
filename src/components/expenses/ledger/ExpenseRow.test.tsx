@@ -110,6 +110,21 @@ describe("ExpenseRow", () => {
     expect(within(detail).getByRole("link", { name: "Edit" })).toHaveAttribute("href", "/edit");
   });
 
+  it("names the category in the narrow sub-line, where the glyph stands in for the column", () => {
+    renderRow();
+    // The narrow layout's sub-line (the wide one shows payer · source instead).
+    expect(screen.getByText("Meals & Entertainment · 13 Oct · Asha Rao")).toBeInTheDocument();
+  });
+
+  it("keeps the hover toolbar out of reach until it shows, and off hover-less screens", () => {
+    renderRow({ onDelete: vi.fn() });
+    const toolbar = screen.getByTestId("row-actions");
+    // Invisible (opacity-0) controls mustn't take taps on touch screens.
+    expect(toolbar).toHaveClass("pointer-events-none", "group-hover:pointer-events-auto", "focus-within:pointer-events-auto");
+    expect(toolbar).toHaveClass("hidden", "sm:[@media(hover:hover)]:flex");
+    expect(toolbar).not.toHaveClass("sm:flex");
+  });
+
   it("leaves the detail to the caller when not inline", () => {
     renderRow({ selected: true, inlineDetail: false, detailId: "side-panel" });
     expect(screen.getByRole("button", { name: "Team dinner" })).toHaveAttribute("aria-controls", "side-panel");

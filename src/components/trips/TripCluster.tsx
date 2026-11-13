@@ -15,7 +15,7 @@ import { baseAmount } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
 
-export interface TripClusterProps extends ExpenseActions {
+interface TripClusterProps extends ExpenseActions {
   trip: TripSummary;
   /** The trip's expenses on this page (those matching the active filters). */
   expenses: ExpenseListItem[];
@@ -31,7 +31,7 @@ export interface TripClusterProps extends ExpenseActions {
   filtered?: boolean;
 }
 
-export type ExpenseListEntry =
+type ExpenseListEntry =
   | { kind: "expense"; key: string; expense: ExpenseListItem }
   | { kind: "trip"; key: string; trip: TripSummary; expenses: ExpenseListItem[] };
 

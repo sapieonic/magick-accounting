@@ -416,3 +416,98 @@ describe("EditExpensePage linked assets", () => {
     expect(screen.getByLabelText("Currency")).toBeDisabled();
   });
 });
+
+describe("EditExpensePage INR preview", () => {
+  const inr = { _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true, rateToBase: 1 };
+  const usd = { _id: "currency-2", code: "USD", name: "US Dollar", symbol: "$", isBase: false, rateToBase: 90 };
+  const eur = { _id: "currency-3", code: "EUR", name: "Euro", symbol: "€", isBase: false, rateToBase: 95 };
+  // Saved at 80 to the dollar; today's rate is 90.
+  const usdExpense = {
+    ...splitExpense,
+    paymentSource: "company",
+    amount: 100,
+    amountInBaseCurrency: 8000,
+    exchangeRateToBase: 80,
+    currency: usd,
+  };
+
+  function mockWith(expense: Record<string, unknown>, currencies: unknown[]) {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.startsWith("/api/expenses/")) return Promise.resolve({ expense, assets: [] });
+      if (url.startsWith("/api/lookups")) {
+        return Promise.resolve({
+          departments: [{ _id: "department-1", name: "Engineering" }],
+          categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+          currencies,
+        });
+      }
+      return Promise.resolve({ trips: [] });
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "u1" }, isAdmin: true } as any);
+  });
+
+  it("previews with the saved rate while the currency is unchanged, and today's rate after a change", async () => {
+    const user = userEvent.setup();
+    mockWith(usdExpense, [inr, usd, eur]);
+    render(<EditExpensePage />);
+
+    expect(await screen.findByText(/≈ ₹8,000\.00 at this expense's saved USD rate/)).toBeInTheDocument();
+
+    const amount = screen.getByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "10.555");
+    // 10.555 × 80 = 844.4, rounded to paise like the server.
+    expect(screen.getByText(/≈ ₹844\.40 at this expense's saved USD rate/)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Currency"), eur._id);
+    expect(screen.getByText(/≈ ₹1,002\.73 at today's rate/)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Currency"), usd._id);
+    expect(screen.getByText(/at this expense's saved USD rate/)).toBeInTheDocument();
+  });
+
+  it("derives the saved rate from the stored INR amount on older expenses", async () => {
+    mockWith({ ...usdExpense, exchangeRateToBase: undefined, amountInBaseCurrency: 7500 }, [inr, usd]);
+    render(<EditExpensePage />);
+
+    expect(await screen.findByText(/≈ ₹7,500\.00 at this expense's saved USD rate/)).toBeInTheDocument();
+  });
+
+  it("keeps a deactivated currency selectable and totals in it", async () => {
+    mockWith(usdExpense, [inr]);
+    render(<EditExpensePage />);
+
+    const select = (await screen.findByLabelText("Currency")) as HTMLSelectElement;
+    expect(select).toHaveValue(usd._id);
+    expect(select.selectedOptions[0]).toHaveTextContent("USD $");
+    expect(screen.getByText(/≈ ₹8,000\.00 at this expense's saved USD rate/)).toBeInTheDocument();
+    expect(screen.queryByText(/base currency, no conversion/i)).not.toBeInTheDocument();
+    expect(screen.getByText("$100.00")).toBeInTheDocument();
+  });
+});
+
+describe("EditExpensePage pocket credit wording", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("credits the submitter by name when an admin edits someone else's expense", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "admin-1" }, isAdmin: true } as any);
+    mockExpense({ ...splitExpense, paymentSource: "pocket", createdBy: { _id: "user-2", name: "Ravi" } });
+    render(<EditExpensePage />);
+
+    expect(await screen.findByText("The full ₹1,000.00 is credited to Ravi for reimbursement.")).toBeInTheDocument();
+  });
+
+  it("says 'you' on your own expense", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "user-2" }, isAdmin: false } as any);
+    mockExpense({ ...splitExpense, paymentSource: "pocket", createdBy: { _id: "user-2", name: "Ravi" } });
+    render(<EditExpensePage />);
+
+    expect(await screen.findByText("The full ₹1,000.00 is credited to you for reimbursement.")).toBeInTheDocument();
+  });
+});

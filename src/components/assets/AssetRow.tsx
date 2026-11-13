@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { format } from "date-fns";
 import { Download } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { IconButton } from "@/components/ui/Button";
@@ -7,6 +6,7 @@ import { cn } from "@/components/ui/cn";
 import { rowClass } from "@/components/ui/styles";
 import AssetGlyph from "@/components/assets/AssetGlyph";
 import AssetStatusBadge from "@/components/assets/AssetStatusBadge";
+import { expenseDate } from "@/components/expenses/ledger/format";
 
 export interface AssetListItem {
   _id: string;
@@ -34,13 +34,15 @@ export interface AssetListItem {
   };
 }
 
-// The list is a container: 6 columns when it is wide, title block · value · receipt when narrow.
+// The list is a container: 6 columns when it is wide, title block · book value · receipt when
+// narrow (cost and status then join the title block, so the name keeps its room).
 const grid = cn(
   "grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-4 px-4",
   "[@container(min-width:760px)]:grid-cols-[minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_112px_minmax(120px,auto)_40px]"
 );
 const wide = "hidden [@container(min-width:760px)]:block";
 const narrow = "[@container(min-width:760px)]:hidden";
+const narrowFlex = "flex [@container(min-width:760px)]:hidden";
 const sub = "ell text-xs text-ink-3";
 
 /** Column captions, shown only when the list is wide enough for columns. */
@@ -67,7 +69,7 @@ interface AssetRowProps {
 export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: AssetRowProps) {
   const purchase = asset.purchaseExpense;
   const currencyCode = purchase.currency?.code || "INR";
-  const purchaseDate = format(new Date(purchase.date), "dd MMM yyyy");
+  const purchaseDate = expenseDate(purchase, "d MMM yyyy");
   const assignee = asset.assignedTo?.name || "Unassigned";
   const hasValue = asset.canViewFinancials && asset.bookValue != null && asset.capitalizedCost != null;
 
@@ -88,6 +90,14 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
           </span>
           <span className={cn(sub, narrow)}>
             {assignee} · <span className="num">{purchaseDate}</span>
+          </span>
+          <span className={cn("mt-0.5 min-w-0 flex-wrap items-center gap-x-2 gap-y-1", narrowFlex)}>
+            <AssetStatusBadge status={asset.status} />
+            {hasValue && (
+              <span className="num whitespace-nowrap text-xs text-ink-3">
+                Cost {formatCurrency(asset.capitalizedCost!, currencyCode)}
+              </span>
+            )}
           </span>
         </div>
       </div>
@@ -121,14 +131,13 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
             <span className="num whitespace-nowrap font-medium text-ink">
               {formatCurrency(asset.bookValue!, currencyCode)}
             </span>
-            <span className="num whitespace-nowrap text-xs text-ink-3">
+            <span className={cn("num whitespace-nowrap text-xs text-ink-3", wide)}>
               Cost {formatCurrency(asset.capitalizedCost!, currencyCode)}
             </span>
           </>
         ) : (
           <span className="text-xs text-ink-3">Restricted</span>
         )}
-        <AssetStatusBadge status={asset.status} className={narrow} />
       </div>
 
       <div className="relative z-10 flex justify-end">

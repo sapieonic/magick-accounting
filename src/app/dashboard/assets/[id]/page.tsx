@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { CalendarDays, Download, ExternalLink, FileText, Layers, Paperclip, Save, Undo2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
+import { dayKey } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
@@ -23,6 +24,8 @@ import AssetStatusBadge, { ASSET_STATUSES, TERMINAL_STATUSES } from "@/component
 import { AssetEventList, AssignmentList, type AssetAssignment, type AssetEvent } from "@/components/assets/AssetHistory";
 import DetailList from "@/components/ui/DetailList";
 import { useReceiptOpener } from "@/components/assets/useReceiptOpener";
+import AssetFieldGroup from "@/components/assets/AssetFieldGroup";
+import { FieldGrid } from "@/components/ui/FormSection";
 
 interface UserOption { _id: string; name: string; email: string }
 interface DepartmentOption { _id: string; name: string }
@@ -88,23 +91,16 @@ interface EditForm {
   lifecycleNotes: string;
 }
 
+/** A date stored as UTC midnight of its day ("6 Nov 2026"), whatever the viewer's zone. */
+function calendarDay(value: string): string {
+  return format(parseISO(dayKey(value)), "d MMM yyyy");
+}
+
 const DEPRECIATION_LABELS: Record<DepreciationMethod, string> = {
   none: "None",
   straight_line: "Straight-line",
   written_down_value: "Written-down value",
 };
-
-const fieldGrid = "grid grid-cols-[repeat(auto-fill,minmax(min(220px,100%),1fr))] gap-4";
-
-/** A captioned group of fields inside the asset form, ruled from the previous group. */
-function FormSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-3 border-t border-rule-2 pt-4 first:border-t-0 first:pt-0">
-      <h3 className="cap text-ink-3">{title}</h3>
-      <div className={fieldGrid}>{children}</div>
-    </div>
-  );
-}
 
 export default function AssetDetailPage() {
   const params = useParams();
@@ -278,7 +274,7 @@ export default function AssetDetailPage() {
           <Stat
             label="Capitalized cost"
             value={money(asset.capitalizedCost!)}
-            sub={`Put to use ${format(new Date(asset.putToUseDate), "dd MMM yyyy")}`}
+            sub={`Put to use ${calendarDay(asset.putToUseDate)}`}
           />
           <Stat
             label="Accumulated depreciation"
@@ -314,7 +310,7 @@ export default function AssetDetailPage() {
               {
                 label: "Purchase date",
                 icon: CalendarDays,
-                value: <span className="num">{format(new Date(purchase.date), "dd MMM yyyy")}</span>,
+                value: <span className="num">{calendarDay(purchase.date)}</span>,
               },
               {
                 label: "Asset allocation",
@@ -358,155 +354,165 @@ export default function AssetDetailPage() {
         <Panel
           grow={2}
           title="Asset details"
-          meta={isAdmin ? "Update ownership, assignment and depreciation details." : "Contact an administrator to update this asset."}
+          description={
+            isAdmin ? "Update ownership, assignment and depreciation details." : "Contact an administrator to update this asset."
+          }
         >
           <form onSubmit={save} className="flex flex-col gap-5">
             <fieldset disabled={!isAdmin || saving} className="flex min-w-0 flex-col gap-5">
-              <FormSection title="Identity">
-                <Field label="Asset name">
-                  <input required value={form.name} onChange={(e) => updateForm("name", e.target.value)} className={inputClass} />
-                </Field>
-                <Field label="Asset category">
-                  <input required value={form.assetCategory} onChange={(e) => updateForm("assetCategory", e.target.value)} className={inputClass} />
-                </Field>
-                <Field label="Make">
-                  <input value={form.make} onChange={(e) => updateForm("make", e.target.value)} className={inputClass} />
-                </Field>
-                <Field label="Model">
-                  <input value={form.assetModel} onChange={(e) => updateForm("assetModel", e.target.value)} className={inputClass} />
-                </Field>
-                <Field label="Serial number">
-                  <input value={form.serialNumber} onChange={(e) => updateForm("serialNumber", e.target.value)} className={cn(inputClass, "num")} />
-                </Field>
-              </FormSection>
+              <AssetFieldGroup title="Identity">
+                <FieldGrid min={220}>
+                  <Field label="Asset name">
+                    <input required value={form.name} onChange={(e) => updateForm("name", e.target.value)} className={inputClass} />
+                  </Field>
+                  <Field label="Asset category">
+                    <input required value={form.assetCategory} onChange={(e) => updateForm("assetCategory", e.target.value)} className={inputClass} />
+                  </Field>
+                  <Field label="Make">
+                    <input value={form.make} onChange={(e) => updateForm("make", e.target.value)} className={inputClass} />
+                  </Field>
+                  <Field label="Model">
+                    <input value={form.assetModel} onChange={(e) => updateForm("assetModel", e.target.value)} className={inputClass} />
+                  </Field>
+                  <Field label="Serial number">
+                    <input value={form.serialNumber} onChange={(e) => updateForm("serialNumber", e.target.value)} className={cn(inputClass, "num")} />
+                  </Field>
+                </FieldGrid>
+              </AssetFieldGroup>
 
-              <FormSection title="Assignment">
-                <Field label="Assigned to">
-                  {isAdmin ? (
-                    <select value={form.assignedTo} onChange={(e) => updateForm("assignedTo", e.target.value)} className={selectClass}>
-                      <option value="">Unassigned</option>
-                      {users.map((user) => (
-                        <option key={user._id} value={user._id}>
-                          {user.name} ({user.email})
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input value={asset.assignedTo?.name || "Unassigned"} readOnly className={inputClass} />
-                  )}
-                </Field>
-                <Field label="Department">
-                  {isAdmin ? (
-                    <select required value={form.department} onChange={(e) => updateForm("department", e.target.value)} className={selectClass}>
-                      {departments.map((department) => (
-                        <option key={department._id} value={department._id}>
-                          {department.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input value={asset.department?.name || ""} readOnly className={inputClass} />
-                  )}
-                </Field>
-                <Field label="Purpose">
-                  <input value={form.purpose} onChange={(e) => updateForm("purpose", e.target.value)} className={inputClass} />
-                </Field>
-                <Field label="Location">
-                  <input value={form.location} onChange={(e) => updateForm("location", e.target.value)} className={inputClass} />
-                </Field>
-              </FormSection>
+              <AssetFieldGroup title="Assignment">
+                <FieldGrid min={220}>
+                  <Field label="Assigned to">
+                    {isAdmin ? (
+                      <select value={form.assignedTo} onChange={(e) => updateForm("assignedTo", e.target.value)} className={selectClass}>
+                        <option value="">Unassigned</option>
+                        {users.map((user) => (
+                          <option key={user._id} value={user._id}>
+                            {user.name} ({user.email})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input value={asset.assignedTo?.name || "Unassigned"} readOnly className={inputClass} />
+                    )}
+                  </Field>
+                  <Field label="Department">
+                    {isAdmin ? (
+                      <select required value={form.department} onChange={(e) => updateForm("department", e.target.value)} className={selectClass}>
+                        {departments.map((department) => (
+                          <option key={department._id} value={department._id}>
+                            {department.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input value={asset.department?.name || ""} readOnly className={inputClass} />
+                    )}
+                  </Field>
+                  <Field label="Purpose">
+                    <input value={form.purpose} onChange={(e) => updateForm("purpose", e.target.value)} className={inputClass} />
+                  </Field>
+                  <Field label="Location">
+                    <input value={form.location} onChange={(e) => updateForm("location", e.target.value)} className={inputClass} />
+                  </Field>
+                </FieldGrid>
+              </AssetFieldGroup>
 
               {asset.canViewFinancials && (
-                <FormSection title="Depreciation">
-                  <Field label="Depreciation method">
+                <AssetFieldGroup title="Depreciation">
+                  <FieldGrid min={220}>
+                    <Field label="Depreciation method">
+                      <select
+                        value={form.depreciationMethod}
+                        onChange={(e) => updateForm("depreciationMethod", e.target.value as DepreciationMethod)}
+                        className={selectClass}
+                      >
+                        {(Object.keys(DEPRECIATION_LABELS) as DepreciationMethod[]).map((value) => (
+                          <option key={value} value={value}>
+                            {DEPRECIATION_LABELS[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Annual rate (%)">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        inputMode="decimal"
+                        required={form.depreciationMethod !== "none"}
+                        disabled={!isAdmin || form.depreciationMethod === "none"}
+                        value={form.depreciationRate}
+                        onChange={(e) => updateForm("depreciationRate", e.target.value)}
+                        className={cn(inputClass, "num text-right")}
+                      />
+                    </Field>
+                    <Field label={`Residual value (${currencySymbol})`}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={form.residualValue}
+                        onChange={(e) => updateForm("residualValue", e.target.value)}
+                        className={cn(inputClass, "num text-right")}
+                      />
+                    </Field>
+                  </FieldGrid>
+                </AssetFieldGroup>
+              )}
+
+              <AssetFieldGroup title="Status & lifecycle">
+                <FieldGrid min={220}>
+                  <Field label="Status">
                     <select
-                      value={form.depreciationMethod}
-                      onChange={(e) => updateForm("depreciationMethod", e.target.value as DepreciationMethod)}
+                      disabled={!isAdmin || TERMINAL_STATUSES.has(asset.status)}
+                      value={form.status}
+                      onChange={(e) => updateStatus(e.target.value)}
                       className={selectClass}
                     >
-                      {(Object.keys(DEPRECIATION_LABELS) as DepreciationMethod[]).map((value) => (
+                      {ASSET_STATUSES.map(({ value, label }) => (
                         <option key={value} value={value}>
-                          {DEPRECIATION_LABELS[value]}
+                          {label}
                         </option>
                       ))}
                     </select>
                   </Field>
-                  <Field label="Annual rate (%)">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      inputMode="decimal"
-                      required={form.depreciationMethod !== "none"}
-                      disabled={!isAdmin || form.depreciationMethod === "none"}
-                      value={form.depreciationRate}
-                      onChange={(e) => updateForm("depreciationRate", e.target.value)}
-                      className={cn(inputClass, "num text-right")}
-                    />
+                  <Field label="Put-to-use date">
+                    <input type="date" required value={form.putToUseDate} onChange={(e) => updateForm("putToUseDate", e.target.value)} className={inputClass} />
                   </Field>
-                  <Field label={`Residual value (${currencySymbol})`}>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      inputMode="decimal"
-                      value={form.residualValue}
-                      onChange={(e) => updateForm("residualValue", e.target.value)}
-                      className={cn(inputClass, "num text-right")}
-                    />
-                  </Field>
-                </FormSection>
-              )}
-
-              <FormSection title="Status & lifecycle">
-                <Field label="Status">
-                  <select
-                    disabled={!isAdmin || TERMINAL_STATUSES.has(asset.status)}
-                    value={form.status}
-                    onChange={(e) => updateStatus(e.target.value)}
-                    className={selectClass}
-                  >
-                    {ASSET_STATUSES.map(({ value, label }) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Put-to-use date">
-                  <input type="date" required value={form.putToUseDate} onChange={(e) => updateForm("putToUseDate", e.target.value)} className={inputClass} />
-                </Field>
-                {TERMINAL_STATUSES.has(form.status) && (
-                  <>
-                    <Field label="Effective lifecycle date">
-                      <input type="date" required value={form.lifecycleDate} onChange={(e) => updateForm("lifecycleDate", e.target.value)} className={inputClass} />
-                    </Field>
-                    {form.status === "sold" && (
-                      <Field label={`Sale proceeds (${currencySymbol})`}>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          inputMode="decimal"
-                          value={form.disposalProceeds}
-                          onChange={(e) => updateForm("disposalProceeds", e.target.value)}
-                          className={cn(inputClass, "num text-right")}
+                  {TERMINAL_STATUSES.has(form.status) && (
+                    <>
+                      <Field label="Effective lifecycle date">
+                        <input type="date" required value={form.lifecycleDate} onChange={(e) => updateForm("lifecycleDate", e.target.value)} className={inputClass} />
+                      </Field>
+                      {form.status === "sold" && (
+                        <Field label={`Sale proceeds (${currencySymbol})`}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={form.disposalProceeds}
+                            onChange={(e) => updateForm("disposalProceeds", e.target.value)}
+                            className={cn(inputClass, "num text-right")}
+                          />
+                        </Field>
+                      )}
+                      <Field label="Lifecycle notes" className="col-span-full">
+                        <textarea
+                          rows={2}
+                          value={form.lifecycleNotes}
+                          onChange={(e) => updateForm("lifecycleNotes", e.target.value)}
+                          className={cn(textareaClass, "resize-none")}
+                          placeholder="Reason or disposal details"
                         />
                       </Field>
-                    )}
-                    <Field label="Lifecycle notes" className="col-span-full">
-                      <textarea
-                        rows={2}
-                        value={form.lifecycleNotes}
-                        onChange={(e) => updateForm("lifecycleNotes", e.target.value)}
-                        className={cn(textareaClass, "resize-none")}
-                        placeholder="Reason or disposal details"
-                      />
-                    </Field>
-                  </>
-                )}
-              </FormSection>
+                    </>
+                  )}
+                </FieldGrid>
+              </AssetFieldGroup>
             </fieldset>
 
             {isAdmin && (

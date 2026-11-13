@@ -481,6 +481,28 @@ describe("GET /api/expenses", () => {
     expect(Trip.find).not.toHaveBeenCalled();
   });
 
+  it("returns the company and pocket split with the summary", async () => {
+    vi.mocked(Expense.countDocuments).mockResolvedValue(6 as never);
+    // Hotel went on the company card and lunch was split; the rest (no pocket
+    // fields, like legacy documents) count wholly as pocket.
+    Object.assign(hotel, { paymentSource: "company", amountInBaseCurrency: 100, pocketAmountInBaseCurrency: 0 });
+    Object.assign(lunch, { paymentSource: "split", amountInBaseCurrency: 100, pocketAmountInBaseCurrency: 30 });
+
+    try {
+      const flat = await (await get("?page=1&limit=20&includeSummary=true")).json();
+      expect(flat.summary).toEqual({ totalExpenses: 6, totalAmount: 600, companyAmount: 170, pocketAmount: 430 });
+
+      const grouped = await (await get("?groupTrips=true&page=1&limit=3&includeSummary=true")).json();
+      expect(grouped.summary).toEqual(flat.summary);
+    } finally {
+      for (const doc of [hotel, lunch]) {
+        for (const key of ["paymentSource", "amountInBaseCurrency", "pocketAmountInBaseCurrency"]) {
+          delete (doc as Record<string, unknown>)[key];
+        }
+      }
+    }
+  });
+
   it("keeps the flat list (now with the trip populated) by default", async () => {
     vi.mocked(Expense.countDocuments).mockResolvedValue(6 as never);
 

@@ -58,7 +58,7 @@ function filledFields(data: Record<string, unknown>): Set<AiField> {
 }
 
 export default function NewExpensePage() {
-  useTitle("New Expense");
+  useTitle("New expense");
   const router = useRouter();
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
@@ -71,8 +71,11 @@ export default function NewExpensePage() {
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [extracting, setExtracting] = useState(false);
-  // Fields the last receipt read filled in (null: no read yet / receipt removed).
+  // Fields the last receipt read filled in and the user hasn't edited since
+  // (null: no read yet / receipt removed).
   const [aiFilled, setAiFilled] = useState<Set<AiField> | null>(null);
+  // How many fields that read filled in; unlike the marks, edits don't change it.
+  const [readCount, setReadCount] = useState<number | null>(null);
   const [extractFailed, setExtractFailed] = useState(false);
 
   const { trips, loaded: tripsLoaded } = useTripOptions();
@@ -250,6 +253,7 @@ export default function NewExpensePage() {
 
       setReceipt({ file, filename: file.name });
       setAiFilled(null);
+      setReadCount(null);
       setExtractFailed(false);
 
       if (!EXTRACTABLE_TYPES.includes(file.type)) {
@@ -282,7 +286,9 @@ export default function NewExpensePage() {
         }));
 
         setPendingTravelType(extractedType);
-        setAiFilled(filledFields(data));
+        const filled = filledFields(data);
+        setAiFilled(filled);
+        setReadCount(filled.size);
         setShowUploadModal(false);
         toast("Details filled from your receipt — please review before creating.", "success");
       } catch (err) {
@@ -299,6 +305,7 @@ export default function NewExpensePage() {
   const removeReceipt = () => {
     setReceipt(null);
     setAiFilled(null);
+    setReadCount(null);
     setExtractFailed(false);
   };
 
@@ -364,7 +371,7 @@ export default function NewExpensePage() {
   if (loading || !urlRead || (prefillTripId && !prefillDone)) return <FormSkeleton />;
 
   const canReadReceipt = Boolean(receipt && EXTRACTABLE_TYPES.includes(receipt.file.type));
-  const readState = extracting ? "reading" : extractFailed ? "failed" : aiFilled ? "done" : null;
+  const readState = extracting ? "reading" : extractFailed ? "failed" : readCount !== null ? "done" : null;
   const currencySymbol = lookups.currencies.find((c) => c._id === form.currency)?.symbol || "₹";
 
   return (
@@ -413,7 +420,7 @@ export default function NewExpensePage() {
               readState && (
                 <ReceiptReadStatus
                   state={readState}
-                  count={aiFilled?.size}
+                  count={readCount ?? 0}
                   onRetry={canReadReceipt && receipt ? () => processReceiptFile(receipt.file) : undefined}
                 />
               )

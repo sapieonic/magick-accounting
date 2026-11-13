@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import DashboardPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,18 +32,34 @@ const monthlyTrend = [
   { month: "Nov", key: "2026-11", total: 300, count: 1 },
 ];
 
-function mockApi(stats: Record<string, unknown>, charts: Record<string, unknown>) {
+function mockApi(stats: Record<string, unknown>, charts: Record<string, unknown>, users: unknown[] = []) {
   vi.mocked(api.get).mockImplementation((url: string) => {
     if (url === "/api/dashboard/stats") return Promise.resolve(stats);
     if (url === "/api/dashboard/charts") return Promise.resolve(charts);
+    if (url === "/api/users") return Promise.resolve({ users });
     return Promise.resolve({});
   });
 }
+
+const person = (id: string, name: string, pocketSpend: number) => ({
+  _id: id,
+  name,
+  email: `${name.toLowerCase()}@example.com`,
+  totalSpend: pocketSpend + 10,
+  pocketSpend,
+  companySpend: 10,
+});
 
 describe("DashboardPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useAuth).mockReturnValue({ user: { name: "Test User" }, isAdmin: true } as any);
+    // The trend's last bucket (2026-11) is the current month.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-13T12:00:00Z") });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders totals, monthly bars, ranked categories/departments, who paid and latest entries", async () => {
@@ -73,8 +89,14 @@ describe("DashboardPage", () => {
           { name: "company", total: 600, count: 2 },
           { name: "pocket", total: 400, count: 3 },
         ],
-        departmentSpend: [{ _id: "dep1", name: "Engineering", total: 1000, count: 5 }],
-      }
+        departmentSpend: [{ _id: "dep1", name: "Engineering", total: 700, count: 4 }],
+      },
+      [
+        person("u1", "Asha", 100),
+        person("u2", "Ravi", 250),
+        person("u3", "Nobody", 0),
+        person("u4", "Meera", 50),
+      ]
     );
 
     render(<DashboardPage />);
@@ -87,6 +109,7 @@ describe("DashboardPage", () => {
     expect(within(totals).getByText(formatBaseCurrency(1000))).toBeInTheDocument();
     expect(within(totals).getByText("5 expenses · 2 departments · 3 categories")).toBeInTheDocument();
     expect(within(totals).getByText("November to date")).toBeInTheDocument();
+    expect(within(totals).getByText("1 expense · 13 of 30 days")).toBeInTheDocument();
     expect(within(totals).getByText("40.0% of spend")).toBeInTheDocument();
     expect(within(totals).getByText(formatBaseCurrency(200))).toBeInTheDocument(); // average
 
@@ -109,22 +132,91 @@ describe("DashboardPage", () => {
     expect(within(categories).getByText("Other categories")).toBeInTheDocument();
     expect(within(categories).getByText(formatBaseCurrency(200))).toBeInTheDocument();
 
-    // Departments
+    // Departments: likewise, so the shares add up to 100%
     const departments = screen.getByRole("region", { name: "Departments" });
     expect(within(departments).getByRole("link", { name: /Engineering/ })).toHaveAttribute(
       "href",
       "/dashboard/expenses?department=dep1"
     );
+    expect(within(departments).getByText("Other departments")).toBeInTheDocument();
+    expect(within(departments).getByText("30.0%")).toBeInTheDocument();
+    expect(within(departments).getByText(formatBaseCurrency(300))).toBeInTheDocument();
 
-    // Who paid
+    // Who paid: the split, then pocket spend per person (most owed first, each opening their expenses)
     const whoPaid = screen.getByRole("region", { name: "Who paid" });
     expect(within(whoPaid).getByRole("img", { name: "Company paid 60.0%, pocket 40.0%" })).toBeInTheDocument();
+    const byPerson = await within(whoPaid).findByRole("region", { name: "Pocket spend by person" });
+    const people = within(byPerson).getAllByRole("link");
+    expect(people.map((link) => link.textContent)).toEqual([
+      expect.stringContaining("Ravi"),
+      expect.stringContaining("Asha"),
+      expect.stringContaining("Meera"),
+    ]);
+    expect(people[0]).toHaveAttribute("href", "/dashboard/expenses?paidBy=u2");
+    expect(within(people[0]).getByText("62.5%")).toBeInTheDocument(); // 250 of 400 pocket
 
     // Latest entries: original amount first, base equivalent below
     const latest = screen.getByRole("region", { name: "Your latest entries" });
     const row = within(latest).getByRole("link", { name: /Figma seat/ });
     expect(row).toHaveAttribute("href", "/dashboard/expenses?expand=exp1");
     expect(within(row).getByText(formatBaseCurrency(1000))).toBeInTheDocument();
+    expect(within(row).getByText("10 Nov 2026")).toBeInTheDocument();
+  });
+
+  it("counts the month's days from the server's month, not the viewer's", async () => {
+    // 1 Dec in India, still 30 Nov in UTC: the last bucket is November.
+    const tz = process.env.TZ;
+    process.env.TZ = "Asia/Kolkata";
+    vi.setSystemTime(new Date("2026-11-30T20:00:00Z"));
+    try {
+      mockApi(
+        { totalExpenses: 1, totalAmount: 300, departmentCount: 1, categoryCount: 1, recentExpenses: [] },
+        { monthlyTrend, topCategories: [], paymentSources: [], departmentSpend: [] }
+      );
+
+      render(<DashboardPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).getByText("November to date")).toBeInTheDocument();
+      expect(within(totals).getByText("1 expense · 30 of 30 days")).toBeInTheDocument();
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+
+  it("dates the latest entries by their calendar day, west of UTC too", async () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      mockApi(
+        {
+          totalExpenses: 1,
+          totalAmount: 50,
+          departmentCount: 1,
+          categoryCount: 1,
+          recentExpenses: [
+            {
+              _id: "exp1",
+              title: "Lunch",
+              amount: 50,
+              amountInBaseCurrency: 50,
+              currency: { code: "INR", symbol: "₹", isBase: true },
+              date: "2026-11-10T00:00:00.000Z",
+            },
+          ],
+        },
+        { monthlyTrend, topCategories: [], paymentSources: [], departmentSpend: [] }
+      );
+
+      render(<DashboardPage />);
+
+      const row = await screen.findByRole("link", { name: /Lunch/ });
+      expect(within(row).getByText("10 Nov 2026")).toBeInTheDocument();
+      // A base-currency amount has no INR line under it.
+      expect(within(row).getAllByText(/₹/)).toHaveLength(1);
+    } finally {
+      process.env.TZ = tz;
+    }
   });
 
   it("shows empty states when there is no data", async () => {
@@ -140,7 +232,9 @@ describe("DashboardPage", () => {
     expect(screen.getByText("No trend data yet")).toBeInTheDocument();
     expect(screen.getByText("No category data")).toBeInTheDocument();
     expect(screen.getByText("No department data")).toBeInTheDocument();
-    expect(screen.getByText("No payment data")).toBeInTheDocument();
+    // A user's own company/pocket split is in the band; the panel (and /api/users) is for admins.
+    expect(screen.queryByRole("region", { name: "Who paid" })).not.toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalledWith("/api/users");
     expect(screen.getByText("No expenses yet")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add expense" })).toHaveAttribute("href", "/dashboard/expenses/new");
   });

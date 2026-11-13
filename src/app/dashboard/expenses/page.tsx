@@ -34,12 +34,12 @@ import SearchInput from "@/components/ui/SearchInput";
 import { RemovableChip } from "@/components/ui/Badge";
 import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
 import SplitBar from "@/components/ui/SplitBar";
-import Skeleton from "@/components/ui/Skeleton";
 import { cn } from "@/components/ui/cn";
 import { focusRing, panelClass, transition } from "@/components/ui/styles";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
 import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
+import { monthFromKey } from "@/components/dashboard/overview/format";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import TripCluster, { buildExpenseListItems, tripItemKey } from "@/components/trips/TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
@@ -53,11 +53,12 @@ interface UserOption { _id: string; name: string; email: string }
 interface ExpenseSummary {
   totalAmount: number;
   totalExpenses: number;
+  /** Company vs pocket spend of the filtered expenses (base currency); absent until loaded. */
+  companyAmount?: number;
+  pocketAmount?: number;
   /** The "Paid by" person's own share of the listed expenses. */
   payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
 }
-/** Company vs pocket spend of the filtered expenses (base currency). */
-interface PaymentSplit { company: number; pocket: number }
 
 const CUSTOM_DATE_PRESET = "custom";
 const PAGE_SIZE = 25;
@@ -67,18 +68,27 @@ const UNDO_WINDOW_MS = 5000;
 const SIDE_PANEL_QUERY = "(min-width: 1280px)";
 const DETAIL_PANEL_ID = "expense-detail-panel";
 
-function getDatePresetOptions(): { value: string; label: string }[] {
-  const options = [{ value: "", label: "All time" }];
+/** A month preset, "YYYY-MM". */
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * All time, the last 12 months (newest first) and Custom range. `selected`, a
+ * month outside those 12 (e.g. a bookmarked `?month=`), is listed in order too.
+ */
+function getDatePresetOptions(selected = ""): { value: string; label: string }[] {
   const now = new Date();
+  const months = new Set<string>();
   for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    options.push({
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-      label: format(d, "MMMM yyyy"),
-    });
+    months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
-  options.push({ value: CUSTOM_DATE_PRESET, label: "Custom range" });
-  return options;
+  if (MONTH_KEY.test(selected)) months.add(selected);
+  return [
+    { value: "", label: "All time" },
+    // "YYYY-MM" keys sort chronologically as strings.
+    ...[...months].sort().reverse().map((key) => ({ value: key, label: format(monthFromKey(key), "MMMM yyyy") })),
+    { value: CUSTOM_DATE_PRESET, label: "Custom range" },
+  ];
 }
 
 // Resolves the active date preset / custom range into { from, to } yyyy-MM-dd
@@ -173,8 +183,6 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
-  const [split, setSplit] = useState<PaymentSplit | null>(null);
-  const [splitRefreshKey, setSplitRefreshKey] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loadingLookups, setLoadingLookups] = useState(true);
@@ -188,7 +196,7 @@ export default function ExpensesPage() {
   const expensesRef = useRef<Expense[]>([]);
   expensesRef.current = expenses;
 
-  const datePresetOptions = useMemo(() => getDatePresetOptions(), []);
+  const datePresetOptions = useMemo(() => getDatePresetOptions(datePreset), [datePreset]);
 
   const hasDateFilter =
     datePreset === CUSTOM_DATE_PRESET ? Boolean(customFrom || customTo) : Boolean(datePreset);
@@ -221,7 +229,8 @@ export default function ExpensesPage() {
       setDatePreset(CUSTOM_DATE_PRESET);
       setCustomFrom(from);
       setCustomTo(to);
-    } else if (month) {
+    } else if (MONTH_KEY.test(month)) {
+      // Anything else isn't a month (it would break the date range): show all time.
       setDatePreset(month);
     }
 
@@ -342,29 +351,6 @@ export default function ExpensesPage() {
     },
     [buildFilterParams]
   );
-
-  // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
-  // company/pocket split reflects the active filters without refetching on "Load more".
-  const filterQuery = useMemo(() => buildFilterParams().toString(), [buildFilterParams]);
-
-  // Company vs pocket for the totals band; the list summary only has the total.
-  useEffect(() => {
-    if (!urlSynced) return;
-    let active = true;
-    api
-      .get(`/api/dashboard/charts?${filterQuery}`)
-      .then((data: { paymentSources?: { name: string; total: number }[] }) => {
-        if (!active) return;
-        const total = (name: string) => data.paymentSources?.find((row) => row.name === name)?.total ?? 0;
-        setSplit({ company: total("company"), pocket: total("pocket") });
-      })
-      .catch(() => {
-        // Keep the last good split; the band still shows the total.
-      });
-    return () => {
-      active = false;
-    };
-  }, [urlSynced, filterQuery, splitRefreshKey]);
 
   // Commit any deletes still inside their undo window. Called before reloading
   // the list (so the server result matches the UI) and on unmount.
@@ -499,8 +485,10 @@ export default function ExpensesPage() {
       ...prev,
       totalAmount: prev.totalAmount + sign * baseAmount(expense),
       totalExpenses: Math.max(0, prev.totalExpenses + sign),
+      ...(prev.companyAmount != null && prev.pocketAmount != null
+        ? { companyAmount: prev.companyAmount + sign * companyBase, pocketAmount: prev.pocketAmount + sign * pocketBase }
+        : {}),
     }));
-    setSplit((prev) => prev && { company: prev.company + sign * companyBase, pocket: prev.pocket + sign * pocketBase });
   };
 
   // Optimistically remove the expense and give the user a short undo window
@@ -540,7 +528,6 @@ export default function ExpensesPage() {
       pendingDeletes.current.delete(expense._id);
       try {
         await api.delete(`/api/expenses/${expense._id}`);
-        setSplitRefreshKey((key) => key + 1);
       } catch {
         restore();
         toast("Failed to delete expense", "error");
@@ -697,7 +684,7 @@ export default function ExpensesPage() {
                 value={filterPayer}
                 onChange={(e) => setFilterPayer(e.target.value)}
                 className={selectClass}
-                title="Expenses counted towards this person on Spend by User"
+                title="Expenses counted towards this person in Spend by user"
               >
                 <option value="">Anyone</option>
                 {users.map((u) => (
@@ -737,10 +724,14 @@ export default function ExpensesPage() {
           sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}`}
         />
         <BandCell label="Company · pocket">
-          {split ? (
-            <SplitBar company={split.company} pocket={split.pocket} />
+          {summary.companyAmount != null && summary.pocketAmount != null ? (
+            <SplitBar company={summary.companyAmount} pocket={summary.pocketAmount} />
           ) : (
-            <Skeleton className="h-3.5 w-full" />
+            // The list failed to load: nothing to split.
+            <span className="text-sm text-ink-3">
+              <span aria-hidden="true">—</span>
+              <span className="sr-only">Not available</span>
+            </span>
           )}
         </BandCell>
         {filterPayer && summary.payerSpend && (
@@ -827,7 +818,9 @@ export default function ExpensesPage() {
             aria-label="Selected expense"
             className={cn(
               panelClass,
-              "sticky top-4 flex max-h-[calc(100dvh-2rem)] min-w-0 grow basis-[340px] flex-col overflow-y-auto"
+              // <main> scrolls below the 4rem top bar, so the panel fits in
+              // 100dvh minus the bar and a 1rem gap above and below.
+              "sticky top-4 flex max-h-[calc(100dvh-6rem)] min-w-0 grow basis-[340px] flex-col overflow-y-auto"
             )}
           >
             {selectedExpense ? (

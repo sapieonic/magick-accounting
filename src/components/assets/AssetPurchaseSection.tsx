@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Copy, PackagePlus, Plus, Trash2 } from "lucide-react";
 import Button, { IconButton } from "@/components/ui/Button";
 import Field, { inputClass, selectClass } from "@/components/ui/Field";
 import { FieldGrid } from "@/components/ui/FormSection";
 import { cn } from "@/components/ui/cn";
+import AssetFieldGroup from "@/components/assets/AssetFieldGroup";
 
 export interface AssetDraft {
   id: string;
@@ -86,16 +86,6 @@ function capitalizedCost(asset: AssetDraft): number {
 }
 
 
-/** A labelled group of asset fields under a quiet caption. */
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-3 border-t border-rule-2 pt-4">
-      <h3 className="cap text-ink-3">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
 export default function AssetPurchaseSection({
   assets,
   onChange,
@@ -157,10 +147,19 @@ export default function AssetPurchaseSection({
 
       {assets.map((asset, index) => {
         const n = index + 1;
+        const headingId = `${asset.id}-heading`;
+        // The card is a group named "Asset n", so each control keeps its visible label as its name.
         return (
-          <div key={asset.id} className="flex flex-col gap-4 rounded-panel border border-rule p-[clamp(14px,2vw,20px)]">
+          <div
+            key={asset.id}
+            role="group"
+            aria-labelledby={headingId}
+            className="flex flex-col gap-4 rounded-panel border border-rule p-[clamp(14px,2vw,20px)]"
+          >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-ink">Asset {n}</p>
+              <p id={headingId} className="text-sm font-semibold text-ink">
+                Asset {n}
+              </p>
               <div className="flex items-center gap-1">
                 <IconButton icon={Copy} size="sm" onClick={() => duplicateAsset(asset)} aria-label={`Duplicate asset ${n}`} />
                 <IconButton
@@ -176,7 +175,6 @@ export default function AssetPurchaseSection({
             <FieldGrid>
               <Field label="Asset name">
                 <input
-                  aria-label={`Asset ${n} name`}
                   required
                   value={asset.name}
                   onChange={(e) => updateAsset(asset.id, "name", e.target.value)}
@@ -186,7 +184,6 @@ export default function AssetPurchaseSection({
               </Field>
               <Field label="Asset category">
                 <input
-                  aria-label={`Asset ${n} category`}
                   required
                   list="asset-category-options"
                   value={asset.assetCategory}
@@ -197,7 +194,6 @@ export default function AssetPurchaseSection({
               </Field>
               <Field label="Make / manufacturer" optional>
                 <input
-                  aria-label={`Asset ${n} make`}
                   value={asset.make}
                   onChange={(e) => updateAsset(asset.id, "make", e.target.value)}
                   placeholder="e.g. Apple"
@@ -206,7 +202,6 @@ export default function AssetPurchaseSection({
               </Field>
               <Field label="Model" optional>
                 <input
-                  aria-label={`Asset ${n} model`}
                   value={asset.assetModel}
                   onChange={(e) => updateAsset(asset.id, "assetModel", e.target.value)}
                   placeholder="e.g. MacBookPro18,3"
@@ -215,7 +210,6 @@ export default function AssetPurchaseSection({
               </Field>
               <Field label="Serial number" optional>
                 <input
-                  aria-label={`Asset ${n} serial number`}
                   value={asset.serialNumber}
                   onChange={(e) => updateAsset(asset.id, "serialNumber", e.target.value)}
                   placeholder="Add individually per asset"
@@ -225,7 +219,6 @@ export default function AssetPurchaseSection({
               <Field label="Assigned to">
                 {canAssignOthers ? (
                   <select
-                    aria-label={`Asset ${n} assignee`}
                     value={asset.assignedTo}
                     onChange={(e) => updateAsset(asset.id, "assignedTo", e.target.value)}
                     className={selectClass}
@@ -239,7 +232,6 @@ export default function AssetPurchaseSection({
                   </select>
                 ) : (
                   <input
-                    aria-label={`Asset ${n} assignee`}
                     readOnly
                     value={currentUser?.name || "You"}
                     className={cn(inputClass, "read-only:bg-sunk")}
@@ -248,7 +240,6 @@ export default function AssetPurchaseSection({
               </Field>
               <Field label="Purpose" optional>
                 <input
-                  aria-label={`Asset ${n} purpose`}
                   value={asset.purpose}
                   onChange={(e) => updateAsset(asset.id, "purpose", e.target.value)}
                   placeholder="e.g. Design and development work"
@@ -257,7 +248,6 @@ export default function AssetPurchaseSection({
               </Field>
               <Field label="Location" optional>
                 <input
-                  aria-label={`Asset ${n} location`}
                   value={asset.location}
                   onChange={(e) => updateAsset(asset.id, "location", e.target.value)}
                   placeholder="e.g. Mumbai office"
@@ -266,11 +256,10 @@ export default function AssetPurchaseSection({
               </Field>
             </FieldGrid>
 
-            <Group title="Cost">
+            <AssetFieldGroup title="Cost">
               <FieldGrid min={160}>
                 <Field label={`Allocated amount ${money}`}>
                   <input
-                    aria-label={`Asset ${n} allocated amount`}
                     required
                     type="number"
                     min="0.01"
@@ -282,7 +271,6 @@ export default function AssetPurchaseSection({
                 </Field>
                 <Field label={`GST allocation ${money}`} optional>
                   <input
-                    aria-label={`Asset ${n} GST allocation`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -293,7 +281,6 @@ export default function AssetPurchaseSection({
                 </Field>
                 <Field label={`Recoverable GST ${money}`} optional>
                   <input
-                    aria-label={`Asset ${n} recoverable GST`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -313,13 +300,12 @@ export default function AssetPurchaseSection({
                 </span>
                 <span>allocated amount minus recoverable GST</span>
               </p>
-            </Group>
+            </AssetFieldGroup>
 
-            <Group title="Depreciation">
+            <AssetFieldGroup title="Depreciation">
               <FieldGrid min={160}>
                 <Field label="Method">
                   <select
-                    aria-label={`Asset ${n} depreciation method`}
                     value={asset.depreciationMethod}
                     onChange={(e) => updateAsset(asset.id, "depreciationMethod", e.target.value)}
                     className={selectClass}
@@ -331,7 +317,6 @@ export default function AssetPurchaseSection({
                 </Field>
                 <Field label="Annual rate (%)">
                   <input
-                    aria-label={`Asset ${n} annual depreciation rate`}
                     type="number"
                     required={asset.depreciationMethod !== "none"}
                     disabled={asset.depreciationMethod === "none"}
@@ -345,7 +330,6 @@ export default function AssetPurchaseSection({
                 </Field>
                 <Field label={`Residual value ${money}`}>
                   <input
-                    aria-label={`Asset ${n} residual value`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -356,7 +340,6 @@ export default function AssetPurchaseSection({
                 </Field>
                 <Field label="Put to use">
                   <input
-                    aria-label={`Asset ${n} put-to-use date`}
                     required
                     type="date"
                     value={asset.putToUseDate}
@@ -365,7 +348,7 @@ export default function AssetPurchaseSection({
                   />
                 </Field>
               </FieldGrid>
-            </Group>
+            </AssetFieldGroup>
           </div>
         );
       })}

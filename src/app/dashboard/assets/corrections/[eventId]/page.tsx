@@ -23,7 +23,7 @@ interface Correction {
 }
 
 export default function AssetCorrectionPage() {
-  useTitle("Asset Correction");
+  useTitle("Asset correction");
   const params = useParams();
   const router = useRouter();
   const { isAdmin } = useAuth();
@@ -54,7 +54,7 @@ export default function AssetCorrectionPage() {
     {
       label: "Recorded",
       icon: CalendarClock,
-      value: <span className="num">{format(new Date(correction.occurredAt), "dd MMM yyyy, HH:mm")}</span>,
+      value: <span className="num">{format(new Date(correction.occurredAt), "d MMM yyyy, HH:mm")}</span>,
     },
     { label: "Recorded by", icon: UserRound, value: correction.actor?.name || "Administrator" },
   ];
@@ -74,7 +74,7 @@ export default function AssetCorrectionPage() {
         <Panel
           grow={2}
           title="Retained record snapshot"
-          meta="The asset, linked purchase and assignment history as they existed at reversal."
+          description="The asset, linked purchase and assignment history as they existed at reversal."
         >
           <pre className="max-h-[65vh] overflow-auto rounded-control border border-rule bg-sunk p-4 font-mono text-xs leading-relaxed text-ink-2">
             {JSON.stringify(correction.snapshot || {}, null, 2)}

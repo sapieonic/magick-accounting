@@ -146,19 +146,7 @@ describe("ExpensesPage", () => {
             total: grouped && listedItemTotal !== null ? listedItemTotal : listedExpenses.length,
             pages: 1,
           },
-          summary: { totalAmount: 5678.76, totalExpenses: 1 },
-        });
-      }
-      if (url.startsWith("/api/dashboard/charts")) {
-        return Promise.resolve({
-          monthlyTrend: [
-            { month: "Jul", key: "2026-07", total: 5678.76, count: 1 },
-          ],
-          topCategories: [
-            { _id: "category-1", name: "Software & Subscriptions", total: 5678.76, count: 1 },
-          ],
-          paymentSources: [{ name: "company", total: 5678.76, count: 1 }],
-          departmentSpend: [{ _id: "department-1", name: "Engineering", total: 5678.76, count: 1 }],
+          summary: { totalAmount: 5678.76, totalExpenses: 1, companyAmount: 5678.76, pocketAmount: 0 },
         });
       }
       return Promise.resolve({});
@@ -175,14 +163,38 @@ describe("ExpensesPage", () => {
     const totals = await screen.findByRole("region", { name: "Totals" });
     expect(within(totals).getByText("All time total")).toBeInTheDocument();
     expect(within(totals).getByText("1 expense")).toBeInTheDocument();
-    // The split comes from the charts endpoint with the same filters as the list.
+    // The split comes with the list's summary, so it follows the same filters.
     expect(await within(totals).findByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
     // The total, and all of it company-paid.
     expect(within(totals).getAllByText("₹5,678.76")).toHaveLength(2);
-    expect(api.get).toHaveBeenCalledWith("/api/dashboard/charts?");
+    expect(expenseRequests()[0]).toContain("includeSummary=true");
+    expect(vi.mocked(api.get).mock.calls.some(([url]) => url.startsWith("/api/dashboard"))).toBe(false);
     // The old analytics rail is gone.
     expect(screen.queryByLabelText("Expense analytics")).not.toBeInTheDocument();
     expect(screen.queryByText("Monthly Trend")).not.toBeInTheDocument();
+  });
+
+  it("labels a bookmarked month outside the last year as that month", async () => {
+    window.history.replaceState(null, "", "/dashboard/expenses?month=2024-01");
+    render(<ExpensesPage />);
+
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(within(totals).getByText("January 2024 total")).toBeInTheDocument();
+    const dates = screen.getByRole("combobox", { name: "Dates" }) as HTMLSelectElement;
+    expect(dates).toHaveValue("2024-01");
+    expect(dates.selectedOptions[0]).toHaveTextContent("January 2024");
+    expect(screen.getByText(/Everyone · January 2024/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^January 2024\s*\(remove\)$/ })).toBeInTheDocument();
+    expect(expenseRequests()[0]).toContain("from=2024-01-01&to=2024-01-31");
+  });
+
+  it("ignores a ?month= that isn't a month", async () => {
+    window.history.replaceState(null, "", "/dashboard/expenses?month=2024-13");
+    render(<ExpensesPage />);
+
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(within(totals).getByText("All time total")).toBeInTheDocument();
+    expect(expenseRequests()[0]).not.toContain("from=");
   });
 
   it("shows the selected expense in a side panel on wide screens", async () => {
@@ -217,30 +229,39 @@ describe("ExpensesPage", () => {
     }
   });
 
-  it("refreshes the company/pocket split after a delete commits", async () => {
+  it("takes a deleted expense out of the company/pocket split, and puts it back on undo", async () => {
     render(<ExpensesPage />);
 
-    await screen.findByText("AWS India Cloud Services");
-    await waitFor(() => {
-      expect(vi.mocked(api.get).mock.calls.some(([url]) => url.startsWith("/api/dashboard/charts"))).toBe(true);
-    });
-    const initialAnalyticsCalls = vi.mocked(api.get).mock.calls.filter(([url]) =>
-      url.startsWith("/api/dashboard/charts")
-    ).length;
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(within(totals).getByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Delete AWS India Cloud Services" }));
+    expect(within(totals).getByRole("img", { name: "Company paid 0.0%, pocket 0.0%" })).toBeInTheDocument();
+
+    const undo = toastMock.mock.calls.at(-1)?.[2]?.action;
+    act(() => undo.onClick());
+    expect(within(totals).getByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(5000);
       await Promise.resolve();
     });
+    expect(api.delete).not.toHaveBeenCalled();
+  });
 
-    expect(api.delete).toHaveBeenCalledWith("/api/expenses/expense-1");
-    const analyticsCalls = vi.mocked(api.get).mock.calls.filter(([url]) =>
-      url.startsWith("/api/dashboard/charts")
-    ).length;
-    expect(analyticsCalls).toBeGreaterThan(initialAnalyticsCalls);
+  it("shows a dash, not a skeleton, for the split when the list fails to load", async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url.startsWith("/api/expenses") ? Promise.reject(new Error("offline")) : defaultGet(url)
+    );
+    render(<ExpensesPage />);
+
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(toastMock).toHaveBeenCalledWith("Failed to load expenses", "error");
+    expect(within(totals).getByText("Not available")).toBeInTheDocument();
+    expect(within(totals).queryByRole("img", { name: /company paid/i })).not.toBeInTheDocument();
+    expect(totals.querySelector(".animate-pulse")).toBeNull();
   });
 
   it("shows the pocket and company shares of a split expense in its own currency", async () => {

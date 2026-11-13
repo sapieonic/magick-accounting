@@ -9,27 +9,48 @@ import { cn } from "@/components/ui/cn";
 import { panelClass } from "@/components/ui/styles";
 import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
 import TripFields, { type TripOption } from "@/components/expenses/TripFields";
+import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import type { TravelType } from "@/lib/trip";
 import FormSection, { FieldGrid, FormFooter } from "@/components/ui/FormSection";
 import { getPaymentErrors } from "./expense-form";
 import type { AiField, CurrencyOption, ExpenseFormValues, ExpenseLookups } from "./types";
 
-/** The amount's hint: the INR equivalent at today's rate for a foreign currency. */
-function amountHint(currency: CurrencyOption | undefined, amount: number | null): string {
-  if (!currency || currency.isBase) return "Base currency, no conversion.";
+/**
+ * The amount's hint: the INR equivalent for a foreign currency, rounded as the
+ * server rounds it. `savedRate` is the rate an edited expense was stored at,
+ * which the server keeps while its currency is unchanged.
+ */
+export function amountHint(
+  currency: CurrencyOption | undefined,
+  amount: number | null,
+  savedRate: number | null = null
+): string {
+  if (!currency) return "Converted to INR when you save.";
+  if (currency.isBase) return "Base currency, no conversion.";
+  if (savedRate) {
+    return amount !== null
+      ? `≈ ${formatBaseCurrency(roundMoney(amount * savedRate))} at this expense's saved ${currency.code} rate.`
+      : `Converted to INR at this expense's saved ${currency.code} rate.`;
+  }
   if (amount !== null && currency.rateToBase > 0) {
-    return `≈ ${formatBaseCurrency(amount * currency.rateToBase)} at today's rate. Converted when you save.`;
+    return `≈ ${formatBaseCurrency(roundMoney(amount * currency.rateToBase))} at today's rate. Converted when you save.`;
   }
   return `Converted to INR at the current ${currency.code} rate when you save.`;
 }
 
-/** "from receipt" marker for a Field's label row. */
-function FromReceipt() {
+/** The footer total: in the bill's currency, or a plain figure while it's unknown. */
+function formatTotal(amount: number, currency: CurrencyOption | undefined): string {
+  if (currency) return formatCurrency(amount, currency.code);
+  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** "from receipt" marker for a Field's label row; `what` names the part when a Field holds two. */
+function FromReceipt({ what }: { what?: string }) {
   return (
     <>
       <Sparkles aria-hidden="true" size={12} strokeWidth={1.8} />
-      from receipt
+      {what ? `${what} from receipt` : "from receipt"}
     </>
   );
 }
@@ -38,7 +59,8 @@ function FromReceipt() {
 function AmountControl({ currencySelect, ...input }: InputHTMLAttributes<HTMLInputElement> & { currencySelect: ReactNode }) {
   return (
     <div className="flex gap-2">
-      {currencySelect}
+      {/* The select is full width (selectClass), so the wrapper sets its size. */}
+      <div className="w-[7.5rem] shrink-0">{currencySelect}</div>
       <input {...input} />
     </div>
   );
@@ -63,6 +85,13 @@ export interface ExpenseFormProps {
   trips: TripOption[];
   /** The stored trip, shown by name even when it isn't in `trips`. */
   currentTrip?: { _id: string; name: string } | null;
+  /**
+   * Edit only: the rate the expense was saved at. The server keeps it while
+   * the currency stays `currencyId`, so the INR preview uses it too.
+   */
+  savedRate?: { currencyId: string; rateToBase: number } | null;
+  /** Edit only: the submitter's name when it isn't the signed-in user (pocket shares are credited to them). */
+  submitterName?: string;
   /** First payer when switching to "several people". */
   defaultPayerId?: string;
   /** Fields the receipt filled in, marked until edited. */
@@ -99,6 +128,8 @@ export default function ExpenseForm({
   lookups,
   trips,
   currentTrip,
+  savedRate,
+  submitterName,
   defaultPayerId,
   aiFilled,
   locked = false,
@@ -112,6 +143,8 @@ export default function ExpenseForm({
   submitDisabled = false,
 }: ExpenseFormProps) {
   const currency = lookups.currencies.find((c) => c._id === values.currency);
+  const keptRate =
+    savedRate && savedRate.currencyId === values.currency && savedRate.rateToBase > 0 ? savedRate.rateToBase : null;
   const symbol = currency?.symbol || "?";
   const { visibleSplitError, visiblePaymentsError } = getPaymentErrors(values);
   const amountValue = Number(values.amount);
@@ -122,7 +155,16 @@ export default function ExpenseForm({
     onEdit?.(field);
   };
   const ai = (field: AiField) => Boolean(aiFilled?.has(field));
-  const aside = (...fields: AiField[]) => (fields.some(ai) ? <FromReceipt /> : undefined);
+  const aside = (field: AiField) => (ai(field) ? <FromReceipt /> : undefined);
+  // The amount and currency share a Field, so each keeps its own mark.
+  const amountAside =
+    ai("amount") && ai("currency") ? (
+      <FromReceipt />
+    ) : ai("amount") ? (
+      <FromReceipt what="amount" />
+    ) : ai("currency") ? (
+      <FromReceipt what="currency" />
+    ) : undefined;
   const backText = backLabel.replace(/^Back to /, "");
 
   return (
@@ -169,8 +211,8 @@ export default function ExpenseForm({
               <FieldGrid>
                 <Field
                   label="Amount"
-                  aside={aside("amount", "currency")}
-                  hint={amountHint(currency, hasAmount ? amountValue : null)}
+                  aside={amountAside}
+                  hint={amountHint(currency, hasAmount ? amountValue : null, keptRate)}
                 >
                   <AmountControl
                     id="amount"
@@ -190,7 +232,7 @@ export default function ExpenseForm({
                         disabled={currencyLocked}
                         value={values.currency}
                         onChange={(e) => set("currency", e.target.value)}
-                        className={cn(selectClass, "w-[7.5rem] shrink-0", ai("currency") && aiFilledClass)}
+                        className={cn(selectClass, ai("currency") && aiFilledClass)}
                       >
                         <option value="">Select</option>
                         {lookups.currencies.map((c) => (
@@ -302,6 +344,7 @@ export default function ExpenseForm({
                 members={lookups.members}
                 defaultPayerId={defaultPayerId}
                 paymentsError={visiblePaymentsError}
+                submitterName={submitterName}
               />
             </FormSection>
 
@@ -326,7 +369,7 @@ export default function ExpenseForm({
               {hasAmount ? (
                 <>
                   Total{" "}
-                  <span className="num font-medium text-ink">{formatCurrency(amountValue, currency?.code || "INR")}</span>
+                  <span className="num font-medium text-ink">{formatTotal(amountValue, currency)}</span>
                 </>
               ) : (
                 "Enter an amount to see the total"

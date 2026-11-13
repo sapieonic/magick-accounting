@@ -54,7 +54,7 @@ export function LedgerHead() {
   );
 }
 
-export interface ExpenseRowProps extends ExpenseActions {
+interface ExpenseRowProps extends ExpenseActions {
   expense: ExpenseListItem;
   /** The row is open: its detail shows (inline, or in the page's side panel). */
   selected: boolean;
@@ -104,10 +104,11 @@ export default function ExpenseRow({
   const trip = showTripLink ? expense.trip : null;
   const inlineId = detailId ?? `expense-detail-${expense._id}`;
 
-  // Narrow rows fold the hidden columns into the sub-line.
+  // Narrow rows fold the hidden columns into the sub-line (the glyph alone
+  // doesn't name the category: it's decorative).
   const narrowSub = isTrip
     ? [typeLabel, showDate && date, payer].filter(Boolean).join(" · ")
-    : [expense.department?.name, date, payer].filter(Boolean).join(" · ");
+    : [expense.category?.name, date, payer].filter(Boolean).join(" · ");
   const wideSub = [payer, source, isTrip && showDate && date].filter(Boolean).join(" · ");
 
   return (
@@ -201,11 +202,15 @@ export default function ExpenseRow({
           )}
         </span>
 
-        {/* Quick actions on hover/focus, without opening the row. */}
+        {/* Quick actions on hover/focus, without opening the row. Only where
+            the pointer can hover: on touch the row opens its detail, which has
+            the same actions. While hidden they don't take clicks either. */}
         <div
+          data-testid="row-actions"
           className={cn(
-            "absolute right-32 top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-control border border-rule bg-surface p-0.5 opacity-0 transition-opacity duration-140",
-            "focus-within:opacity-100 group-hover:opacity-100 sm:flex"
+            "absolute right-32 top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-control border border-rule bg-surface p-0.5 transition-opacity duration-140",
+            "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
+            "sm:[@media(hover:hover)]:flex"
           )}
         >
           <IconButton icon={Pencil} size="sm" href={editHref} aria-label={`Edit ${expense.title}`} />

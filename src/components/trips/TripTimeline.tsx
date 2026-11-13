@@ -9,7 +9,7 @@ import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail"
 import { expenseEditHref } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 
-export interface TripTimelineProps extends ExpenseActions {
+interface TripTimelineProps extends ExpenseActions {
   trip: TripDates;
   /** The trip's expenses to show, any order; grouped into days here. */
   expenses: ExpenseListItem[];

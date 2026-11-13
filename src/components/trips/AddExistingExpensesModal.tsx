@@ -15,7 +15,7 @@ import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
 import { focusRing, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
 import { DialogActions } from "@/components/ui/ConfirmDialog";
-import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
+import { baseAmount, expenseDate, isForeign } from "@/components/expenses/ledger/format";
 
 interface AddExistingExpensesModalProps {
   tripId: string;
@@ -179,7 +179,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
               {candidates.map((expense) => {
                 const isSelected = selected.has(expense._id);
                 const code = expense.currency?.code || "INR";
-                const foreign = Boolean(expense.currency && !expense.currency.isBase);
+                const foreign = isForeign(expense);
                 return (
                   <li key={expense._id}>
                     <label
@@ -209,8 +209,8 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
                       </span>
                       <span className="flex shrink-0 flex-col items-end">
                         <span className="num font-medium text-ink">{formatCurrency(expense.amount, code)}</span>
-                        {foreign && expense.amountInBaseCurrency != null && (
-                          <span className="num text-xs text-ink-3">{formatBaseCurrency(expense.amountInBaseCurrency)}</span>
+                        {foreign && (
+                          <span className="num text-xs text-ink-3">{formatBaseCurrency(expense.amountInBaseCurrency!)}</span>
                         )}
                       </span>
                     </label>

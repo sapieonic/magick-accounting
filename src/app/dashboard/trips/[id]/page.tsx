@@ -143,7 +143,11 @@ export default function TripDetailPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [candidates, setCandidates] = useState<ExpenseListItem[] | null>(null);
+  // Unlinked expenses that might belong here: null while the first load runs,
+  // "failed" if it didn't come back (a later failure keeps the last list).
+  const [candidates, setCandidates] = useState<ExpenseListItem[] | "failed" | null>(null);
+  // Bumped each time a trip load lands, so the suggestions refresh once per reload.
+  const [loadCount, setLoadCount] = useState(0);
   const [adding, setAdding] = useState<string | null>(null);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
   const [pendingIds, setPendingIds] = useState<string[]>([]);
@@ -161,6 +165,7 @@ export default function TripDetailPage() {
         const result: TripDetailResponse = await api.get(`/api/trips/${tripId}`);
         if (seq !== loadSeq.current) return;
         setData({ ...result, trip: withViewerStatus(result.trip) });
+        setLoadCount((count) => count + 1);
       } catch (err) {
         if (seq !== loadSeq.current) return;
         toast(err instanceof Error ? err.message : "Failed to load trip", "error");
@@ -180,9 +185,10 @@ export default function TripDetailPage() {
     void load(false);
   }, [load]);
 
-  // Unlinked expenses that might belong here, refreshed whenever the trip reloads.
+  // Unlinked expenses that might belong here, refreshed whenever the trip reloads
+  // (keyed on the load, not `data`, which also changes for optimistic updates).
   useEffect(() => {
-    if (!data) return;
+    if (loadCount === 0) return;
     let active = true;
     api
       .get(`/api/trips/${tripId}/candidates`)
@@ -191,11 +197,12 @@ export default function TripDetailPage() {
       })
       .catch(() => {
         // Suggestions are optional; "Add existing" still lists them.
+        if (active) setCandidates((prev) => prev ?? "failed");
       });
     return () => {
       active = false;
     };
-  }, [data, tripId]);
+  }, [loadCount, tripId]);
 
   // Commit deletes still inside their undo window when leaving the page.
   useEffect(() => {
@@ -315,7 +322,7 @@ export default function TripDetailPage() {
     setAdding(expense._id);
     try {
       await api.patch(`/api/trips/${tripId}/expenses`, { add: [expense._id] });
-      setCandidates((prev) => prev && prev.filter((e) => e._id !== expense._id));
+      setCandidates((prev) => (Array.isArray(prev) ? prev.filter((e) => e._id !== expense._id) : prev));
       toast(`Added "${expense.title}" to this trip`);
       void load(true);
     } catch (err) {
@@ -349,7 +356,7 @@ export default function TripDetailPage() {
   const typeMax = Math.max(0, ...byType.map((row) => row.total));
   const travellerIds = new Set(trip.travelers.map((t) => t._id));
   // Dated inside the trip and by a traveller: the likeliest strays.
-  const suggestions = (candidates ?? [])
+  const suggestions = (Array.isArray(candidates) ? candidates : [])
     .filter((e) => isWithinTrip(dayKey(e.date), trip) && travellerIds.has(e.createdBy?._id))
     .slice(0, SUGGESTIONS);
   // Only an admin's totals cover the whole trip, so only they split it per traveller.
@@ -574,6 +581,8 @@ export default function TripDetailPage() {
           >
             {candidates === null ? (
               <Skeleton className="h-[62px] w-full" />
+            ) : candidates === "failed" ? (
+              <p className="text-sm text-ink-3">Suggestions couldn&apos;t be loaded. Browse the unlinked expenses instead.</p>
             ) : suggestions.length === 0 ? (
               <p className="text-sm text-ink-3">Nothing unlinked from these dates.</p>
             ) : (
@@ -585,10 +594,15 @@ export default function TripDetailPage() {
                   >
                     <CategoryGlyph name={expense.category?.name} />
                     <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="ell font-medium text-ink">{expense.title}</span>
+                      {/* The amount sits beside the title, outside the ellipsis, so it's never clipped. */}
+                      <span className="flex min-w-0 items-baseline justify-between gap-2">
+                        <span className="ell font-medium text-ink">{expense.title}</span>
+                        <span className="num shrink-0 whitespace-nowrap text-[13px] text-ink">
+                          {formatBaseCurrency(baseAmount(expense))}
+                        </span>
+                      </span>
                       <span className="ell text-xs text-ink-3">
-                        {expenseDate(expense)} · {expense.createdBy?.name} ·{" "}
-                        <span className="num">{formatBaseCurrency(baseAmount(expense))}</span>
+                        {expenseDate(expense)} · {expense.createdBy?.name}
                       </span>
                     </span>
                     <Button

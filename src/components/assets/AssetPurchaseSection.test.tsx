@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import AssetPurchaseSection, { AssetDraft } from "./AssetPurchaseSection";
@@ -19,33 +19,42 @@ function Harness() {
   );
 }
 
+/** The card for asset `n` (a group named "Asset n"). */
+function assetCard(n: number) {
+  return within(screen.getByRole("group", { name: `Asset ${n}` }));
+}
+
 describe("AssetPurchaseSection", () => {
   it("adds, duplicates, and removes individually trackable assets", async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
     await user.click(screen.getByRole("button", { name: /add company asset/i }));
-    const name = screen.getByRole("textbox", { name: "Asset 1 name" });
-    const serial = screen.getByRole("textbox", { name: "Asset 1 serial number" });
+    const name = assetCard(1).getByRole("textbox", { name: "Asset name" });
+    const serial = assetCard(1).getByRole("textbox", { name: /^serial number/i });
     await user.type(name, "MacBook Pro");
     await user.type(serial, "SERIAL-001");
 
     await user.click(screen.getByRole("button", { name: /duplicate asset 1/i }));
-    expect(screen.getAllByRole("textbox", { name: /Asset \d name/ })).toHaveLength(2);
-    expect(screen.getByRole("textbox", { name: "Asset 2 name" })).toHaveValue("MacBook Pro");
-    expect(screen.getByRole("textbox", { name: "Asset 2 serial number" })).toHaveValue("");
+    expect(screen.getAllByRole("textbox", { name: "Asset name" })).toHaveLength(2);
+    expect(assetCard(2).getByRole("textbox", { name: "Asset name" })).toHaveValue("MacBook Pro");
+    expect(assetCard(2).getByRole("textbox", { name: /^serial number/i })).toHaveValue("");
 
     await user.click(screen.getByRole("button", { name: /remove asset 1/i }));
-    expect(screen.getAllByRole("textbox", { name: /Asset \d name/ })).toHaveLength(1);
+    expect(screen.getAllByRole("textbox", { name: "Asset name" })).toHaveLength(1);
+    expect(screen.queryByRole("group", { name: "Asset 2" })).not.toBeInTheDocument();
   });
 
-  it("associates accessible names with asset controls", async () => {
+  it("names each control by its visible label, inside a group per asset", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: /add company asset/i }));
 
-    expect(screen.getByRole("combobox", { name: "Asset 1 category" })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Asset 1 allocated amount" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Asset 1 depreciation method" })).toBeInTheDocument();
+    const card = assetCard(1);
+    expect(card.getByRole("combobox", { name: "Asset category" })).toBeInTheDocument();
+    expect(card.getByRole("spinbutton", { name: "Allocated amount (₹)" })).toBeInTheDocument();
+    expect(
+      within(card.getByRole("group", { name: "Depreciation" })).getByRole("combobox", { name: "Method" })
+    ).toBeInTheDocument();
   });
 });

@@ -12,7 +12,7 @@ import { FormSkeleton } from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
 import Panel from "@/components/ui/Panel";
 import { cn } from "@/components/ui/cn";
-import { panelPadX, rowClass } from "@/components/ui/styles";
+import { ICON_STROKE, linkClass, panelPadX, rowClass } from "@/components/ui/styles";
 import {
   newPaymentDraft,
   paymentDraftsToPayload,
@@ -32,7 +32,13 @@ import {
   useReceiptUpload,
   useUnsavedChangesWarning,
 } from "@/components/expenses/form/expense-form";
-import { EMPTY_LOOKUPS, emptyExpenseValues, type ExpenseFormValues, type ExpenseLookups } from "@/components/expenses/form/types";
+import {
+  EMPTY_LOOKUPS,
+  emptyExpenseValues,
+  type CurrencyOption,
+  type ExpenseFormValues,
+  type ExpenseLookups,
+} from "@/components/expenses/form/types";
 import { formatCurrency } from "@/lib/currency";
 import { isTravelType } from "@/lib/trip";
 
@@ -50,6 +56,12 @@ interface LinkedAsset {
 }
 
 const DEFAULT_RETURN_TO = "/dashboard/expenses";
+
+/** The rate the expense was converted at, as `PUT /api/expenses/:id` derives it. */
+function storedRate(exp: { exchangeRateToBase?: number | null; amount: number; amountInBaseCurrency?: number | null }) {
+  if (exp.exchangeRateToBase) return exp.exchangeRateToBase;
+  return exp.amount > 0 && exp.amountInBaseCurrency != null ? exp.amountInBaseCurrency / exp.amount : null;
+}
 
 /** `?returnTo=` if it's a dashboard path; anything else (other sites included) is ignored. */
 function readReturnTo(): string | null {
@@ -102,9 +114,14 @@ function LinkedAssetsPanel({
       flush
       footer={
         canAddMore ? (
-          <Button variant="ghost" size="sm" icon={Package} href={createHref} className="-ml-3 text-accent">
+          // Link-style: a ghost Button's ink text can't be recoloured (cn has no tailwind-merge).
+          <Link
+            href={createHref}
+            className={cn(linkClass, "inline-flex min-h-10 items-center gap-1.5 rounded-control text-[13px]")}
+          >
+            <Package aria-hidden="true" size={16} strokeWidth={ICON_STROKE} />
             Add more assets from this expense
-          </Button>
+          </Link>
         ) : undefined
       }
     >
@@ -131,7 +148,7 @@ function LinkedAssetsPanel({
 }
 
 export default function EditExpensePage() {
-  useTitle("Edit Expense");
+  useTitle("Edit expense");
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
@@ -145,6 +162,9 @@ export default function EditExpensePage() {
   const { trips } = useTripOptions();
   // The stored trip, so it still shows by name if it isn't in `trips`.
   const [storedTrip, setStoredTrip] = useState<{ _id: string; name: string } | null>(null);
+  // The saved conversion, kept by the server while the currency is unchanged.
+  const [savedRate, setSavedRate] = useState<{ currencyId: string; rateToBase: number } | null>(null);
+  const [submitter, setSubmitter] = useState<{ _id: string; name?: string; email?: string } | null>(null);
 
   const [form, setForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
   const [initialForm, setInitialForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
@@ -184,6 +204,7 @@ export default function EditExpensePage() {
         const exp = expData.expense;
         const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
+        setSubmitter(exp.createdBy?._id ? exp.createdBy : null);
         setCurrencyCode(exp.currency?.code || "INR");
         const storedTripId: string = (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
         const loadedForm: ExpenseFormValues = {
@@ -224,10 +245,18 @@ export default function EditExpensePage() {
         for (const { paidBy } of storedPayments) {
           if (paidBy?._id && !payerOptions.has(paidBy._id)) payerOptions.set(paidBy._id, paidBy);
         }
+        // Likewise the stored currency, even if it has since been deactivated.
+        const currencies: CurrencyOption[] = [...(lookupData.currencies || [])];
+        const storedCurrency: CurrencyOption | undefined = exp.currency?._id ? exp.currency : undefined;
+        if (storedCurrency && !currencies.some((c) => c._id === storedCurrency._id)) {
+          currencies.push(storedCurrency);
+        }
+        const rate = storedRate(exp);
+        setSavedRate(storedCurrency && rate ? { currencyId: storedCurrency._id, rateToBase: rate } : null);
         setLookups({
           departments: lookupData.departments,
           categories: lookupData.categories,
-          currencies: lookupData.currencies,
+          currencies,
           members: [...payerOptions.values()],
         });
       } catch {
@@ -288,6 +317,9 @@ export default function EditExpensePage() {
   const hasLinkedAssets = linkedAssets.length > 0;
   const accountingLocked = hasLinkedAssets && !isAdmin;
   const expenseId = String(params.id);
+  // Pocket shares are credited to the submitter, who isn't "you" when an admin edits someone else's expense.
+  const submitterName =
+    submitter && submitter._id !== user?._id ? submitter.name || submitter.email || "the submitter" : undefined;
 
   return (
     <ExpenseForm
@@ -303,6 +335,8 @@ export default function EditExpensePage() {
       lookups={lookups}
       trips={trips}
       currentTrip={storedTrip}
+      savedRate={savedRate}
+      submitterName={submitterName}
       defaultPayerId={user?._id}
       locked={accountingLocked}
       currencyLocked={hasLinkedAssets}

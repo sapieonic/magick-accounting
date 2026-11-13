@@ -33,7 +33,7 @@ interface ExpenseData {
 }
 
 export default function AddAssetsToExpensePage() {
-  useTitle("Create Assets from Expense");
+  useTitle("Create assets from expense");
   const params = useParams();
   const router = useRouter();
   const { user, isAdmin } = useAuth();

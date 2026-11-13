@@ -371,6 +371,29 @@ describe("TripDetailPage", () => {
     );
   });
 
+  it("keeps a suggestion's amount out of the clipped sub-line", async () => {
+    render(<TripDetailPage />);
+
+    const panel = await screen.findByRole("region", { name: "Might belong here" });
+    await within(panel).findByText("Airport cab");
+    const [amount] = within(panel).getAllByText(formatBaseCurrency(100));
+    expect(amount).toHaveClass("whitespace-nowrap");
+    expect(amount.closest(".ell")).toBeNull();
+  });
+
+  it("says so instead of loading forever when suggestions fail", async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url.startsWith(`/api/trips/${TRIP_ID}/candidates`) ? Promise.reject(new Error("offline")) : defaultGet(url)
+    );
+    render(<TripDetailPage />);
+
+    const panel = await screen.findByRole("region", { name: "Might belong here" });
+    expect(await within(panel).findByText(/suggestions couldn't be loaded/i)).toBeInTheDocument();
+    expect(panel.querySelector(".animate-pulse")).toBeNull();
+    expect(within(panel).getByRole("button", { name: /browse all unlinked/i })).toBeInTheDocument();
+  });
+
   it("removes an expense from the trip and refreshes", async () => {
     const user = userEvent.setup();
     render(<TripDetailPage />);
@@ -443,6 +466,47 @@ describe("TripDetailPage", () => {
       expect(vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`)).toHaveLength(2)
     );
     expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
+  });
+
+  it("refreshes the suggestions once per reload, not on every change to the loaded trip", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const candidateCalls = () =>
+      vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}/candidates`).length;
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+    await waitFor(() => expect(candidateCalls()).toBe(1));
+
+    // Hold the reload after the delete so the optimistic update renders first.
+    let release!: () => void;
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url === `/api/trips/${TRIP_ID}`
+        ? new Promise((resolve) => {
+            release = () => resolve(response);
+          })
+        : defaultGet(url)
+    );
+    await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith(`/api/expenses/${flight._id}`));
+    await waitFor(() =>
+      expect(vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`)).toHaveLength(2)
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(candidateCalls()).toBe(1);
+
+    await act(async () => release());
+    await waitFor(() => expect(candidateCalls()).toBe(2));
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(candidateCalls()).toBe(2);
   });
 
   it("restores an expense when the delete is undone", async () => {

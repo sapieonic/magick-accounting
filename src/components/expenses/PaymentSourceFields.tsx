@@ -1,13 +1,14 @@
 "use client";
 
 import { Building2, Plus, SquareSplitHorizontal, Users, Wallet, X as XIcon } from "lucide-react";
-import Button, { IconButton } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/Button";
 import Field, { inputClass, selectClass } from "@/components/ui/Field";
 import { FieldGrid } from "@/components/ui/FormSection";
 import SegmentedControl, { type SegmentOption } from "@/components/ui/SegmentedControl";
 import SplitBar from "@/components/ui/SplitBar";
 import { Dot } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
+import { ICON_STROKE, focusRing, linkClass } from "@/components/ui/styles";
 import { moneyToCents } from "@/lib/asset";
 import { formatCurrency } from "@/lib/currency";
 import { getPaymentSplitError, type PaymentEntrySource } from "@/lib/expense";
@@ -77,6 +78,12 @@ interface PaymentSourceFieldsProps {
   defaultPayerId?: string;
   /** Error to show under the payer rows; the page decides when to reveal it. */
   paymentsError?: string | null;
+  /**
+   * Who a pocket share is credited to: the submitter. Omit when that's the
+   * person filling in the form ("you"); pass their name when an admin edits
+   * someone else's expense.
+   */
+  submitterName?: string;
 }
 
 /** "Who paid": pocket / company / split / several people, with the live split. */
@@ -95,7 +102,9 @@ export default function PaymentSourceFields({
   members = [],
   defaultPayerId = "",
   paymentsError,
+  submitterName,
 }: PaymentSourceFieldsProps) {
+  const creditedTo = submitterName || "you";
   const isSplit = paymentSource === "split";
   const isMultiple = paymentSource === "multiple" && Boolean(onPaymentsChange);
   const format = (cents: number) => formatCurrency(cents / 100, currencyCode);
@@ -126,7 +135,7 @@ export default function PaymentSourceFields({
       />
 
       {paymentSource === "pocket" && (
-        <p className={noteClass}>The full {total} is credited to you for reimbursement.</p>
+        <p className={noteClass}>The full {total} is credited to {creditedTo} for reimbursement.</p>
       )}
       {paymentSource === "company" && (
         <p className={noteClass}>The full {total} is recorded against the company. Nothing is owed to anyone.</p>
@@ -187,7 +196,7 @@ export default function PaymentSourceFields({
                 size="sm"
               />
               <p className={noteClass}>
-                {format(pocketCents)} is credited to you. {format(companyCents)} goes to the company.
+                {format(pocketCents)} is credited to {creditedTo}. {format(companyCents)} goes to the company.
               </p>
             </>
           )}
@@ -304,9 +313,15 @@ function PayerRows({ payments, onChange, members, amount, currencySymbol, curren
       </ul>
 
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <Button variant="ghost" size="sm" icon={Plus} onClick={addPayment} className="-ml-3 text-accent">
+        {/* Link-style: a ghost Button's ink text can't be recoloured (cn has no tailwind-merge). */}
+        <button
+          type="button"
+          onClick={addPayment}
+          className={cn(linkClass, focusRing, "inline-flex min-h-10 items-center gap-1.5 rounded-control text-[13px]")}
+        >
+          <Plus aria-hidden="true" size={16} strokeWidth={ICON_STROKE} />
           Add payment
-        </Button>
+        </button>
         <p
           aria-live="polite"
           className={cn("text-[13px] [font-variant-numeric:tabular-nums]", remainingCents === 0 ? "text-ink-2" : "text-amber")}
