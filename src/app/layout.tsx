@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/components/ui/Toast";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,26 +15,12 @@ export const metadata: Metadata = {
   keywords: ["accounting", "expenses", "finance", "management"],
 };
 
-// Runs before hydration so the html element has the correct `dark` class on
-// first paint. Avoids a white-on-dark flash when the saved theme is "dark".
-// Only consults localStorage — default is light if nothing is saved.
-const themeBootScript = `
-(function() {
-  try {
-    var stored = localStorage.getItem('theme');
-    var theme = stored === 'dark' ? 'dark' : 'light';
-    var root = document.documentElement;
-    if (theme === 'dark') root.classList.add('dark');
-    root.style.colorScheme = theme;
-  } catch (e) {}
-})();
-`;
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {/* Before hydration: the saved theme is on <html> at first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-dvh font-sans antialiased">
         <ThemeProvider>

@@ -314,6 +314,7 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
               onChange={(values) => update("travelers", values)}
               placeholder={loadingLookups ? "Loading people..." : "Who's travelling?"}
               ariaLabel="Travelers"
+              loading={loadingLookups}
             />
           </Field>
           {form.travelers.length > 0 && (

@@ -67,6 +67,8 @@ describe("DashboardPage", () => {
       {
         totalExpenses: 5,
         totalAmount: 1000,
+        companyAmount: 600,
+        pocketAmount: 400,
         departmentCount: 2,
         categoryCount: 3,
         recentExpenses: [
@@ -85,10 +87,6 @@ describe("DashboardPage", () => {
       {
         monthlyTrend,
         topCategories: [{ _id: "cat1", name: "Software", total: 800, count: 4 }],
-        paymentSources: [
-          { name: "company", total: 600, count: 2 },
-          { name: "pocket", total: 400, count: 3 },
-        ],
         departmentSpend: [{ _id: "dep1", name: "Engineering", total: 700, count: 4 }],
       },
       [
@@ -154,6 +152,8 @@ describe("DashboardPage", () => {
     ]);
     expect(people[0]).toHaveAttribute("href", "/dashboard/expenses?paidBy=u2");
     expect(within(people[0]).getByText("62.5%")).toBeInTheDocument(); // 250 of 400 pocket
+    // Everyone's pocket spend is listed, so there is no remainder row.
+    expect(within(byPerson).queryByText("Other people")).not.toBeInTheDocument();
 
     // Latest entries: original amount first, base equivalent below
     const latest = screen.getByRole("region", { name: "Your latest entries" });
@@ -161,6 +161,47 @@ describe("DashboardPage", () => {
     expect(row).toHaveAttribute("href", "/dashboard/expenses?expand=exp1");
     expect(within(row).getByText(formatBaseCurrency(1000))).toBeInTheDocument();
     expect(within(row).getByText("10 Nov 2026")).toBeInTheDocument();
+  });
+
+  it("groups pocket spend beyond the top five people into one row", async () => {
+    mockApi(
+      { totalExpenses: 6, totalAmount: 700, companyAmount: 0, pocketAmount: 700, departmentCount: 1, categoryCount: 1, recentExpenses: [] },
+      { monthlyTrend, topCategories: [], departmentSpend: [] },
+      [
+        person("u1", "Asha", 200),
+        person("u2", "Ravi", 150),
+        person("u3", "Meera", 120),
+        person("u4", "Kiran", 100),
+        person("u5", "Dev", 80),
+        person("u6", "Tara", 50),
+      ]
+    );
+
+    render(<DashboardPage />);
+
+    const byPerson = await screen.findByRole("region", { name: "Pocket spend by person" });
+    const rows = within(byPerson).getAllByRole("listitem");
+    expect(rows).toHaveLength(6);
+    expect(within(byPerson).getAllByRole("link")).toHaveLength(5);
+    expect(within(byPerson).queryByText("Tara")).not.toBeInTheDocument();
+    // Tara's 50 is the rest of the 700 pocket, so the shares add up to 100%.
+    const other = rows[5];
+    expect(other).toHaveTextContent("Other people");
+    expect(within(other).getByText(formatBaseCurrency(50))).toBeInTheDocument();
+    expect(within(other).getByText("7.1%")).toBeInTheDocument();
+  });
+
+  it("shows the empty state of Who paid to admins when nothing has been paid", async () => {
+    mockApi(
+      { totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0, departmentCount: 0, categoryCount: 0, recentExpenses: [] },
+      { monthlyTrend: [], topCategories: [], departmentSpend: [] }
+    );
+
+    render(<DashboardPage />);
+
+    const whoPaid = await screen.findByRole("region", { name: "Who paid" });
+    expect(within(whoPaid).getByText("No payment data")).toBeInTheDocument();
+    expect(within(whoPaid).queryByRole("img", { name: /company paid/i })).not.toBeInTheDocument();
   });
 
   it("counts the month's days from the server's month, not the viewer's", async () => {
@@ -171,7 +212,7 @@ describe("DashboardPage", () => {
     try {
       mockApi(
         { totalExpenses: 1, totalAmount: 300, departmentCount: 1, categoryCount: 1, recentExpenses: [] },
-        { monthlyTrend, topCategories: [], paymentSources: [], departmentSpend: [] }
+        { monthlyTrend, topCategories: [], departmentSpend: [] }
       );
 
       render(<DashboardPage />);
@@ -205,7 +246,7 @@ describe("DashboardPage", () => {
             },
           ],
         },
-        { monthlyTrend, topCategories: [], paymentSources: [], departmentSpend: [] }
+        { monthlyTrend, topCategories: [], departmentSpend: [] }
       );
 
       render(<DashboardPage />);
@@ -223,7 +264,7 @@ describe("DashboardPage", () => {
     vi.mocked(useAuth).mockReturnValue({ user: { name: "Test User" }, isAdmin: false } as any);
     mockApi(
       { totalExpenses: 0, totalAmount: 0, departmentCount: 0, categoryCount: 0, recentExpenses: [] },
-      { monthlyTrend: [], topCategories: [], paymentSources: [], departmentSpend: [] }
+      { monthlyTrend: [], topCategories: [], departmentSpend: [] }
     );
 
     render(<DashboardPage />);

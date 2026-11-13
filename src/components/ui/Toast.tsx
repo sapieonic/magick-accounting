@@ -59,11 +59,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Bottom-right, lifted clear of the mobile tab bar (55px + safe area) and
-          of a sticky FormFooter (~69px) so a toast never covers Save, a page
-          header's actions or its heading. */}
+      {/* Bottom-right, 12px above the mobile tab bar (--tabbar-h) and a mounted
+          FormFooter (its measured --form-footer-h, which grows when it wraps),
+          so a toast never covers Save or the total. From lg up it also stays
+          above 112px: a list's bottom "Load more" strip ends ~106px up when the
+          page is scrolled to the end. */}
       <div
-        className="fixed inset-x-4 bottom-[calc(55px+max(10px,env(safe-area-inset-bottom))+80px)] z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-5 lg:bottom-[88px]"
+        className="fixed inset-x-4 bottom-[calc(var(--tabbar-h)+var(--form-footer-h,0px)+12px)] z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-5 lg:bottom-[max(calc(var(--form-footer-h,0px)+12px),112px)]"
         aria-live="polite"
         data-testid="toast-region"
       >

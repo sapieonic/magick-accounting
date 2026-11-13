@@ -38,7 +38,10 @@ export default function PageHeader({ title, eyebrow, breadcrumb, meta, actions, 
                   )}
                   <li className="min-w-0">
                     {crumb.href ? (
-                      <Link href={crumb.href} className="text-ink-3 transition-colors duration-140 hover:text-accent">
+                      <Link
+                        href={crumb.href}
+                        className="inline-flex min-h-6 items-center text-ink-3 transition-colors duration-140 hover:text-accent"
+                      >
                         {crumb.label}
                       </Link>
                     ) : (

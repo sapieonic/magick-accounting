@@ -259,7 +259,7 @@ export default function InvoicesPage() {
   const itemCount = lineItems.filter((li) => li.description.trim()).length;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex animate-fade-in flex-col gap-6">
       <PageHeader
         title="Generate tax invoice"
         meta="Fill in the details and download a tax invoice or payment receipt PDF. Nothing is stored."
@@ -284,7 +284,7 @@ export default function InvoicesPage() {
                 <input type="date" {...bindForm("dueDate")} className={numClass} />
               </Field>
               <Field label="Terms">
-                <input type="text" {...bindForm("terms")} placeholder="e.g. Due on Receipt" className={inputClass} />
+                <input type="text" {...bindForm("terms")} placeholder="e.g. Due on receipt" className={inputClass} />
               </Field>
               <Field label="HSN/SAC code">
                 <input type="text" {...bindForm("hsnSac")} placeholder="e.g. 998314" className={numClass} />

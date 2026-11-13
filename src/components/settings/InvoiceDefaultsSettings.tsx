@@ -102,7 +102,7 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
       <form onSubmit={handleSave} className="flex flex-col gap-5">
         <FieldGrid min={240}>
           <Field label="Seller name">
-            <input {...bind("sellerName", { placeholder: "e.g. Magickvoice Llp" })} />
+            <input {...bind("sellerName", { placeholder: "e.g. Magickvoice LLP" })} />
           </Field>
           <Field label="GSTIN">
             <input {...bind("sellerGstin", { placeholder: "36ABCDE1234F1Z5", className: cn(inputClass, "num") })} />
@@ -118,7 +118,7 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
           />
         </Field>
         <FieldGrid min={240}>
-          <Field label="HSN/SAC code" hint="Applied to every invoice — shown above Place of Supply.">
+          <Field label="HSN/SAC code" hint="Applied to every invoice — shown above Place of supply.">
             <input {...bind("hsnSac", { placeholder: "e.g. 998314", className: cn(inputClass, "num") })} />
           </Field>
           <Field label="CGST %">

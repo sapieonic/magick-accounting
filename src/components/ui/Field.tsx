@@ -67,7 +67,8 @@ export default function Field({
             {optional && <span className="font-normal normal-case tracking-normal">, optional</span>}
           </span>
         </label>
-        {aside && <span className="flex items-center gap-1 text-xs text-accent">{aside}</span>}
+        {/* The marker keeps to one line, so labels in a FieldGrid row stay level. */}
+        {aside && <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-accent">{aside}</span>}
       </div>
       {control}
       {error && (

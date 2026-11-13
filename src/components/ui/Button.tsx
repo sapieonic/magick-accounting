@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import Spinner from "@/components/ui/Spinner";
 import {
   ICON_STROKE,
   buttonClass,
@@ -31,13 +32,9 @@ type AsLink = ButtonOwnProps &
 
 export type ButtonProps = AsButton | AsLink;
 
+/** The button's own aria-busy says it's loading, so the ring is decorative. */
 function ButtonSpinner() {
-  return (
-    <span
-      aria-hidden="true"
-      className="h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-r-transparent"
-    />
-  );
+  return <Spinner size="sm" tone="current" decorative />;
 }
 
 function iconSize(size: ButtonSize) {

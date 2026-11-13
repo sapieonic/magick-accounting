@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Inbox } from "lucide-react";
+import { Inbox } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import type { ExpenseListItem } from "@/types/expense";
@@ -12,6 +12,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Field from "@/components/ui/Field";
 import SearchInput from "@/components/ui/SearchInput";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
+import Checkbox from "@/components/ui/Checkbox";
 import { cn } from "@/components/ui/cn";
 import { focusRing, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
 import { DialogActions } from "@/components/ui/ConfirmDialog";
@@ -23,21 +24,6 @@ interface AddExistingExpensesModalProps {
   onClose: () => void;
   /** Called after the expenses were moved into the trip, with how many. */
   onAdded: (count: number) => void;
-}
-
-function Checkbox({ checked, partial = false }: { checked: boolean; partial?: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-        transition,
-        checked || partial ? "border-accent bg-accent text-accent-ink" : "border-rule bg-surface"
-      )}
-    >
-      {checked ? <Check size={12} strokeWidth={2.5} /> : partial ? <span className="h-0.5 w-2 rounded bg-accent-ink" /> : null}
-    </span>
-  );
 }
 
 export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAdded }: AddExistingExpensesModalProps) {

@@ -6,7 +6,8 @@ import EmptyState from "@/components/ui/EmptyState";
 import { cn } from "@/components/ui/cn";
 import { focusRing, transition } from "@/components/ui/styles";
 import { formatBaseCurrency } from "@/lib/currency";
-import { formatCompactBase, monthFromKey, plural } from "./format";
+import { monthFromKey } from "@/lib/month";
+import { formatCompactBase, plural } from "./format";
 import type { MonthPoint } from "./types";
 
 function rangeLabel(data: MonthPoint[]): string | undefined {

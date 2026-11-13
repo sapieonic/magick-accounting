@@ -56,6 +56,25 @@ export function pickActiveSection(
 }
 
 /**
+ * The horizontal scroll position that brings `link` fully into view inside
+ * `strip` (a 16px margin keeps it off the edge), or null when it already fits
+ * or the strip doesn't scroll. Sets scrollLeft rather than calling
+ * scrollIntoView, which would also scroll the page's vertical scroller.
+ */
+export function stripScrollLeftFor(strip: HTMLElement, link: HTMLElement, margin = 16): number | null {
+  if (strip.scrollWidth <= strip.clientWidth) return null;
+  const stripRect = strip.getBoundingClientRect();
+  const linkRect = link.getBoundingClientRect();
+  const left = linkRect.left - stripRect.left + strip.scrollLeft;
+  const right = left + linkRect.width;
+  if (left - margin < strip.scrollLeft) return Math.max(0, left - margin);
+  if (right + margin > strip.scrollLeft + strip.clientWidth) {
+    return Math.min(strip.scrollWidth - strip.clientWidth, right + margin - strip.clientWidth);
+  }
+  return null;
+}
+
+/**
  * In-page section nav: a sticky horizontal scroller on narrow screens, a
  * sticky vertical list beside the panels from `xl`. Highlights the section
  * in view (aria-current="location").
@@ -63,6 +82,7 @@ export function pickActiveSection(
 export default function SettingsNav({ sections }: { sections: SettingsSection[] }) {
   const [active, setActive] = useState(sections[0]?.id);
   const navRef = useRef<HTMLElement>(null);
+  const stripRef = useRef<HTMLUListElement>(null);
   // A clicked section stays highlighted while it is on screen, until the
   // person scrolls by hand (it may be too short to reach the reading line).
   const clicked = useRef<string | null>(null);
@@ -93,6 +113,12 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
     const release = () => {
       clicked.current = null;
     };
+    // Dragging the scroller's own scrollbar scrolls by hand too; a press on
+    // the page's content (its target is a descendant) doesn't count.
+    const scrollbarTarget: HTMLElement = scroller ?? document.documentElement;
+    const releaseOnScrollbar = (e: PointerEvent) => {
+      if (e.target === scrollbarTarget) release();
+    };
 
     const target: HTMLElement | Window = scroller ?? window;
     target.addEventListener("scroll", schedule, { passive: true });
@@ -100,6 +126,7 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
     window.addEventListener("wheel", release, { passive: true });
     window.addEventListener("touchmove", release, { passive: true });
     window.addEventListener("keydown", release);
+    scrollbarTarget.addEventListener("pointerdown", releaseOnScrollbar);
     update();
     return () => {
       if (frame) cancelAnimationFrame(frame);
@@ -108,8 +135,18 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
       window.removeEventListener("wheel", release);
       window.removeEventListener("touchmove", release);
       window.removeEventListener("keydown", release);
+      scrollbarTarget.removeEventListener("pointerdown", releaseOnScrollbar);
     };
   }, [sections]);
+
+  // On phones the strip scrolls sideways: keep the highlighted link in it.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const link = strip?.children[sections.findIndex((s) => s.id === active)];
+    if (!strip || !(link instanceof HTMLElement)) return;
+    const left = stripScrollLeftFor(strip, link);
+    if (left !== null) strip.scrollLeft = left;
+  }, [active, sections]);
 
   return (
     <nav
@@ -117,10 +154,11 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
       aria-label="Settings sections"
       className={cn(
         "sticky top-0 z-10 -mx-[var(--pad)] border-b border-rule bg-background px-[var(--pad)]",
-        "xl:mx-0 xl:w-[200px] xl:shrink-0 xl:border-0 xl:bg-transparent xl:px-0"
+        // From xl it sits beside the sections: line its top up with their scroll-mt-6.
+        "xl:top-6 xl:mx-0 xl:w-[200px] xl:shrink-0 xl:border-0 xl:bg-transparent xl:px-0"
       )}
     >
-      <ul className="flex gap-1 overflow-x-auto py-1.5 xl:flex-col xl:overflow-visible xl:py-0">
+      <ul ref={stripRef} className="flex gap-1 overflow-x-auto py-1.5 xl:flex-col xl:overflow-visible xl:py-0">
         {sections.map(({ id, label, icon: Icon }) => {
           const current = active === id;
           return (

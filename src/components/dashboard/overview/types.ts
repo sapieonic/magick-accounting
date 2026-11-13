@@ -14,6 +14,9 @@ export interface RecentExpense {
 export interface OverviewStats {
   totalExpenses: number;
   totalAmount: number;
+  /** Company vs pocket spend (base currency), the same split as the Expenses page's band. */
+  companyAmount: number;
+  pocketAmount: number;
   departmentCount: number;
   categoryCount: number;
   /** The caller's own five latest expenses. */
@@ -40,7 +43,6 @@ export interface OverviewCharts {
   /** Last six months, oldest first; the last one is the current (partial) month. */
   monthlyTrend: MonthPoint[];
   topCategories: SpendRow[];
-  paymentSources: Array<{ name: string; total: number; count: number }>;
   departmentSpend: SpendRow[];
 }
 

@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { PackagePlus } from "lucide-react";
+import { PackageCheck, PackagePlus } from "lucide-react";
 import AssetPurchaseSection, {
   AssetDraft,
   createEmptyAsset,
 } from "@/components/assets/AssetPurchaseSection";
 import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Panel from "@/components/ui/Panel";
 import PageHeader from "@/components/ui/PageHeader";
 import { panelClass } from "@/components/ui/styles";
 import { cn } from "@/components/ui/cn";
@@ -85,10 +87,12 @@ export default function AddAssetsToExpensePage() {
       gst: Math.max(0, moneyToCents(expense?.gstAmount) - allocatedGstCents) / 100,
     };
   }, [existingAssets, expense]);
+  // Every rupee is already on an asset: nothing is left to allocate to a new one.
+  const fullyAllocated = expense !== null && moneyToCents(remaining.amount) === 0;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!expense || assets.length === 0) return;
+    if (!expense || assets.length === 0 || fullyAllocated) return;
     const allocatedCents = assets.reduce(
       (total, asset) => total + moneyToCents(asset.allocatedAmount),
       0
@@ -130,7 +134,11 @@ export default function AddAssetsToExpensePage() {
           { label: "Create assets" },
         ]}
         title="Create assets from expense"
-        meta={expense.title}
+        meta={
+          existingAssets.length === 0
+            ? "No assets linked yet"
+            : `${existingAssets.length} ${existingAssets.length === 1 ? "asset" : "assets"} already linked`
+        }
       />
 
       <StatBand aria-label="Allocation">
@@ -139,24 +147,39 @@ export default function AddAssetsToExpensePage() {
         <Stat label="Remaining GST" value={formatCurrency(remaining.gst, currencyCode)} />
       </StatBand>
 
-      <form onSubmit={submit} aria-label="Assets to create" className={cn(panelClass, "flex min-w-0 flex-col")}>
-        <FormSection>
-          <AssetPurchaseSection
-            assets={assets}
-            onChange={setAssets}
-            purchaseDate={new Date(expense.date).toISOString().split("T")[0]}
-            currencySymbol={expense.currency?.symbol || "₹"}
-            users={users}
-            canAssignOthers={isAdmin}
-            currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
+      {fullyAllocated ? (
+        <Panel>
+          <EmptyState
+            icon={<PackageCheck />}
+            title="Fully allocated"
+            description="This expense's whole amount is already allocated to its assets, so there is nothing left to create an asset from."
+            action={
+              <Button variant="secondary" href="/dashboard/assets">
+                View assets
+              </Button>
+            }
           />
-        </FormSection>
-        <FormFooter className="justify-end">
-          <Button type="submit" icon={PackagePlus} loading={saving} disabled={assets.length === 0}>
-            {saving ? "Creating…" : "Create linked assets"}
-          </Button>
-        </FormFooter>
-      </form>
+        </Panel>
+      ) : (
+        <form onSubmit={submit} aria-label="Assets to create" className={cn(panelClass, "flex min-w-0 flex-col")}>
+          <FormSection>
+            <AssetPurchaseSection
+              assets={assets}
+              onChange={setAssets}
+              purchaseDate={new Date(expense.date).toISOString().split("T")[0]}
+              currencySymbol={expense.currency?.symbol || "₹"}
+              users={users}
+              canAssignOthers={isAdmin}
+              currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
+            />
+          </FormSection>
+          <FormFooter className="justify-end">
+            <Button type="submit" icon={PackagePlus} loading={saving} disabled={assets.length === 0}>
+              {saving ? "Creating…" : "Create linked assets"}
+            </Button>
+          </FormFooter>
+        </form>
+      )}
     </div>
   );
 }

@@ -299,18 +299,19 @@ interface GroupedItem {
 }
 
 /**
- * One page of the expense list where each trip is one item. Returns the
- * page's expenses flat, in item order (a trip's own expenses oldest first),
- * the trips that appear on the page, and the total number of items.
+ * One page of the expense list where each trip is one item, skipping `skip`
+ * items. Returns the page's expenses flat, in item order (a trip's own
+ * expenses oldest first), the trips that appear on the page, the number of
+ * items on the page and the total number of items.
  */
 export async function getGroupedExpensePage(
   filter: Record<string, unknown>,
-  page: number,
+  skip: number,
   limit: number,
   user: AuthUser
 ) {
   const [result] = await Expense.aggregate(
-    groupedExpensePagePipeline(filter, page, limit) as PipelineStage[]
+    groupedExpensePagePipeline(filter, skip, limit) as PipelineStage[]
   );
   const items: GroupedItem[] = result?.items ?? [];
   const total: number = result?.total?.[0]?.count ?? 0;
@@ -365,7 +366,7 @@ export async function getGroupedExpensePage(
     );
   }
 
-  return { expenses: await withLinkedAssetCounts(ordered), trips: tripMap, total };
+  return { expenses: await withLinkedAssetCounts(ordered), trips: tripMap, count: items.length, total };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import Sidebar from "./Sidebar";
@@ -17,6 +17,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 
 describe("Sidebar", () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
     localStorage.clear();
     vi.mocked(usePathname).mockReturnValue("/dashboard");
@@ -175,6 +176,53 @@ describe("Sidebar", () => {
   it("uses the overlay token for the drawer backdrop", () => {
     render(<Sidebar open onClose={() => {}} />);
     const backdrop = screen.getByRole("dialog", { name: "Navigation" }).firstElementChild;
-    expect(backdrop?.className).toMatch(/\bbg-overlay\/50\b/);
+    expect(backdrop?.className).toMatch(/\bbg-overlay\/45\b/);
+  });
+
+  it("closes the drawer once the lg rail takes over", () => {
+    const listeners = new Set<() => void>();
+    let wide = false;
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({
+          get matches() {
+            return query === "(min-width: 1024px)" && wide;
+          },
+          media: query,
+          addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+          removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+        }) as unknown as MediaQueryList
+    );
+    const onClose = vi.fn();
+    render(<Sidebar open onClose={onClose} />);
+    expect(onClose).not.toHaveBeenCalled();
+
+    wide = true;
+    act(() => listeners.forEach((fn) => fn()));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the role and Profile in full on the rail instead of truncating them", () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAdmin: true,
+      user: { name: "Ada Lovelace", role: "master_admin" },
+      logout: vi.fn(),
+    } as any);
+    const { container } = render(<Sidebar open={false} onClose={() => {}} />);
+    const rail = container.querySelector("aside")!;
+    const role = within(rail).getByText("Master admin");
+    const line = role.parentElement!;
+    expect(line).toHaveTextContent("Master admin · Profile");
+    expect(line).not.toHaveClass("ell");
+    expect(role).toHaveClass("whitespace-nowrap");
+  });
+
+  it("outlines the active link with the rail-mark token, not a raw colour", () => {
+    render(<Sidebar open={false} onClose={() => {}} />);
+    const active = screen.getAllByRole("link", { name: "Overview" })[0];
+    expect(active).toHaveAttribute("aria-current", "page");
+    expect(active.className).toMatch(/\bring-rail-mark\/\[\.22\]/);
+    expect(active.className).not.toMatch(/rgba\(/);
   });
 });

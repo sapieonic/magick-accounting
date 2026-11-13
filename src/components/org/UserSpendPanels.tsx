@@ -4,7 +4,8 @@ import { useState, type ReactNode } from "react";
 import Panel, { PanelGrid } from "@/components/ui/Panel";
 import RankedBar from "@/components/ui/RankedBar";
 import SplitBar from "@/components/ui/SplitBar";
-import { linkClass } from "@/components/ui/styles";
+import { textButtonClass } from "@/components/ui/styles";
+import { cn } from "@/components/ui/cn";
 import { formatBaseCurrency } from "@/lib/currency";
 import Avatar from "@/components/ui/Avatar";
 
@@ -52,7 +53,7 @@ function TopList<T extends { user: { _id: string } }>({ rows, render, label }: {
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className={`${linkClass} mt-4 min-h-10 self-start text-[13px]`}
+          className={cn(textButtonClass, "mt-4 self-start")}
         >
           {expanded ? "Show fewer" : `Show all ${rows.length}`}
         </button>

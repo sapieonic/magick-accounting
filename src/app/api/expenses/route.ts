@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
+import {
+  buildExpenseFilter,
+  expensePagination,
+  getExpenseSummary,
+  parseExpensePageParams,
+  parsePaidByParam,
+} from "@/lib/expense-query";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
 import { assertPayersExist } from "@/lib/expense-server";
 import { normalizeTravelType } from "@/lib/trip";
@@ -33,8 +39,8 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get("page") || "1");
-  const limit = parseInt(searchParams.get("limit") || "20");
+  const pageParams = parseExpensePageParams(searchParams);
+  const { skip, limit } = pageParams;
   const includeSummary = searchParams.get("includeSummary") === "true";
   const filter = buildExpenseFilter(searchParams, authResult);
   const summaryPromise = includeSummary
@@ -43,22 +49,15 @@ export async function GET(req: NextRequest) {
 
   if (searchParams.get("groupTrips") === "true") {
     // Each trip is one item (its expenses never split across pages), so
-    // page/limit count items rather than expenses.
-    const itemPage = Number.isFinite(page) && page > 0 ? page : 1;
-    const itemLimit = Number.isFinite(limit) && limit > 0 ? limit : 20;
+    // page/limit/offset count items rather than expenses.
     const [grouped, summary] = await Promise.all([
-      getGroupedExpensePage(filter, itemPage, itemLimit, authResult),
+      getGroupedExpensePage(filter, skip, limit, authResult),
       summaryPromise,
     ]);
     return NextResponse.json({
       expenses: grouped.expenses,
       trips: grouped.trips,
-      pagination: {
-        page: itemPage,
-        limit: itemLimit,
-        total: grouped.total,
-        pages: Math.ceil(grouped.total / itemLimit),
-      },
+      pagination: expensePagination(pageParams, grouped.count, grouped.total),
       ...(summary ? { summary } : {}),
     });
   }
@@ -66,7 +65,7 @@ export async function GET(req: NextRequest) {
   const [expenses, total, summary] = await Promise.all([
     populateExpenseRefs(Expense.find(filter))
       .sort({ date: -1 })
-      .skip((page - 1) * limit)
+      .skip(skip)
       .limit(limit)
       .lean(),
     Expense.countDocuments(filter),
@@ -75,7 +74,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     expenses: await withLinkedAssetCounts(expenses),
-    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    pagination: expensePagination(pageParams, expenses.length, total),
     ...(summary ? { summary } : {}),
   });
 }

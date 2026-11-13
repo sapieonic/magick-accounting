@@ -518,12 +518,14 @@ export default function TripDetailPage() {
                       <RankedBar
                         leading={<TravelGlyph type={row.travelType} />}
                         label={
-                          <>
+                          // Up to two lines in the narrow side column, rather than
+                          // cutting "Client meeting" down to "Client meeting…".
+                          <span className="line-clamp-2 whitespace-normal">
                             {travelTypeLabel(row.travelType)}
-                            <span className="ml-1.5 text-xs text-ink-3">
+                            <span className="ml-1.5 whitespace-nowrap text-xs text-ink-3">
                               {row.count} item{row.count !== 1 ? "s" : ""}
                             </span>
-                          </>
+                          </span>
                         }
                         amount={formatBaseCurrency(row.total)}
                         share={typeTotal > 0 ? (total / typeTotal) * 100 : 0}
@@ -590,33 +592,34 @@ export default function TripDetailPage() {
                 {suggestions.map((expense) => (
                   <li
                     key={expense._id}
-                    className="flex items-center gap-3 rounded-control border border-dashed border-accent-line bg-tint p-2.5"
+                    className="flex items-start gap-3 rounded-control border border-dashed border-accent-line bg-tint p-2.5"
                   >
                     <CategoryGlyph name={expense.category?.name} />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      {/* The title may wrap to two lines in the narrow side column; the
-                          amount sits outside the sub-line's ellipsis so it's never clipped. */}
+                    {/* The side column is narrow: title and who/when may each take two
+                        lines, and the amount and Add share a line below them, so
+                        neither squeezes the text into an ellipsis. */}
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="line-clamp-2 font-medium text-ink">{expense.title}</span>
-                      <span className="flex min-w-0 items-baseline justify-between gap-2 text-xs text-ink-3">
-                        <span className="ell">
-                          {expenseDate(expense)} · {expense.createdBy?.name}
-                        </span>
-                        <span className="num shrink-0 whitespace-nowrap text-[13px] text-ink">
+                      <span className="line-clamp-2 text-xs text-ink-3">
+                        {expenseDate(expense)} · {expense.createdBy?.name}
+                      </span>
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="num whitespace-nowrap text-[13px] text-ink">
                           {formatBaseCurrency(baseAmount(expense))}
                         </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={Plus}
+                          loading={adding === expense._id}
+                          disabled={adding !== null}
+                          onClick={() => handleAddSuggestion(expense)}
+                          aria-label={`Add ${expense.title} to this trip`}
+                        >
+                          Add
+                        </Button>
                       </span>
                     </span>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={Plus}
-                      loading={adding === expense._id}
-                      disabled={adding !== null}
-                      onClick={() => handleAddSuggestion(expense)}
-                      aria-label={`Add ${expense.title} to this trip`}
-                    >
-                      Add
-                    </Button>
                   </li>
                 ))}
               </ul>

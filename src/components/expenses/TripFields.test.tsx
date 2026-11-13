@@ -5,6 +5,7 @@ import { addDays, format } from "date-fns";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "@/contexts/AuthContext";
 import type { TravelType } from "@/lib/trip";
+import { inlineLinkClass } from "@/components/ui/styles";
 import TripFields, {
   categoryForTravelType,
   suggestTripForDate,
@@ -113,6 +114,11 @@ describe("TripFields", () => {
       "Upcoming",
       "Completed",
     ]);
+  });
+
+  it("gives the Manage trips link a 24px target", () => {
+    render(<Harness trips={[ONGOING]} date={day(-200)} />);
+    expect(screen.getByRole("link", { name: /manage trips/i })).toHaveClass(...inlineLinkClass.split(" "));
   });
 
   it("shows travel-type chips only once a trip is picked", async () => {

@@ -12,6 +12,7 @@ import { TripStatusBadge } from "@/components/trips/TripMeta";
 import TripTimeline from "@/components/trips/TripTimeline";
 import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import { baseAmount } from "@/components/expenses/ledger/format";
+import { ledgerPad } from "@/components/expenses/ledger/ExpenseRow";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
 
@@ -38,6 +39,16 @@ type ExpenseListEntry =
 /** List key of a trip cluster; prefixed so it can't collide with an expense id. */
 export function tripItemKey(tripId: string): string {
   return `trip:${tripId}`;
+}
+
+/**
+ * The item an expense counts towards in the paginated list, the way the
+ * server counts it: in the grouped list every expense of a trip is one item,
+ * even when the trip can't be opened and its expenses show as plain rows.
+ */
+export function pageItemKey(expense: ExpenseListItem, grouped: boolean): string {
+  const tripId = expense.trip?._id;
+  return grouped && tripId ? tripItemKey(tripId) : expense._id;
 }
 
 /**
@@ -101,7 +112,12 @@ export default function TripCluster({
   return (
     <div>
       {/* Narrow: name and total, then the status line. Wide (container ≥ 620px): one line. */}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3.5 border-t border-rule-2 bg-gradient-to-r from-cat-tr-soft to-accent-soft py-1.5 pl-4 pr-4 [@container(min-width:620px)]:grid-cols-[minmax(0,1fr)_auto_auto]">
+      <div
+        className={cn(
+          "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3.5 border-t border-rule-2 bg-gradient-to-r from-cat-tr-soft to-accent-soft py-1.5 [@container(min-width:620px)]:grid-cols-[minmax(0,1fr)_auto_auto]",
+          ledgerPad()
+        )}
+      >
         <button
           type="button"
           onClick={onToggle}
@@ -122,11 +138,13 @@ export default function TripCluster({
               <span className="shrink-0">{dates}</span>
               <span aria-hidden="true">·</span>
               <span className="shrink-0">{countLabel}</span>
+              {/* Narrow bands have no room left for the names (they'd ellipsize
+                  to nothing after a dangling "·"); the open band lists them. */}
               {travellers && (
-                <>
+                <span className="hidden min-w-0 gap-1.5 [@container(min-width:620px)]:flex">
                   <span aria-hidden="true">·</span>
                   <span className="ell">{travellers}</span>
-                </>
+                </span>
               )}
             </span>
           </span>
@@ -155,7 +173,7 @@ export default function TripCluster({
 
       {expanded && (
         <div className="animate-slide-up bg-background">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-1.5 pl-[38px] pr-4 text-xs text-ink-3">
+          <div className={cn("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-1.5 text-xs text-ink-3", ledgerPad(true))}>
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5">
               {trip.travelers.length > 0 && (
                 <span className="inline-flex min-w-0 items-center gap-1.5">

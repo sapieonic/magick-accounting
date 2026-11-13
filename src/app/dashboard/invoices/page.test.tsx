@@ -84,6 +84,11 @@ describe("InvoicesPage discounts", () => {
     vi.restoreAllMocks();
   });
 
+  it("uses sentence case in the terms placeholder", async () => {
+    await renderInvoiceForm();
+    expect(screen.getByLabelText("Terms")).toHaveAttribute("placeholder", "e.g. Due on receipt");
+  });
+
   it("hides discount value fields until a discount type is chosen", async () => {
     await renderInvoiceForm();
 

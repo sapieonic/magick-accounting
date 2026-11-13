@@ -125,6 +125,32 @@ describe("ExpenseRow", () => {
     expect(toolbar).not.toHaveClass("sm:flex");
   });
 
+  it("puts the hover toolbar over the amount, which hides meanwhile, wide enough for its buttons", () => {
+    renderRow({ onDelete: vi.fn(), onRemoveFromTrip: vi.fn() });
+    const toolbar = screen.getByTestId("row-actions");
+    const amount = screen.getByText("$100.00").parentElement!;
+    // Same cell: the toolbar never reaches over the category or title columns.
+    expect(toolbar.parentElement).toBe(amount.parentElement);
+    expect(toolbar.parentElement).toHaveClass("relative", "sm:[@media(hover:hover)]:min-w-[130px]");
+    expect(amount).toHaveClass("sm:[@media(hover:hover)]:group-hover:invisible");
+  });
+
+  it("names an untagged trip expense by its category, not 'Untagged'", () => {
+    renderRow({ variant: "trip", expense: makeExpense({ travelType: null }) });
+    expect(screen.getByText("Meals & Entertainment · 13 Oct · Asha Rao")).toBeInTheDocument();
+    expect(screen.queryByText(/Untagged/)).not.toBeInTheDocument();
+  });
+
+  it("labels a tagged trip expense by its travel type", () => {
+    renderRow({ variant: "trip" });
+    expect(screen.getByText("Food & drinks · 13 Oct · Asha Rao")).toBeInTheDocument();
+  });
+
+  it("gives the trip link under the title a 24px target", () => {
+    renderRow({ showTripLink: true });
+    expect(screen.getByRole("link", { name: /Pune visit/ })).toHaveClass("inline-flex", "min-h-6", "items-center");
+  });
+
   it("leaves the detail to the caller when not inline", () => {
     renderRow({ selected: true, inlineDetail: false, detailId: "side-panel" });
     expect(screen.getByRole("button", { name: "Team dinner" })).toHaveAttribute("aria-controls", "side-panel");

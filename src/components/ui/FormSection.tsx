@@ -1,4 +1,6 @@
-import { useId, type CSSProperties, type ReactNode } from "react";
+"use client";
+
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
 import { panelPadX } from "@/components/ui/styles";
 
@@ -70,15 +72,37 @@ export function SectionRow({ min = 320, children }: { min?: number; children: Re
   );
 }
 
+/** CSS variable on <html> holding the mounted FormFooter's height (toasts sit above it). */
+export const FORM_FOOTER_HEIGHT_VAR = "--form-footer-h";
+
 /**
  * The action strip at the foot of a form sheet. It sticks to the bottom of
- * the scrolling page: above the mobile tab bar, at the edge from `lg` up.
+ * the scrolling page, just above the mobile tab bar (`--tabbar-h`, 0 from `lg`
+ * up). While mounted it publishes its height (it grows when its contents wrap)
+ * as `--form-footer-h` on <html>, so fixed layers such as toasts clear it.
  */
 export function FormFooter({ children, className }: { children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement.style;
+    const publish = () => root.setProperty(FORM_FOOTER_HEIGHT_VAR, `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    publish();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(publish);
+    observer?.observe(el);
+    return () => {
+      observer?.disconnect();
+      root.removeProperty(FORM_FOOTER_HEIGHT_VAR);
+    };
+  }, []);
+
   return (
     <div
+      ref={ref}
       className={cn(
-        "sticky bottom-[calc(55px+max(10px,env(safe-area-inset-bottom)))] z-10 mt-auto flex flex-wrap items-center gap-3 rounded-b-panel border-t border-rule bg-surface py-3 lg:bottom-0",
+        "sticky bottom-[var(--tabbar-h)] z-10 mt-auto flex flex-wrap items-center gap-3 rounded-b-panel border-t border-rule bg-surface py-3",
         panelPadX,
         className
       )}

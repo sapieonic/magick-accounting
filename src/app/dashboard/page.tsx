@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Building2, CalendarDays, ReceiptText, Tag, Wallet } from "lucide-react";
+import { Building2, CalendarDays, ReceiptText, Tag, Users, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
+import { monthFromKey, monthProgress } from "@/lib/month";
 import PageHeader from "@/components/ui/PageHeader";
 import StatBand, { Stat } from "@/components/ui/StatBand";
 import Panel, { PanelGrid } from "@/components/ui/Panel";
@@ -20,7 +21,7 @@ import { linkClass } from "@/components/ui/styles";
 import MonthlySpendPanel from "@/components/dashboard/overview/MonthlySpendPanel";
 import RankedList, { type RankedItem } from "@/components/dashboard/overview/RankedList";
 import LatestEntries from "@/components/dashboard/overview/LatestEntries";
-import { monthFromKey, monthProgress, percentOf, plural } from "@/components/dashboard/overview/format";
+import { percentOf, plural } from "@/components/dashboard/overview/format";
 import type { OverviewCharts, OverviewStats, PersonSpend } from "@/components/dashboard/overview/types";
 
 /** Below this the top-six remainder is rounding noise, not "other" spend. */
@@ -90,9 +91,8 @@ export default function DashboardPage() {
   // Label and day count both from the server's (UTC) month bucket.
   const progress = thisMonth ? monthProgress(thisMonth.key) : null;
 
-  const sourceTotal = (name: string) => charts?.paymentSources.find((s) => s.name === name)?.total ?? 0;
-  const pocket = sourceTotal("pocket");
-  const company = sourceTotal("company");
+  const pocket = stats?.pocketAmount ?? 0;
+  const company = stats?.companyAmount ?? 0;
 
   // The charts return the top six of each; the rest is one row, so shares add up to 100%.
   const categoryItems = withRemainder(
@@ -121,21 +121,28 @@ export default function DashboardPage() {
   );
 
   // Who is owed the most: pocket spend credited to each person, as Spend by user counts it.
-  const payerItems: RankedItem[] = people
-    .filter((p) => p.pocketSpend > MIN_REMAINDER)
-    .sort((a, b) => b.pocketSpend - a.pocketSpend)
-    .slice(0, TOP_PAYERS)
-    .map((p) => ({
-      key: p._id,
-      label: p.name || p.email,
-      total: p.pocketSpend,
-      href: `/dashboard/expenses?paidBy=${p._id}`,
-      leading: <Avatar name={p.name || p.email} photoURL={p.photoURL} size={28} tone="amber" />,
-      tone: "pocket",
-    }));
+  const payerItems = withRemainder(
+    people
+      .filter((p) => p.pocketSpend > MIN_REMAINDER)
+      .sort((a, b) => b.pocketSpend - a.pocketSpend)
+      .slice(0, TOP_PAYERS)
+      .map((p) => ({
+        key: p._id,
+        label: p.name || p.email,
+        total: p.pocketSpend,
+        href: `/dashboard/expenses?paidBy=${p._id}`,
+        leading: <Avatar name={p.name || p.email} photoURL={p.photoURL} size={28} tone="amber" />,
+        tone: "pocket" as const,
+      })),
+    pocket,
+    "Other people",
+    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sunk text-ink-3">
+      <Users aria-hidden="true" size={14} strokeWidth={1.75} />
+    </span>
+  );
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="animate-fade-in flex flex-col gap-6">
       <PageHeader
         title="Overview"
         meta={

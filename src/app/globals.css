@@ -56,7 +56,19 @@
     --c-mk-s: 248 225 235;
 
     --pad: clamp(16px, 2.6vw, 40px);
+    /* Height of the fixed mobile tab bar (MobileTabBar: 48px tab + 6px top
+       padding + 1px rule, plus the safe-area bottom padding); 0 from lg up,
+       where there is none. Offsets above it (FormFooter, the dashboard's bottom
+       padding, toasts) build on this. FormFooter publishes its own height as
+       --form-footer-h on <html> while it is mounted. */
+    --tabbar-h: calc(55px + max(10px, env(safe-area-inset-bottom)));
     color-scheme: light;
+  }
+
+  @media (min-width: 1024px) {
+    :root {
+      --tabbar-h: 0px;
+    }
   }
 
   .dark {
@@ -78,6 +90,7 @@
     --bar: 62 59 168; /* #3E3BA8 */
     --hover: 27 27 42; /* #1B1B2A */
     --rail: 20 18 53; /* #141235 */
+    --overlay: 0 0 0; /* black: the page is already near-black, so a tinted backdrop wouldn't show */
     --amber: 240 168 96; /* #F0A860 */
     --pocket: 240 168 96; /* #F0A860 */
     --amber-soft: 58 40 20; /* #3A2814 */
@@ -109,7 +122,6 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    scroll-behavior: smooth;
   }
 
   body {
@@ -140,6 +152,19 @@
   * {
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--ink-3) / 0.35) transparent;
+  }
+
+  /* No spin buttons on number inputs: they eat the width of narrow amount
+     cells and amounts are typed, not stepped. Arrow keys still step. */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 }
 
@@ -206,11 +231,17 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+/*
+ * Dark theme: the light-theme shadow (ink at 25%) vanishes on a near-black page,
+ * so floating layers (dialogs, menus, toasts) get a deeper black shadow and a
+ * faint light edge outside their rule. Outside @layer so it follows (and beats)
+ * the generated `shadow-elevated` utility.
+ */
+.dark .shadow-elevated {
+  --tw-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 40px -12px rgb(0 0 0 / 0.8);
+}
 
+@media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {

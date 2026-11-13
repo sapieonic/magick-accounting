@@ -8,7 +8,7 @@ import { travelTypeLabel } from "@/lib/trip";
 import { IconButton } from "@/components/ui/Button";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
-import { rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
+import { panelPadX, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ExpenseDetail, { type ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import PaymentDot from "@/components/expenses/ledger/PaymentDot";
@@ -22,6 +22,25 @@ import type { ExpenseListItem } from "@/types/expense";
  * They're literal so Tailwind generates them.
  */
 export const LEDGER_CONTAINER = "[container-type:inline-size]";
+
+/**
+ * Side padding of ledger rows and their heads: `panelPadX`, or inside a trip
+ * band the same plus 22px, so the row's glyph sits under the band's icon.
+ */
+export function ledgerPad(nested = false): string {
+  return nested ? "pl-[calc(clamp(16px,2vw,24px)+22px)] pr-[clamp(16px,2vw,24px)]" : panelPadX;
+}
+
+/**
+ * Hover actions are 40px icon buttons in a pill (2px padding and gaps, 1px
+ * border). The amount cell is at least this wide where they can show, so the
+ * pill covers the amount (hidden meanwhile) and never the columns before it.
+ */
+const ACTIONS_WIDTH: Record<number, string> = {
+  1: "sm:[@media(hover:hover)]:min-w-[46px]",
+  2: "sm:[@media(hover:hover)]:min-w-[88px]",
+  3: "sm:[@media(hover:hover)]:min-w-[130px]",
+};
 
 const LAYOUT = {
   ledger: {
@@ -42,7 +61,8 @@ export function LedgerHead() {
     <div
       aria-hidden="true"
       className={cn(
-        "hidden items-center gap-x-4 border-t border-rule bg-sunk px-4 py-2 text-ink-3 [@container(min-width:620px)]:grid",
+        "hidden items-center gap-x-4 border-t border-rule bg-sunk py-2 text-ink-3 [@container(min-width:620px)]:grid",
+        ledgerPad(),
         LAYOUT.ledger.grid
       )}
     >
@@ -100,6 +120,9 @@ export default function ExpenseRow({
   const source = paymentSourceLabel(expense.paymentSource);
   const date = expenseDate(expense);
   const typeLabel = travelTypeLabel(expense.travelType);
+  // An untagged trip expense is named by its category instead of "Untagged".
+  const kindLabel = expense.travelType ? typeLabel : expense.category?.name || typeLabel;
+  const actionCount = 1 + (onRemoveFromTrip ? 1 : 0) + (onDelete ? 1 : 0);
   const assets = expense.linkedAssetCount || 0;
   const trip = showTripLink ? expense.trip : null;
   const inlineId = detailId ?? `expense-detail-${expense._id}`;
@@ -107,7 +130,7 @@ export default function ExpenseRow({
   // Narrow rows fold the hidden columns into the sub-line (the glyph alone
   // doesn't name the category: it's decorative).
   const narrowSub = isTrip
-    ? [typeLabel, showDate && date, payer].filter(Boolean).join(" · ")
+    ? [kindLabel, showDate && date, payer].filter(Boolean).join(" · ")
     : [expense.category?.name, date, payer].filter(Boolean).join(" · ");
   const wideSub = [payer, source, isTrip && showDate && date].filter(Boolean).join(" · ");
 
@@ -115,8 +138,9 @@ export default function ExpenseRow({
     <div className={cn(selected && inlineDetail && "border-b border-rule-2")}>
       <div
         className={cn(
-          "group relative grid min-h-[58px] items-center gap-x-3 py-2 pr-4",
-          nested ? "bg-background pl-[38px]" : "pl-4",
+          "group relative grid min-h-[58px] items-center gap-x-3 py-2",
+          ledgerPad(nested),
+          nested && "bg-background",
           layout.grid,
           rowClass,
           selected && rowSelectedClass
@@ -125,7 +149,7 @@ export default function ExpenseRow({
         {isTrip ? (
           <span className="flex min-w-0 items-center gap-2.5 text-ink-2">
             <TravelGlyph type={expense.travelType} />
-            <span className={cn("ell", layout.wide)}>{typeLabel}</span>
+            <span className={cn("ell", layout.wide)}>{kindLabel}</span>
           </span>
         ) : (
           <>
@@ -174,7 +198,8 @@ export default function ExpenseRow({
               href={`/dashboard/trips/${trip._id}`}
               title={`Open trip: ${trip.name}`}
               className={cn(
-                "relative z-10 mt-0.5 inline-flex w-fit max-w-full items-center gap-1 text-xs font-medium text-cat-tr hover:text-ink",
+                // min-h-6: a 24px target (WCAG 2.5.8) for this small inline link.
+                "relative z-10 inline-flex min-h-6 w-fit max-w-full items-center gap-1 text-xs font-medium text-cat-tr hover:text-ink",
                 transition
               )}
             >
@@ -195,44 +220,54 @@ export default function ExpenseRow({
           </span>
         )}
 
-        <span className="flex flex-col items-end">
-          <span className="num whitespace-nowrap font-medium text-ink">{formatCurrency(expense.amount, code)}</span>
-          {isForeign(expense) && (
-            <span className="num whitespace-nowrap text-xs text-ink-3">{formatBaseCurrency(expense.amountInBaseCurrency!)}</span>
-          )}
-        </span>
+        <span className={cn("relative flex flex-col items-end", ACTIONS_WIDTH[actionCount])}>
+          {/* Hidden while the hover actions cover it. */}
+          <span
+            className={cn(
+              "flex flex-col items-end",
+              "sm:[@media(hover:hover)]:group-hover:invisible sm:[@media(hover:hover)]:group-has-[[data-row-actions]:focus-within]:invisible"
+            )}
+          >
+            <span className="num whitespace-nowrap font-medium text-ink">{formatCurrency(expense.amount, code)}</span>
+            {isForeign(expense) && (
+              <span className="num whitespace-nowrap text-xs text-ink-3">{formatBaseCurrency(expense.amountInBaseCurrency!)}</span>
+            )}
+          </span>
 
-        {/* Quick actions on hover/focus, without opening the row. Only where
-            the pointer can hover: on touch the row opens its detail, which has
-            the same actions. While hidden they don't take clicks either. */}
-        <div
-          data-testid="row-actions"
-          className={cn(
-            "absolute right-32 top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-control border border-rule bg-surface p-0.5 transition-opacity duration-140",
-            "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
-            "sm:[@media(hover:hover)]:flex"
-          )}
-        >
-          <IconButton icon={Pencil} size="sm" href={editHref} aria-label={`Edit ${expense.title}`} />
-          {onRemoveFromTrip && (
-            <IconButton
-              icon={Unlink}
-              size="sm"
-              onClick={() => onRemoveFromTrip(expense)}
-              aria-label={`Remove ${expense.title} from trip`}
-              className="hover:!text-amber"
-            />
-          )}
-          {onDelete && (
-            <IconButton
-              icon={Trash2}
-              variant="ghost-danger"
-              size="sm"
-              onClick={() => onDelete(expense)}
-              aria-label={`Delete ${expense.title}`}
-            />
-          )}
-        </div>
+          {/* Quick actions on hover/focus, without opening the row, over the
+              amount. Only where the pointer can hover: on touch the row opens
+              its detail, which has the same actions. While hidden they don't
+              take clicks either. */}
+          <span
+            data-testid="row-actions"
+            data-row-actions=""
+            className={cn(
+              "absolute right-0 top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-control border border-rule bg-surface p-0.5 transition-opacity duration-140",
+              "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
+              "sm:[@media(hover:hover)]:flex"
+            )}
+          >
+            <IconButton icon={Pencil} size="sm" href={editHref} aria-label={`Edit ${expense.title}`} />
+            {onRemoveFromTrip && (
+              <IconButton
+                icon={Unlink}
+                size="sm"
+                onClick={() => onRemoveFromTrip(expense)}
+                aria-label={`Remove ${expense.title} from trip`}
+                className="hover:!text-amber"
+              />
+            )}
+            {onDelete && (
+              <IconButton
+                icon={Trash2}
+                variant="ghost-danger"
+                size="sm"
+                onClick={() => onDelete(expense)}
+                aria-label={`Delete ${expense.title}`}
+              />
+            )}
+          </span>
+        </span>
       </div>
 
       {selected && inlineDetail && (
@@ -243,7 +278,7 @@ export default function ExpenseRow({
           onDelete={onDelete}
           onRemoveFromTrip={onRemoveFromTrip}
           showTrip={!isTrip}
-          className={cn("animate-slide-up bg-background py-4 pr-4", nested ? "pl-[38px]" : "pl-4")}
+          className={cn("animate-slide-up bg-background py-4", ledgerPad(nested))}
         />
       )}
     </div>

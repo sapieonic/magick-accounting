@@ -56,3 +56,22 @@ describe("InlineLoader", () => {
     expect(container.querySelector(".my-wrap")).toBeInTheDocument();
   });
 });
+
+describe("Spinner tone", () => {
+  it("defaults to the indigo ring", () => {
+    render(<Spinner />);
+    expect(screen.getByRole("status")).toHaveClass("border-accent/20", "border-t-accent");
+  });
+
+  it("follows the text colour with tone=current", () => {
+    render(<Spinner tone="current" />);
+    const ring = screen.getByRole("status");
+    expect(ring).toHaveClass("border-current", "border-r-transparent");
+    expect(ring).not.toHaveClass("border-t-accent");
+  });
+
+  it("is a span, valid inside a button", () => {
+    render(<Spinner />);
+    expect(screen.getByRole("status").tagName).toBe("SPAN");
+  });
+});

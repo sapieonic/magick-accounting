@@ -18,7 +18,7 @@ import Panel from "@/components/ui/Panel";
 import Spinner from "@/components/ui/Spinner";
 import StatBand, { Stat } from "@/components/ui/StatBand";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE, rowClass } from "@/components/ui/styles";
+import { ICON_STROKE, panelPadX, rowClass } from "@/components/ui/styles";
 import AssetRow, { AssetListHead, type AssetListItem } from "@/components/assets/AssetRow";
 import { ASSET_STATUSES } from "@/components/assets/AssetStatusBadge";
 import { useReceiptOpener } from "@/components/assets/useReceiptOpener";
@@ -290,7 +290,7 @@ export default function AssetsPage() {
             {corrections.map((correction) => (
               <li
                 key={correction._id}
-                className={cn(rowClass, "relative flex min-h-[56px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5")}
+                className={cn(rowClass, panelPadX, "relative flex min-h-[56px] flex-wrap items-center gap-x-4 gap-y-1 py-2.5")}
               >
                 <Undo2 aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="shrink-0 text-danger" />
                 <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">

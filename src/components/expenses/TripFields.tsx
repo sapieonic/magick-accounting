@@ -20,7 +20,7 @@ import Button, { IconButton } from "@/components/ui/Button";
 import Field, { selectClass } from "@/components/ui/Field";
 import { Chip } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
-import { linkClass } from "@/components/ui/styles";
+import { inlineLinkClass } from "@/components/ui/styles";
 import type { TripListItem } from "@/types/trip";
 
 /** The parts of a `GET /api/trips` item the expense form uses. */
@@ -231,7 +231,7 @@ export default function TripFields({
             href="/dashboard/trips"
             target="_blank"
             rel="noopener noreferrer"
-            className={cn(linkClass, "inline-flex min-h-6 items-center gap-1")}
+            className={cn(inlineLinkClass, "gap-1")}
           >
             {trips.length > 0 ? "Manage trips" : "New trip"}
             <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />

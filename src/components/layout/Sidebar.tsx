@@ -10,6 +10,7 @@ import Avatar from "@/components/ui/Avatar";
 import { ADMIN_ITEMS, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
 import { useDialogLayer } from "@/hooks/useDialogLayer";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
@@ -54,7 +55,7 @@ function RailLink({
         railFocus,
         iconOnly ? "justify-center" : "px-3",
         active
-          ? "bg-rail-active font-medium text-white shadow-[inset_0_0_0_1px_rgba(155,165,248,.22)] before:absolute before:inset-y-[13px] before:left-0 before:w-[3px] before:rounded-r-[3px] before:bg-rail-mark"
+          ? "bg-rail-active font-medium text-white ring-1 ring-inset ring-rail-mark/[.22] before:absolute before:inset-y-[13px] before:left-0 before:w-[3px] before:rounded-r-[3px] before:bg-rail-mark"
           : "text-rail-ink hover:bg-rail-hover"
       )}
     >
@@ -129,7 +130,7 @@ function RailContent({
             aria-current={profileActive ? "page" : undefined}
             title={iconOnly ? "Profile" : undefined}
             className={cn(
-              "flex min-h-[52px] min-w-0 flex-1 items-center gap-2.5 rounded-control text-white transition-colors duration-140 hover:bg-rail-hover",
+              "flex min-h-[52px] min-w-0 flex-1 items-center gap-2.5 rounded-control py-1.5 text-white transition-colors duration-140 hover:bg-rail-hover",
               railFocus,
               iconOnly ? "justify-center" : "px-2.5",
               profileActive && "bg-rail-active"
@@ -140,9 +141,20 @@ function RailContent({
               <span className="sr-only">Profile</span>
             ) : (
               <span className="flex min-w-0 flex-col">
-                <span className="ell text-[13px] font-medium">{user?.name ?? "Profile"}</span>
-                <span className="ell text-xs text-rail-muted">
-                  {user ? `${ROLE_LABEL[user.role]} · Profile` : "Profile"}
+                <span className="ell text-[13px] font-medium" title={user?.name}>
+                  {user?.name ?? "Profile"}
+                </span>
+                {/* Wraps after the dot rather than truncating on the 232px rail:
+                    "Master admin ·" / "Profile". */}
+                <span className="text-xs leading-4 text-rail-muted">
+                  {user ? (
+                    <>
+                      <span className="whitespace-nowrap">{ROLE_LABEL[user.role]}</span> ·{" "}
+                      <span className="whitespace-nowrap">Profile</span>
+                    </>
+                  ) : (
+                    "Profile"
+                  )}
                 </span>
               </span>
             )}
@@ -175,8 +187,15 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const lastPathname = useRef(pathname);
 
-  // Focus into the drawer, trap Tab, Escape closes it, focus back to "More".
+  // Focus into the drawer, trap Tab, lock the page scroll, Escape closes it, focus back to "More".
   useDialogLayer(open, drawerRef, onClose);
+
+  // The drawer is lg:hidden: left open across the breakpoint it would keep
+  // trapping keys while invisible, so close it once the rail takes over.
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  useEffect(() => {
+    if (open && isDesktop) onClose();
+  }, [open, isDesktop, onClose]);
 
   // Close the drawer whenever the route changes, however it changed (link, ⌘K, back).
   useEffect(() => {
@@ -229,7 +248,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
-          <div className="animate-fade-in absolute inset-0 bg-overlay/50" onClick={onClose} aria-hidden="true" />
+          <div className="animate-fade-in absolute inset-0 bg-overlay/45" onClick={onClose} aria-hidden="true" />
           <aside
             ref={drawerRef}
             tabIndex={-1}

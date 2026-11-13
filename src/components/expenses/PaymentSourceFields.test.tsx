@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { getPaymentSplitError } from "@/lib/expense";
+import { textButtonClass } from "@/components/ui/styles";
 import PaymentSourceFields, { paymentDraftsToPayload, type PaymentDraft } from "./PaymentSourceFields";
 
 function Harness({ amount = "1000", error = null }: { amount?: string; error?: string | null }) {
@@ -129,6 +130,15 @@ describe("PaymentSourceFields", () => {
     expect(screen.getByLabelText("Payer 2")).toHaveValue("");
     expect(screen.getByRole("button", { name: /remove payment 1/i })).toBeDisabled();
     expect(screen.getByText("₹1,000.00 left to assign")).toBeInTheDocument();
+  });
+
+  it("styles Add payment as a shared link-style text button", async () => {
+    const user = userEvent.setup();
+    render(<PayersHarness />);
+
+    await user.click(sourceButton("Several people"));
+
+    expect(screen.getByRole("button", { name: /add payment/i })).toHaveClass(...textButtonClass.split(" "));
   });
 
   it("records each payer's amount and pocket/company toggle", async () => {

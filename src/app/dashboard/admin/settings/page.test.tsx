@@ -117,4 +117,22 @@ describe("AdminSettingsPage", () => {
     expect(screen.getByLabelText("Seller name")).toHaveValue("Magick LLP");
     expect(toast).toHaveBeenCalledWith("Invoice defaults saved");
   });
+
+  it("asks for a currency to be added when none exist, without mentioning a seed", async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) =>
+      url === "/api/currencies" ? { currencies: [] } : responses[url]
+    );
+    render(<AdminSettingsPage />);
+    const section = await screen.findByRole("region", { name: "Currencies & exchange rates" });
+    expect(await within(section).findByText("No currencies configured")).toBeInTheDocument();
+    expect(within(section).getByText("Add the currencies your expenses are paid in.")).toBeInTheDocument();
+    expect(within(section).queryByText(/seed/i)).not.toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: "Add currency" })).toBeInTheDocument();
+  });
+
+  it("uses sentence case in the invoice defaults copy", async () => {
+    render(<AdminSettingsPage />);
+    expect(await screen.findByLabelText("Seller name")).toHaveAttribute("placeholder", "e.g. Magickvoice LLP");
+    expect(screen.getByText("Applied to every invoice — shown above Place of supply.")).toBeInTheDocument();
+  });
 });

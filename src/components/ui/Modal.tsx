@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
@@ -38,18 +38,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   const overlayRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [isOpen]);
-
-  // Focus in + trapped, Escape closes only the topmost layer, focus back to the opener.
+  // Focus in + trapped, page scroll locked, Escape closes only the topmost
+  // layer, focus back to the opener.
   useDialogLayer(isOpen, contentRef, onClose);
 
   if (!isOpen) return null;

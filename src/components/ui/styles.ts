@@ -12,26 +12,39 @@ export const transition = "transition-[background-color,border-color,color,box-s
 export const focusRing =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-/** Form controls get the `control-line` border (>= 3:1, WCAG 1.4.11); hover darkens it, never lightens it. */
+/**
+ * Form controls get the `control-line` border (>= 3:1, WCAG 1.4.11); hover raises contrast.
+ * Focus is an opaque 2px accent ring outside the border, independent of the border colour, so it
+ * still shows on an invalid (danger border) or auto-filled control.
+ */
 const control = cn(
-  "w-full rounded-control border border-control-line bg-surface text-sm text-ink placeholder:text-ink-3",
-  "hover:border-accent-2 focus-visible:outline-none focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--tint-2)]",
+  "rounded-control border border-control-line bg-surface text-sm text-ink placeholder:text-ink-3",
+  "hover:border-accent-2 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgb(var(--accent))]",
   "disabled:cursor-not-allowed disabled:bg-sunk disabled:text-ink-3",
   "aria-[invalid=true]:border-danger",
   transition
 );
 
 /** Text/number/date input, 44px tall. */
-export const inputClass = cn(control, "h-11 px-3");
+export const inputClass = cn(control, "h-11 w-full px-3");
 
 /** Native select, 44px tall. */
-export const selectClass = cn(control, "h-11 cursor-pointer pl-3 pr-8");
+export const selectClass = cn(control, "h-11 w-full cursor-pointer pl-3 pr-8");
+
+/**
+ * Narrow native select beside another control (the currency before an amount):
+ * tighter padding and no `w-full`, so the caller sets its width.
+ */
+export const compactSelectClass = cn(control, "h-11 cursor-pointer pl-2 pr-6");
 
 /** Multi-line textarea. */
-export const textareaClass = cn(control, "min-h-[88px] px-3 py-2.5 leading-normal");
+export const textareaClass = cn(control, "min-h-[88px] w-full px-3 py-2.5 leading-normal");
 
-/** Fields that auto-fill set (AI extracted): tinted, indigo border. */
-export const aiFilledClass = "!border-accent-line !bg-tint";
+/**
+ * Fields that auto-fill set (AI extracted): tinted. The border stays `control-line`
+ * (>= 3:1); the Field's "from receipt" aside says where the value came from.
+ */
+export const aiFilledClass = "!bg-tint";
 
 /** Ledger list row: hairline top rule and hover tint. */
 export const rowClass = cn("border-t border-rule-2 hover:bg-hover", transition);
@@ -40,7 +53,20 @@ export const rowClass = cn("border-t border-rule-2 hover:bg-hover", transition);
 export const rowSelectedClass = "!bg-accent-soft shadow-[inset_3px_0_0_rgb(var(--accent))]";
 
 /** Inline text link in accent colour. */
-export const linkClass = cn("font-medium text-accent hover:text-ink", transition);
+export const linkClass = cn(
+  "font-medium text-accent hover:text-ink",
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-accent",
+  transition
+);
+
+/**
+ * Link-styled `<button>` (or a link that acts like one): 40px hit area, 13px text, icon gap.
+ * A ghost Button's ink text can't be recoloured (cn has no tailwind-merge), so use this instead.
+ */
+export const textButtonClass = cn(linkClass, "inline-flex min-h-10 items-center gap-1.5 rounded-control text-[13px]");
+
+/** Small inline link with a 24px minimum target (WCAG 2.5.8). */
+export const inlineLinkClass = cn(linkClass, "inline-flex min-h-6 items-center");
 
 /** Side padding of a panel's head, body and footer; reuse it for edge-to-edge rows inside a flush panel. */
 export const panelPadX = "px-[clamp(16px,2vw,24px)]";

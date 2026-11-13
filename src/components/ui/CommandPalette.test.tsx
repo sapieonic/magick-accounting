@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CommandPalette, { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
 import Modal from "@/components/ui/Modal";
@@ -131,5 +131,37 @@ describe("CommandPalette", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
     expect(closeDrawer).not.toHaveBeenCalled();
+  });
+
+  it("is a combobox pointing at its active option, with no buttons nested in options", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette />);
+    openPalette();
+
+    const input = screen.getByRole("combobox", { name: "Search commands" });
+    const listbox = screen.getByRole("listbox", { name: "Commands" });
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+
+    const options = within(listbox).getAllByRole("option");
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", options[0].id);
+    expect(within(listbox).queryAllByRole("button")).toHaveLength(0);
+
+    await user.keyboard("{ArrowDown}");
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", options[1].id);
+    expect(input).toHaveFocus();
+  });
+
+  it("runs an option on click", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette />);
+    openPalette();
+
+    await user.click(screen.getByRole("option", { name: /Trips/ }));
+    expect(push).toHaveBeenCalledWith("/dashboard/trips");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

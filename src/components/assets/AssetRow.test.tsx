@@ -78,6 +78,18 @@ describe("AssetRow", () => {
     expect(screen.queryByRole("link", { name: "Laptop purchase" })).not.toBeInTheDocument();
   });
 
+  it("calls a withheld receipt restricted, not missing", () => {
+    renderRow({
+      ...base,
+      canViewFinancials: false,
+      bookValue: undefined,
+      capitalizedCost: undefined,
+      purchaseExpense: { ...base.purchaseExpense, receiptKey: undefined },
+    });
+    expect(screen.getByText("Receipt restricted")).toBeInTheDocument();
+    expect(screen.queryByText("No receipt")).not.toBeInTheDocument();
+  });
+
   it("opens the receipt from its button", async () => {
     const onOpen = renderRow(base);
     await userEvent.click(screen.getByRole("button", { name: "Open receipt for MacBook Pro" }));

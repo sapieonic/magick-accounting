@@ -96,5 +96,9 @@ describe("Departments / Categories (OrgListPage)", () => {
     vi.mocked(api.get).mockResolvedValue({ categories: [] });
     render(<CategoriesPage />);
     expect(await screen.findByText("No categories yet")).toBeInTheDocument();
+    expect(screen.getByText("Add a category to classify your expenses.")).toBeInTheDocument();
+    expect(screen.queryByText(/seed/i)).not.toBeInTheDocument();
+    // The empty state offers the add action as well as the header.
+    expect(screen.getAllByRole("button", { name: "Add category" })).toHaveLength(2);
   });
 });

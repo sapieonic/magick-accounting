@@ -97,15 +97,17 @@ describe("Toast", () => {
     });
   });
 
-  it("anchors toasts bottom-right, lifted above the tab bar and sticky form footers", () => {
+  it("anchors toasts bottom-right, above the tab bar and the measured form footer", () => {
     render(
       <ToastProvider>
         <p>page</p>
       </ToastProvider>
     );
     const region = screen.getByTestId("toast-region");
-    expect(region.className).toMatch(/(^|\s)bottom-\[calc\(55px\+max\(10px,env\(safe-area-inset-bottom\)\)\+80px\)\]/);
-    expect(region).toHaveClass("lg:bottom-[88px]");
+    // --tabbar-h is 0 from lg up; --form-footer-h is published by a mounted FormFooter.
+    expect(region).toHaveClass("bottom-[calc(var(--tabbar-h)+var(--form-footer-h,0px)+12px)]");
+    // Desktop: also clear of a list's bottom "Load more" strip.
+    expect(region).toHaveClass("lg:bottom-[max(calc(var(--form-footer-h,0px)+12px),112px)]");
     expect(region.className).not.toMatch(/(^|\s|:)top-/);
   });
 });

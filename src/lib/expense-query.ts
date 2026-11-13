@@ -159,6 +159,48 @@ export async function getExpenseSummary(
   };
 }
 
+export interface ExpensePageParams {
+  page: number;
+  limit: number;
+  /** Items to skip: `offset` when given, else the pages before `page`. */
+  skip: number;
+}
+
+/** A whole number of at least `min` from a query param, else null. */
+function intParam(value: string | null, min: number): number | null {
+  const parsed = value === null || value.trim() === "" ? NaN : Number(value);
+  return Number.isInteger(parsed) && parsed >= min ? parsed : null;
+}
+
+/**
+ * `page` / `limit` of the expense list, or `offset` / `limit`. A client that
+ * deletes rows between pages asks by `offset` (the items it has loaded, less
+ * the ones it deleted), since every later item has moved up by then.
+ */
+export function parseExpensePageParams(searchParams: URLSearchParams): ExpensePageParams {
+  const page = intParam(searchParams.get("page"), 1) ?? 1;
+  const limit = intParam(searchParams.get("limit"), 1) ?? 20;
+  const skip = intParam(searchParams.get("offset"), 0) ?? (page - 1) * limit;
+  return { page, limit, skip };
+}
+
+/**
+ * The `pagination` block of the expense list: `nextOffset` is where the next
+ * page starts and `hasMore` whether there is one, both counted in items (a
+ * trip is one item in the grouped list, however many rows it shows as).
+ */
+export function expensePagination({ page, limit, skip }: ExpensePageParams, count: number, total: number) {
+  return {
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    offset: skip,
+    nextOffset: skip + count,
+    hasMore: skip + count < total,
+  };
+}
+
 /**
  * Pipeline paginating the expenses matching `filter` as list *items*: every
  * trip's matching expenses form one item, every other expense is its own.
@@ -169,7 +211,7 @@ export async function getExpenseSummary(
  */
 export function groupedExpensePagePipeline(
   filter: Record<string, unknown>,
-  page: number,
+  skip: number,
   limit: number
 ) {
   return [
@@ -186,7 +228,7 @@ export function groupedExpensePagePipeline(
     { $sort: { latestDate: -1, latestCreatedAt: -1, _id: -1 } },
     {
       $facet: {
-        items: [{ $skip: (page - 1) * limit }, { $limit: limit }, { $project: { ids: 1 } }],
+        items: [{ $skip: skip }, { $limit: limit }, { $project: { ids: 1 } }],
         total: [{ $count: "count" }],
       },
     },

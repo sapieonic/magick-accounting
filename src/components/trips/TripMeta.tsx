@@ -23,7 +23,8 @@ export function TravelerAvatars({ travelers, max = 4 }: { travelers: TripPerson[
   const extra = travelers.length - shown.length;
   const names = travelers.map((t) => t.name).join(", ");
   return (
-    <div className="flex shrink-0 items-center -space-x-2" role="img" aria-label={`Travelers: ${names}`} title={names}>
+    // A 4px overlap, so the next avatar doesn't cover the second initial.
+    <div className="flex shrink-0 items-center -space-x-1" role="img" aria-label={`Travelers: ${names}`} title={names}>
       {shown.map((person) => (
         <Avatar key={person._id} name={person.name || person.email} photoURL={person.photoURL} size={28} className="ring-2 ring-surface" />
       ))}

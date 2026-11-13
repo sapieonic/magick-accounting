@@ -69,7 +69,7 @@ export default function AssetCorrectionPage() {
       />
       <PanelGrid min={360}>
         <Panel title="Correction" wash>
-          <DetailList items={details} />
+          <DetailList layout="columns" items={details} />
         </Panel>
         <Panel
           grow={2}

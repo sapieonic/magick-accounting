@@ -11,8 +11,10 @@ vi.mock("@/models/Expense", () => ({
 
 import {
   buildExpenseFilter,
+  expensePagination,
   getExpenseSummary,
   groupedExpensePagePipeline,
+  parseExpensePageParams,
   parsePaidByParam,
 } from "@/lib/expense-query";
 import { paidByFilter, payerSpendPipeline } from "@/lib/expense";
@@ -406,7 +408,7 @@ describe("groupedExpensePagePipeline", () => {
   const ids = (item: { ids: unknown[] }) => item.ids.map(String).sort();
 
   it("collapses each trip's expenses into one item keyed by the trip id", () => {
-    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), docs);
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 0, 20), docs);
 
     expect(total).toEqual([{ count: 5 }]);
     const goaItem = items.find((item: { _id: unknown }) => String(item._id) === goa.toString());
@@ -419,7 +421,7 @@ describe("groupedExpensePagePipeline", () => {
   });
 
   it("orders items by their latest expense date, newest first", () => {
-    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), docs);
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 0, 20), docs);
 
     expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
       [legacy._id, goa, lunch._id, pune, taxi._id].map(String)
@@ -429,7 +431,7 @@ describe("groupedExpensePagePipeline", () => {
   it("breaks a date tie by the latest entry time", () => {
     const early = expense("2026-02-01", null, "2026-02-01");
     const late = expense("2026-02-01", oid(), "2026-02-03");
-    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), [early, late]);
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 0, 20), [early, late]);
 
     expect(items.map((item: { ids: unknown[] }) => String(item.ids[0]))).toEqual(
       [late._id, early._id].map(String)
@@ -437,6 +439,7 @@ describe("groupedExpensePagePipeline", () => {
   });
 
   it("paginates items, not expenses, and counts all items", () => {
+    // Skips the first two items (one page of two).
     const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 2, 2), docs);
 
     expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
@@ -447,7 +450,7 @@ describe("groupedExpensePagePipeline", () => {
 
   it("applies the filter before grouping", () => {
     const filter = buildExpenseFilter(params("trip=none"), makeUser("admin"));
-    const [{ items, total }] = runPipeline(groupedExpensePagePipeline(filter, 1, 20), docs);
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline(filter, 0, 20), docs);
 
     expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
       [legacy._id, lunch._id, taxi._id].map(String)
@@ -457,11 +460,45 @@ describe("groupedExpensePagePipeline", () => {
 
   it("returns one document with no items when nothing matches", () => {
     const filter = buildExpenseFilter(params(""), makeUser("user", OTHER_ID));
-    const result = runPipeline(groupedExpensePagePipeline(filter, 1, 20), docs);
+    const result = runPipeline(groupedExpensePagePipeline(filter, 0, 20), docs);
 
     expect(result).toHaveLength(1);
     expect(result[0].items).toEqual([]);
     // MongoDB's $count emits nothing for no input (mingo emits 0); readers treat both as 0.
     expect(result[0].total[0]?.count ?? 0).toBe(0);
+  });
+});
+
+describe("parseExpensePageParams", () => {
+  it("skips the pages before `page`", () => {
+    expect(parseExpensePageParams(params("page=3&limit=25"))).toEqual({ page: 3, limit: 25, skip: 50 });
+  });
+
+  it("prefers an explicit offset, so a client that deleted rows doesn't skip one", () => {
+    expect(parseExpensePageParams(params("page=2&limit=25&offset=24"))).toEqual({ page: 2, limit: 25, skip: 24 });
+    expect(parseExpensePageParams(params("offset=0&limit=5"))).toEqual({ page: 1, limit: 5, skip: 0 });
+  });
+
+  it("falls back to page 1 of 20 for missing or invalid values", () => {
+    expect(parseExpensePageParams(params(""))).toEqual({ page: 1, limit: 20, skip: 0 });
+    expect(parseExpensePageParams(params("page=0&limit=-3&offset=-1"))).toEqual({ page: 1, limit: 20, skip: 0 });
+    expect(parseExpensePageParams(params("page=abc&limit=2.5&offset="))).toEqual({ page: 1, limit: 20, skip: 0 });
+  });
+});
+
+describe("expensePagination", () => {
+  it("says where the next page starts and whether there is one", () => {
+    expect(expensePagination({ page: 1, limit: 3, skip: 0 }, 3, 4)).toEqual({
+      page: 1,
+      limit: 3,
+      total: 4,
+      pages: 2,
+      offset: 0,
+      nextOffset: 3,
+      hasMore: true,
+    });
+    expect(expensePagination({ page: 2, limit: 3, skip: 3 }, 1, 4)).toEqual(
+      expect.objectContaining({ nextOffset: 4, hasMore: false })
+    );
   });
 });

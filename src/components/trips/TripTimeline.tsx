@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatBaseCurrency } from "@/lib/currency";
 import { groupByTripDay, type TripDates } from "@/lib/trip";
 import { cn } from "@/components/ui/cn";
-import ExpenseRow, { LEDGER_CONTAINER } from "@/components/expenses/ledger/ExpenseRow";
+import ExpenseRow, { LEDGER_CONTAINER, ledgerPad } from "@/components/expenses/ledger/ExpenseRow";
 import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import { expenseEditHref } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
@@ -65,7 +65,7 @@ export default function TripTimeline({
 
   if (sections.length === 0) {
     return (
-      <p data-testid="trip-timeline" className="px-4 py-8 text-center text-sm text-ink-3">
+      <p data-testid="trip-timeline" className={cn("py-8 text-center text-sm text-ink-3", ledgerPad())}>
         No expenses to show for this trip yet.
       </p>
     );
@@ -80,8 +80,8 @@ export default function TripTimeline({
           <li key={section.key} aria-label={section.label}>
             <div
               className={cn(
-                "flex items-center justify-between gap-3 border-t border-rule bg-sunk py-2 pr-4",
-                nested ? "pl-[38px]" : "pl-4"
+                "flex items-center justify-between gap-3 border-t border-rule bg-sunk py-2",
+                ledgerPad(nested)
               )}
             >
               <h3 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-ink">

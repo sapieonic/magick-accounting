@@ -12,7 +12,7 @@ import { FormSkeleton } from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
 import Panel from "@/components/ui/Panel";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE, linkClass, panelPadX, rowClass } from "@/components/ui/styles";
+import { ICON_STROKE, panelPadX, rowClass, textButtonClass } from "@/components/ui/styles";
 import {
   newPaymentDraft,
   paymentDraftsToPayload,
@@ -114,11 +114,7 @@ function LinkedAssetsPanel({
       flush
       footer={
         canAddMore ? (
-          // Link-style: a ghost Button's ink text can't be recoloured (cn has no tailwind-merge).
-          <Link
-            href={createHref}
-            className={cn(linkClass, "inline-flex min-h-10 items-center gap-1.5 rounded-control text-[13px]")}
-          >
+          <Link href={createHref} className={textButtonClass}>
             <Package aria-hidden="true" size={16} strokeWidth={ICON_STROKE} />
             Add more assets from this expense
           </Link>

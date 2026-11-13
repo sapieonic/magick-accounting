@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import Button from "@/components/ui/Button";
+import Checkbox from "@/components/ui/Checkbox";
 import Modal from "@/components/ui/Modal";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import Spinner from "@/components/ui/Spinner";
@@ -68,7 +69,11 @@ export default function ReceiptUploadModal({ isOpen, extracting, onFile, onClose
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={(e) => setDontShowAgain(e.target.checked)}
-                className="h-4 w-4 accent-accent"
+                className="peer sr-only"
+              />
+              <Checkbox
+                checked={dontShowAgain}
+                className="peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
               />
               Don&apos;t show this automatically again
             </label>

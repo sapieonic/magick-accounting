@@ -6,7 +6,7 @@ import Button from "@/components/ui/Button";
 import Field, { aiFilledClass, inputClass, selectClass, textareaClass } from "@/components/ui/Field";
 import PageHeader from "@/components/ui/PageHeader";
 import { cn } from "@/components/ui/cn";
-import { panelClass } from "@/components/ui/styles";
+import { compactSelectClass, panelClass } from "@/components/ui/styles";
 import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
 import TripFields, { type TripOption } from "@/components/expenses/TripFields";
 import { roundMoney } from "@/lib/asset";
@@ -21,7 +21,7 @@ import type { AiField, CurrencyOption, ExpenseFormValues, ExpenseLookups } from 
  * server rounds it. `savedRate` is the rate an edited expense was stored at,
  * which the server keeps while its currency is unchanged.
  */
-export function amountHint(
+function amountHint(
   currency: CurrencyOption | undefined,
   amount: number | null,
   savedRate: number | null = null
@@ -59,12 +59,12 @@ function FromReceipt({ what }: { what?: string }) {
 function AmountControl({ currencySelect, ...input }: InputHTMLAttributes<HTMLInputElement> & { currencySelect: ReactNode }) {
   return (
     <div className="flex gap-2">
-      {/* The select is full width (selectClass), so the wrapper sets its size. */}
-      <div className="w-[7.5rem] shrink-0">{currencySelect}</div>
+      {currencySelect}
       <input {...input} />
     </div>
   );
 }
+
 
 export interface ExpenseFormProps {
   /** Page heading, e.g. "New expense". */
@@ -184,8 +184,14 @@ export default function ExpenseForm({
         title={heading}
       />
 
-      <div className="flex flex-wrap items-start gap-6">
-        <section aria-label="Receipt" className="flex min-w-0 flex-[1_1_320px] flex-col gap-4 lg:sticky lg:top-6">
+      <div className="flex flex-wrap items-start gap-6 [container-type:inline-size]">
+        {/* The receipt sticks only while it sits beside the form: 804px = both flex
+            bases (320 + 460) + the 24px gap. A container query on this wrapper, not a
+            viewport breakpoint, so it holds whatever width the rail takes. */}
+        <section
+          aria-label="Receipt"
+          className="flex min-w-0 flex-[1_1_320px] flex-col gap-4 [@container(min-width:804px)]:sticky [@container(min-width:804px)]:top-6"
+        >
           {receipt}
         </section>
 
@@ -208,7 +214,9 @@ export default function ExpenseForm({
                 />
               </Field>
 
-              <FieldGrid>
+              {/* Amount and GST get wider columns: the amount shares its cell with the
+                  currency select, and must keep ~200px of input beside it. */}
+              <FieldGrid min={300}>
                 <Field
                   label="Amount"
                   aside={amountAside}
@@ -232,7 +240,7 @@ export default function ExpenseForm({
                         disabled={currencyLocked}
                         value={values.currency}
                         onChange={(e) => set("currency", e.target.value)}
-                        className={cn(selectClass, ai("currency") && aiFilledClass)}
+                        className={cn(compactSelectClass, "w-[5.5rem] shrink-0", ai("currency") && aiFilledClass)}
                       >
                         <option value="">Select</option>
                         {lookups.currencies.map((c) => (
@@ -263,7 +271,9 @@ export default function ExpenseForm({
                     className={cn(inputClass, "num text-right", ai("gstAmount") && aiFilledClass)}
                   />
                 </Field>
+              </FieldGrid>
 
+              <FieldGrid>
                 <Field label="Date" aside={aside("date")}>
                   <input
                     id="date"

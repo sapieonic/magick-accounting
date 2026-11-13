@@ -6,7 +6,7 @@ import { IconButton } from "@/components/ui/Button";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import Spinner from "@/components/ui/Spinner";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE, focusRing, linkClass, panelClass } from "@/components/ui/styles";
+import { ICON_STROKE, inlineLinkClass, panelClass, textButtonClass } from "@/components/ui/styles";
 
 /** A blob URL for `file` while it is mounted (null where the browser can't make one). */
 function useObjectUrl(file: File | null | undefined): string | null {
@@ -94,7 +94,7 @@ export default function ReceiptPanel({
         {url && isPdf && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule-2 bg-sunk px-4 py-3 text-[13px] text-ink-2">
             <span>PDF receipt</span>
-            <a href={url} target="_blank" rel="noopener noreferrer" className={linkClass}>
+            <a href={url} target="_blank" rel="noopener noreferrer" className={inlineLinkClass}>
               Open preview<span className="sr-only"> (opens in a new tab)</span>
             </a>
           </div>
@@ -121,12 +121,7 @@ interface ReceiptReadStatusProps {
 /** AI auto-fill progress/result strip at the foot of the receipt card. */
 export function ReceiptReadStatus({ state, count = 0, onRetry }: ReceiptReadStatusProps) {
   const retry = onRetry && state !== "reading" && (
-    // A link-style action: a ghost Button's ink text can't be recoloured (cn has no tailwind-merge).
-    <button
-      type="button"
-      onClick={onRetry}
-      className={cn(linkClass, focusRing, "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-control px-2 text-[13px]")}
-    >
+    <button type="button" onClick={onRetry} className={cn(textButtonClass, "shrink-0 px-2")}>
       <RefreshCw aria-hidden="true" size={15} strokeWidth={ICON_STROKE} />
       {state === "failed" ? "Try again" : "Read again"}
     </button>

@@ -3,7 +3,7 @@ import { Download } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { IconButton } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
-import { rowClass } from "@/components/ui/styles";
+import { panelPadL, rowClass } from "@/components/ui/styles";
 import AssetGlyph from "@/components/assets/AssetGlyph";
 import AssetStatusBadge from "@/components/assets/AssetStatusBadge";
 import { expenseDate } from "@/components/expenses/ledger/format";
@@ -36,8 +36,10 @@ export interface AssetListItem {
 
 // The list is a container: 6 columns when it is wide, title block · book value · receipt when
 // narrow (cost and status then join the title block, so the name keeps its room).
+// Panel side padding on the left; the trailing receipt button sits closer to the edge.
 const grid = cn(
-  "grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-4 px-4",
+  "grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-x-4 pr-2 sm:pr-3",
+  panelPadL,
   "[@container(min-width:760px)]:grid-cols-[minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_112px_minmax(120px,auto)_40px]"
 );
 const wide = "hidden [@container(min-width:760px)]:block";
@@ -142,9 +144,10 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
 
       <div className="relative z-10 flex justify-end">
         {!purchase.receiptKey ? (
-          <span className="text-xs text-ink-3" title="No receipt">
+          // Without financials the API withholds the receipt too: it may well exist.
+          <span className="text-xs text-ink-3" title={asset.canViewFinancials ? "No receipt" : "Receipt restricted"}>
             <span aria-hidden="true">—</span>
-            <span className="sr-only">No receipt</span>
+            <span className="sr-only">{asset.canViewFinancials ? "No receipt" : "Receipt restricted"}</span>
           </span>
         ) : (
           <IconButton

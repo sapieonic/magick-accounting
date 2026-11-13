@@ -18,7 +18,7 @@ and the `rail-*` shades (`rail-hover`, `rail-active`, `rail-line`, `rail-ink`, `
 | Text: primary / secondary / muted | `text-ink` · `text-ink-2` · `text-ink-3` |
 | Rules: outer / inner row divider | `border-rule` · `border-rule-2` (panels, hairlines: decorative) |
 | Form control boundary | `border-control-line` (≥ 3:1 on surface in both themes, WCAG 1.4.11; inputs, selects, chips, checkboxes) |
-| Backdrop behind dialogs / the drawer | `bg-overlay/45` |
+| Backdrop behind dialogs, the ⌘K palette and the drawer | `bg-overlay/45` (always /45; `--overlay` is near-black in light, black in dark) |
 | Accent (indigo) | `bg-accent text-accent-ink` · `hover:bg-accent-hover` · `bg-accent-soft` · `border-accent-line` · `bg-accent-2` |
 | Row hover / tints | `hover:bg-hover` · `bg-tint` (5%) · `bg-tint-2` (10%) |
 | Pocket / owed (amber) | `text-amber` · `bg-pocket` (fill) · `bg-amber-soft` |
@@ -34,6 +34,13 @@ Utilities: `.num` (Geist Mono, tabular, -0.02em: every amount, count, date in a 
 .07em, 500: labels, column heads, eyebrows) · `.ell` (single-line ellipsis) · `bg-wash` / `bg-wash-r`
 (faint radial indigo from the top-left / top-right corner, behind headline totals and detail heads).
 Page padding is `var(--pad)` = `clamp(16px, 2.6vw, 40px)`; the layout already applies it on a wrapper inside `<main>` (not on the scroller itself, so `sticky` offsets mean what they say).
+`var(--tabbar-h)` is the height of the fixed mobile tab bar (safe area included; `0px` from `lg`): build bottom
+offsets on it (the page's bottom padding, `FormFooter`, toasts) rather than repeating the number.
+
+Focus: every `:focus-visible` gets a 2px solid accent outline, offset 2px (global rule; `focusRing` from `styles`
+restates it for custom controls). Form controls (`inputClass`, `selectClass`, `textareaClass`) drop the outline
+for an opaque 2px accent ring just outside the border, so focus shows on an invalid (danger) or auto-filled
+control too. Never replace either with a translucent glow.
 
 Fonts: `font-sans` = Geist, `font-mono` = Geist Mono. No serif anywhere.
 
@@ -88,9 +95,14 @@ Standalone it has its own border. Rows inside a flush panel use `panelPadX` (fro
 `Field`: `label`, one child control, `hint?`, `error?`, `icon?`, `aside?`, `optional?`, `htmlFor?`. It injects
 `id`, `aria-describedby`, `aria-invalid` into the child. With `htmlFor` (a compound child, e.g. chips + input)
 it leaves the child alone; point the inner control at `${htmlFor}-hint` / `${htmlFor}-error` yourself.
-Style helpers (from `Field` or `styles`): `inputClass`, `selectClass`, `textareaClass`, `aiFilledClass`.
-`MultiSelect` also accepts `id`. `SearchInput` (`value`, `onValueChange`, input props, `className` for the
-wrapper): magnifier inside, Clear button once there is text; wrap it in a `Field` or give it an `aria-label`.
+Style helpers (from `Field` or `styles`): `inputClass`, `selectClass`, `textareaClass` (all `w-full`),
+`compactSelectClass` (a narrow select beside another control, e.g. the currency before an amount: tighter
+padding, no `w-full`, so set its width yourself), `aiFilledClass` (a tint only: the border stays `control-line`
+and the Field's `aside` says where the value came from).
+`MultiSelect` (`options`, `selected`, `onChange`, `placeholder`, `icon?`, `loading?`, `id?`): the trigger is named
+by its `Field` label (or `ariaLabel` when there is none); `listLabel?` names the popup listbox, e.g.
+"Departments" (falls back to `ariaLabel`, then `placeholder`). Its options show a `Checkbox`.
+`SearchInput` (`value`, `onValueChange`, input props, `className` for the wrapper): magnifier inside, Clear button once there is text; wrap it in a `Field` or give it an `aria-label`.
 
 ```tsx
 <form className={cn(panelClass, "flex flex-col")}>
@@ -104,7 +116,15 @@ wrapper): magnifier inside, Clear button once there is text; wrap it in a `Field
 From `@/components/ui/FormSection`: `FormSection` (`title?`, `description?`, `actions?`, `flush?`; a ruled group
 of fields, stacked with 16px gaps), `FieldGrid` (`min?` px, default 200: auto-fit columns of fields; use it for
 every side-by-side field row), `SectionRow` (`min?`: sections side by side, split by a rule), `FormFooter`
-(the sticky action strip at the foot of a form sheet, above the mobile tab bar).
+(the sticky action strip at the foot of a form sheet, at `bottom: var(--tabbar-h)`, so just above the mobile
+tab bar and at the edge from `lg`; while mounted it publishes its measured height, which grows when it wraps,
+as `--form-footer-h` on `<html>` for fixed layers such as toasts).
+
+`Checkbox` (`checked`, `partial?` for a "select all" dash, `className?`): the visual 16px box only
+(`border-control-line`; checked = accent fill + tick), `aria-hidden`. Use it wherever a checkbox shows: inside a
+row that is itself the control (a listbox option), or beside an `sr-only` native `<input type="checkbox">` in a
+`<label>` row, which carries the state and focus (show focus on the row with `has-[:focus-visible]:`). Don't
+style a native checkbox with `accent-*` instead.
 
 `Badge` (static): `tone?: "neutral" | "accent" | "amber" | "success" | "danger"`, `icon?`, `dot?`.
 `Chip` (44px toggle filter, `aria-pressed`): `pressed?`, `icon?` + button props; with `role="radio"` (inside a
@@ -142,20 +162,30 @@ truncates; the share and amount never do.
 `ConfirmDialog` (from `@/components/ui/ConfirmDialog`): destructive confirmation; can't be dismissed while `busy`.
 `Modal` (and the palette and the phone nav drawer) move focus in, trap Tab, close on Escape only when they are
 the topmost layer, and return focus to the opener (`useDialogLayer` in `@/hooks/useDialogLayer`; reuse it for
-any new overlay). `DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
+any new overlay). Keys go only to the topmost layer; an open layer locks `#main`'s scrolling (ref-counted);
+if the opener is gone on close, focus falls back to the layer below, then `#main`. A popup such as MultiSelect's
+menu opens with `{ popup: true, returnFocus }`: no focus trap or scroll lock, Tab closes it and continues from
+its trigger. The phone drawer closes itself once the viewport reaches `lg`. `DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
 `variant?`, `icon?`, `disabled?`, `busyLabel?`, children (e.g. a selection summary) go before the buttons.
 Every dialog with actions ends with one of these (or `ModalFooter` from `Modal` for anything else).
 
 Helpers in `@/components/ui/styles`: `buttonClass()`, `iconButtonClass()`, `rowClass` (hairline + hover
-tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass`, `panelClass`, `panelPadX` (and `panelPadL`,
+tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass` (accent text; dims when `disabled`),
+`textButtonClass` (a link-styled `<button>`, or a link that acts like one: 40px tall, 13px, icon gap; a ghost
+`Button`'s ink text can't be recoloured), `inlineLinkClass` (a small standalone link with a 24px minimum target,
+WCAG 2.5.8; links inside a sentence can stay `linkClass`), `panelClass`, `panelPadX` (and `panelPadL`,
 its left side only, for rows with trailing icon buttons), `transition`,
 `focusRing`, `ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
 `className` can't override a class the primitive already sets; add a prop or variant instead).
 `useMediaQuery(query)` lives in `@/hooks/useMediaQuery`.
 
 Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Skeleton` (+ page skeletons),
-`Spinner` (`decorative` when visible text says what is loading) / `InlineLoader` (one status, named by its label),
-`Toast` (bottom-right, lifted above the mobile tab bar and any sticky `FormFooter` so it never covers Save or page-header actions),
+`Spinner` (`decorative` when visible text says what is loading; `tone?: "accent" | "current"`, `current` inside
+buttons) / `InlineLoader` (one status, named by its label),
+`Toast` (`toast(message, type?, { action?, durationMs? })` from `useToast`; at the bottom: full width with 16px
+gutters on phones, bottom-right and at most 24rem wide from `sm`; it sits 12px above the mobile tab bar and any
+mounted `FormFooter` (`--tabbar-h` + `--form-footer-h`), and from `lg` at least 112px up so it clears a list's
+"Load more" strip: it never covers Save, a total or page-header actions),
 `MultiSelect`, `CommandPalette`,
 `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
 
@@ -166,17 +196,21 @@ section context, ⌘K search, theme, New expense) and on phones the `MobileTabBa
 Add, Trips, More → drawer; More is highlighted on pages only the drawer links to). Nav items live in
 `src/components/layout/nav.ts` (shared with ⌘K). Pages
 render straight into `<main>`; **do not** add a max-width wrapper or page padding of your own, and start
-each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the page root.
+each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the page root, plus
+`animate-fade-in` (every page root fades in the same way; reduced motion turns it off).
 
 ## Layout rules
 
 - Fluid, never a centered column: wrap with `flex flex-wrap` + `basis-[…] grow` or
   `grid-cols-[repeat(auto-fit,minmax(min(Npx,100%),1fr))]`. Test 390px, 1024px, 1440px, 2000px.
-- Breakpoints: shell switches at `lg` (1024px). Inside panels prefer container queries
-  (`[container-type:inline-size]` + `@container`-style arbitrary CSS) over viewport breakpoints.
+- Breakpoints: shell switches at `lg` (1024px). Inside panels prefer container queries over viewport
+  breakpoints: `[container-type:inline-size]` on the wrapper, then `[@container(min-width:620px)]:grid-cols-…`
+  on its children (no space or `_` after `@container`, so every query reads the same).
 - Ledger tables: a 4-column grid row (date · expense · category/department · amount) that collapses to
   2 columns (title block · amount) when the panel is under ~620px; the date and category move into the
   sub-line. Row height ≥ 56px, hairline `border-rule-2` between rows, `rowClass` for hover.
+  Rows pad with `ledgerPad()` (`panelPadX`; nested in a trip band, that plus 22px). Row hover actions sit over the
+  amount cell, which hides while they show, so they never cover the title or category.
 - Touch targets ≥ 44px (40px minimum for dense secondary controls).
 - Copy is sentence case everywhere: buttons, dialog titles, labels ("Add department", "Update rate").
 
@@ -200,3 +234,10 @@ use the nav icons from `nav.ts` for sections and `CategoryGlyph` for categories.
 - Don't: gradient banners, coloured icon tiles on every card, shadows on panels, `rounded-xl/2xl`,
   serif or extra font families, `max-w-6xl mx-auto` wrappers, raw hex colours, tailwind palette colours
   (`emerald-500`, `blue-400`…) for meaning, per-page re-implementations of buttons/inputs.
+
+## Page shells
+
+`not-found` and `global-error` share `StatusPage` (`@/components/layout/StatusPage`). The theme boot script and
+storage key live in `@/lib/theme` (a plain module, so a server layout gets the string); `global-error` renders the
+script in its own `<head>` because it replaces the root layout. Month-key helpers (`monthFromKey`, `monthProgress`)
+are in `@/lib/month`.

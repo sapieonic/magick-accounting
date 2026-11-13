@@ -19,7 +19,7 @@ export default function Header() {
   const section = currentSection(pathname);
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b border-rule bg-background px-[var(--pad)] py-2.5 sm:gap-3">
+    <header className="z-30 flex min-h-16 items-center gap-2 border-b border-rule bg-background px-[var(--pad)] py-2.5 sm:gap-3">
       <div className="mr-auto flex min-w-0 items-center gap-2.5 lg:mr-0">
         {/* 44px hit area around the 28px mark; -ml-2 keeps the mark on the page edge. */}
         <Link

@@ -8,7 +8,7 @@ import SegmentedControl, { type SegmentOption } from "@/components/ui/SegmentedC
 import SplitBar from "@/components/ui/SplitBar";
 import { Dot } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE, focusRing, linkClass } from "@/components/ui/styles";
+import { ICON_STROKE, textButtonClass } from "@/components/ui/styles";
 import { moneyToCents } from "@/lib/asset";
 import { formatCurrency } from "@/lib/currency";
 import { getPaymentSplitError, type PaymentEntrySource } from "@/lib/expense";
@@ -313,12 +313,7 @@ function PayerRows({ payments, onChange, members, amount, currencySymbol, curren
       </ul>
 
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        {/* Link-style: a ghost Button's ink text can't be recoloured (cn has no tailwind-merge). */}
-        <button
-          type="button"
-          onClick={addPayment}
-          className={cn(linkClass, focusRing, "inline-flex min-h-10 items-center gap-1.5 rounded-control text-[13px]")}
-        >
+        <button type="button" onClick={addPayment} className={textButtonClass}>
           <Plus aria-hidden="true" size={16} strokeWidth={ICON_STROKE} />
           Add payment
         </button>

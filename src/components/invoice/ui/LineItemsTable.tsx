@@ -26,18 +26,20 @@ interface LineItemsTableProps {
 
 /**
  * Columns: # · description · qty · rate · amount · remove. Description takes
- * all the free width; the number columns are only as wide as their figures.
- * Below 560px of table width each row stacks into a small two-column card
+ * all the free width; the number columns are sized for their largest figures
+ * (qty "1000.5", rate "10000000.00", amount up to "₹1,00,00,00,000.00" and
+ * growing past that rather than running under the remove button).
+ * Below 640px of table width each row stacks into a small two-column card
  * (container query).
  */
 const rowGrid = cn(
   "grid grid-cols-2 gap-x-3 gap-y-2 [grid-template-areas:'idx_del'_'desc_desc'_'qty_rate'_'amt_amt']",
-  "[@container_(min-width:560px)]:grid-cols-[1.5rem_minmax(0,1fr)_4.5rem_7rem_7.5rem_2.75rem]",
-  "[@container_(min-width:560px)]:items-center",
-  "[@container_(min-width:560px)]:[grid-template-areas:'idx_desc_qty_rate_amt_del']"
+  "[@container(min-width:640px)]:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_8rem_minmax(9.5rem,auto)_2.75rem]",
+  "[@container(min-width:640px)]:items-center",
+  "[@container(min-width:640px)]:[grid-template-areas:'idx_desc_qty_rate_amt_del']"
 );
 
-const narrowOnly = "[@container_(min-width:560px)]:hidden";
+const narrowOnly = "[@container(min-width:640px)]:hidden";
 const numInput = cn(inputClass, "num text-right");
 
 /** Editable ruled table of invoice line items with a live amount per row. */
@@ -46,7 +48,7 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
     <div className="[container-type:inline-size]">
       <div
         aria-hidden="true"
-        className={cn(rowGrid, "cap hidden border-y border-rule-2 bg-sunk py-2 text-ink-3 [@container_(min-width:560px)]:grid", panelPadX)}
+        className={cn(rowGrid, "cap hidden border-y border-rule-2 bg-sunk py-2 text-ink-3 [@container(min-width:640px)]:grid", panelPadX)}
       >
         <span className="[grid-area:idx]">#</span>
         <span className="[grid-area:desc]">Description</span>
@@ -62,7 +64,7 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
           return (
             <li
               key={row.id}
-              className={cn(rowGrid, "border-b border-rule-2 py-3 [@container_(min-width:560px)]:py-2", panelPadX)}
+              className={cn(rowGrid, "border-b border-rule-2 py-3 [@container(min-width:640px)]:py-2", panelPadX)}
             >
               <span className="cap self-center text-ink-3 [grid-area:idx]">
                 <span className={narrowOnly}>Item </span>
@@ -96,7 +98,7 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
                 aria-label={`Item ${n} rate in rupees`}
                 className={cn(numInput, "[grid-area:rate]")}
               />
-              <span className="flex items-baseline justify-between gap-2 [grid-area:amt] [@container_(min-width:560px)]:justify-end">
+              <span className="flex items-baseline justify-between gap-2 [grid-area:amt] [@container(min-width:640px)]:justify-end">
                 <span className={cn("cap text-ink-3", narrowOnly)}>Amount</span>
                 <span className="num whitespace-nowrap text-sm font-medium text-ink">{formatRupees(amount)}</span>
               </span>

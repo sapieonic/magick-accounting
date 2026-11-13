@@ -122,6 +122,7 @@ export default function TelegramBotSettings({ id = "telegram" }: { id?: string }
       id={id}
       className={settingsSectionClass}
       title="Telegram bot"
+      description="Let people add expenses by sending receipts, invoices and messages to a Telegram bot."
       meta={
         view && (
           <span className="inline-flex items-center gap-1.5">
@@ -145,10 +146,6 @@ export default function TelegramBotSettings({ id = "telegram" }: { id?: string }
       }
     >
       <div className="flex flex-col gap-5">
-        <p className="text-sm text-ink-2">
-          Let people add expenses by sending receipts, invoices and messages to a Telegram bot.
-        </p>
-
         {!view && !loadError && (
           <div className="flex justify-center py-6">
             <Spinner />

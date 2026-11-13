@@ -138,4 +138,14 @@ describe("AddExistingExpensesModal", () => {
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(api.get).toHaveBeenCalledWith(`/api/trips/${TRIP_ID}/candidates`);
   });
+
+  it("draws the row checkboxes with the control-line border", async () => {
+    renderModal(true);
+    const dialog = screen.getByRole("dialog", { name: "Add existing expenses" });
+    const row = (await within(dialog).findByText("Airport cab")).closest("label")!;
+    const box = within(row).getByRole("checkbox", { name: "Airport cab" }).nextElementSibling!;
+    expect(box).toHaveAttribute("aria-hidden", "true");
+    expect(box).toHaveClass("border-control-line");
+    expect(box).not.toHaveClass("border-rule");
+  });
 });

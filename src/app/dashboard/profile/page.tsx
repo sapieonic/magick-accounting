@@ -35,7 +35,7 @@ export default function ProfilePage() {
   const role = ROLES[user.role];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex animate-fade-in flex-col gap-6">
       <div className="flex items-center gap-4">
         <Avatar name={user.name} photoURL={user.photoURL} size={56} />
         <PageHeader

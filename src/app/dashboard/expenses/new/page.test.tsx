@@ -515,17 +515,34 @@ describe("NewExpensePage foreign currency", () => {
     });
   });
 
-  it("sizes the currency select with a wrapper, so it can't squeeze the amount", async () => {
+  it("keeps the currency select compact and the amount row wide, so the amount input isn't squeezed", async () => {
     render(<NewExpensePage />);
     const currency = await screen.findByLabelText("Currency");
 
-    // cn() has no tailwind-merge: a width passed next to selectClass's w-full loses to it.
-    expect(currency.parentElement).toHaveClass("w-[7.5rem]", "shrink-0");
+    // cn() has no tailwind-merge: the compact select has no w-full, so its own ~88px width applies.
+    expect(currency).toHaveClass("w-[5.5rem]", "shrink-0");
+    expect(currency).not.toHaveClass("w-full");
+    // Amount (with the select beside it) sits in a grid of >= 300px columns, not the default 200px.
+    const amountGrid = screen.getByLabelText(/^amount/i).closest<HTMLElement>("[style]");
+    expect(amountGrid?.style.getPropertyValue("--field-min")).toBe("300px");
+    expect(screen.getByLabelText("Date").closest<HTMLElement>("[style]")?.style.getPropertyValue("--field-min")).toBe(
+      "200px"
+    );
     const form = screen.getByRole("form", { name: "Expense details" });
     for (const element of form.querySelectorAll("[class]")) {
       const widths = [...element.classList].filter((c) => /^w-/.test(c));
       if (widths.includes("w-full")) expect(widths).toEqual(["w-full"]);
     }
+  });
+
+  it("sticks the receipt column only while it sits beside the form", async () => {
+    render(<NewExpensePage />);
+    const receipt = await screen.findByRole("region", { name: "Receipt" });
+
+    // A viewport breakpoint (lg:sticky) also stuck it while it was stacked above the form.
+    expect(receipt.className).not.toMatch(/(^|\s)(\w+:)?sticky(\s|$)/);
+    expect(receipt).toHaveClass("[@container(min-width:804px)]:sticky", "[@container(min-width:804px)]:top-6");
+    expect(receipt.parentElement).toHaveClass("flex-wrap", "[container-type:inline-size]");
   });
 
   it("previews the INR amount at today's rate", async () => {

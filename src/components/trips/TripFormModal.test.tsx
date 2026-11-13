@@ -116,6 +116,16 @@ describe("TripFormModal", () => {
     expect(onSaved).toHaveBeenCalledWith(savedTrip);
   });
 
+  it("says people are loading, not that there are none, while the lookups load", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: null, isAdmin: false } as any);
+    vi.mocked(api.get).mockReturnValue(new Promise(() => {}));
+    renderModal();
+
+    const travelers = screen.getByRole("button", { name: "Travelers" });
+    expect(travelers).toHaveTextContent("Loading people...");
+    expect(travelers).not.toHaveTextContent("None available");
+  });
+
   it("shows the validation message instead of posting", async () => {
     const user = userEvent.setup();
     renderModal();

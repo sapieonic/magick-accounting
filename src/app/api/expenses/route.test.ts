@@ -401,7 +401,7 @@ describe("GET /api/expenses", () => {
       "Hotel",
       "Books",
     ]);
-    expect(body.pagination).toEqual({ page: 1, limit: 3, total: 4, pages: 2 });
+    expect(body.pagination).toEqual({ page: 1, limit: 3, total: 4, pages: 2, offset: 0, nextOffset: 3, hasMore: true });
     expect(Object.keys(body.trips)).toEqual([String(goa)]);
     expect(body.trips[String(goa)]).toEqual(
       expect.objectContaining({
@@ -467,6 +467,29 @@ describe("GET /api/expenses", () => {
     );
   });
 
+  it("starts a grouped page at an item offset", async () => {
+    // Items: Lunch, Goa (3 expenses), Books, Orphan's trip. Offset 2 starts at Books.
+    const body = await (await get("?groupTrips=true&offset=2&limit=3")).json();
+
+    expect(body.expenses.map((e: { title: string }) => e.title)).toEqual(["Books", "Orphan"]);
+    expect(body.pagination).toEqual(
+      expect.objectContaining({ offset: 2, nextOffset: 4, total: 4, hasMore: false })
+    );
+  });
+
+  it("starts a flat page at an expense offset", async () => {
+    vi.mocked(Expense.countDocuments).mockResolvedValue(6 as never);
+
+    const body = await (await get("?page=2&limit=2&offset=3")).json();
+
+    const query = vi.mocked(Expense.find).mock.results[0].value;
+    expect(query.skip).toHaveBeenCalledWith(3);
+    expect(query.limit).toHaveBeenCalledWith(2);
+    expect(body.pagination).toEqual(
+      expect.objectContaining({ page: 2, offset: 3, nextOffset: 3 + body.expenses.length, total: 6 })
+    );
+  });
+
   it("handles a page with no matches", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([{ items: [], total: [] }] as never);
 
@@ -475,7 +498,7 @@ describe("GET /api/expenses", () => {
     expect(body).toEqual({
       expenses: [],
       trips: {},
-      pagination: { page: 1, limit: 20, total: 0, pages: 0 },
+      pagination: { page: 1, limit: 20, total: 0, pages: 0, offset: 0, nextOffset: 0, hasMore: false },
     });
     expect(Expense.find).not.toHaveBeenCalled();
     expect(Trip.find).not.toHaveBeenCalled();
@@ -510,7 +533,7 @@ describe("GET /api/expenses", () => {
 
     expect(body.expenses).toHaveLength(6);
     expect(body).not.toHaveProperty("trips");
-    expect(body.pagination).toEqual({ page: 1, limit: 20, total: 6, pages: 1 });
+    expect(body.pagination).toEqual({ page: 1, limit: 20, total: 6, pages: 1, offset: 0, nextOffset: 6, hasMore: false });
     const query = vi.mocked(Expense.find).mock.results[0].value;
     expect(query.sort).toHaveBeenCalledWith({ date: -1 });
     expect(query.populate).toHaveBeenCalledWith("trip", "name");

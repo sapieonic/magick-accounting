@@ -19,7 +19,7 @@ import Spinner from "@/components/ui/Spinner";
 import StatBand, { Stat } from "@/components/ui/StatBand";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/components/ui/cn";
-import { linkClass, ICON_STROKE } from "@/components/ui/styles";
+import { inlineLinkClass, linkClass, ICON_STROKE } from "@/components/ui/styles";
 import AssetStatusBadge, { ASSET_STATUSES, TERMINAL_STATUSES } from "@/components/assets/AssetStatusBadge";
 import { AssetEventList, AssignmentList, type AssetAssignment, type AssetEvent } from "@/components/assets/AssetHistory";
 import DetailList from "@/components/ui/DetailList";
@@ -292,7 +292,7 @@ export default function AssetDetailPage() {
             asset.canViewFinancials && (
               <Link
                 href={`/dashboard/expenses/${purchase._id}/edit`}
-                className={cn(linkClass, "inline-flex min-h-6 items-center gap-1 text-[13px]")}
+                className={cn(inlineLinkClass, "gap-1 text-[13px]")}
               >
                 View expense <ExternalLink aria-hidden="true" size={13} strokeWidth={ICON_STROKE} />
               </Link>
@@ -305,6 +305,7 @@ export default function AssetDetailPage() {
               : "Purchase financials and receipt are visible only to the expense owner and administrators."}
           </p>
           <DetailList
+            layout="columns"
             items={[
               { label: "Expense", icon: FileText, value: <span className="font-medium">{purchase.title}</span> },
               {
@@ -317,7 +318,7 @@ export default function AssetDetailPage() {
                 icon: Layers,
                 value:
                   asset.canViewFinancials && asset.allocatedAmount != null && asset.allocatedGstAmount != null ? (
-                    <span className="flex flex-col items-end">
+                    <span className="flex flex-col items-start">
                       <span className="num font-medium">{money(asset.allocatedAmount)}</span>
                       <span className="num text-xs text-ink-3">GST {money(asset.allocatedGstAmount)}</span>
                     </span>
@@ -328,7 +329,9 @@ export default function AssetDetailPage() {
               {
                 label: "Receipt",
                 icon: Paperclip,
-                value: purchase.receiptKey ? (
+                value: !asset.canViewFinancials ? (
+                  <span className="text-ink-3">Restricted</span>
+                ) : purchase.receiptKey ? (
                   <button
                     type="button"
                     onClick={() => openReceipt(asset._id, purchase.receiptKey)}

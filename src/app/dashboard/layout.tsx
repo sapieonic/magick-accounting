@@ -47,9 +47,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Fluid: no max-width column. The padding lives on an inner wrapper, not
             on the scroller: sticky offsets are measured from the scroller's padding
             edge, so padding on <main> would push sticky footers and side panels off
-            their intended positions. Bottom padding clears the mobile tab bar. */}
+            their intended positions. Bottom padding clears the mobile tab bar
+            (--tabbar-h, 0 from lg up). */}
         <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto focus:outline-none">
-          <div className="px-[var(--pad)] pb-[calc(96px+env(safe-area-inset-bottom))] pt-6 lg:pb-10">
+          <div className="px-[var(--pad)] pb-[calc(var(--tabbar-h)+40px)] pt-6">
             {children}
           </div>
         </main>

@@ -128,7 +128,7 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
         <EmptyState
           icon={<Coins />}
           title="No currencies configured"
-          description="Run seed or add one manually."
+          description="Add the currencies your expenses are paid in."
         />
       ) : (
         <ul className="flex flex-col">

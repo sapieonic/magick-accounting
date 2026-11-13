@@ -88,7 +88,7 @@ describe("Modal", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('sets body overflow to "hidden" when open and restores it on close', () => {
+  it('sets body overflow to "hidden" when open and restores it on close (no #main scroller)', () => {
     const { rerender } = render(
       <Modal isOpen onClose={vi.fn()} title="My Modal">
         <p>Body</p>
@@ -102,6 +102,25 @@ describe("Modal", () => {
       </Modal>
     );
     expect(document.body.style.overflow).toBe("");
+  });
+
+  it("locks the dashboard's #main scroller (not the body) while open", () => {
+    function Shell({ open }: { open: boolean }) {
+      return (
+        <main id="main" tabIndex={-1}>
+          <Modal isOpen={open} onClose={vi.fn()} title="My Modal">
+            <p>Body</p>
+          </Modal>
+        </main>
+      );
+    }
+    const { rerender } = render(<Shell open />);
+    const main = document.getElementById("main")!;
+    expect(main.style.overflow).toBe("hidden");
+    expect(document.body.style.overflow).toBe("");
+
+    rerender(<Shell open={false} />);
+    expect(main.style.overflow).toBe("");
   });
 
   it("restores body overflow on unmount", () => {
