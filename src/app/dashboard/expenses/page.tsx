@@ -1,27 +1,47 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Building2,
+  Calendar,
+  ChevronDown,
+  Download,
+  Luggage,
+  MousePointerClick,
+  Plus,
+  Receipt,
+  Search,
+  Tag,
+  User as UserIcon,
+  Wallet,
+  X,
+} from "lucide-react";
+import { format, endOfMonth } from "date-fns";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
+import { formatBaseCurrency } from "@/lib/currency";
+import { buildCsv, downloadCsv } from "@/lib/csv";
+import { getPaymentBreakdown } from "@/lib/expense";
+import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
-import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
-import {
-  Plus, Receipt, Download, Plane,
-  Search, Filter, ChevronDown,
-  Calendar, TrendingUp, User as UserIcon, Tag, Wallet, X as XIcon,
-} from "lucide-react";
-import { format, endOfMonth } from "date-fns";
-import { formatBaseCurrency } from "@/lib/currency";
-import { buildCsv, downloadCsv } from "@/lib/csv";
-import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
-import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
-import ExpenseCard from "@/components/expenses/ExpenseCard";
+import PageHeader from "@/components/ui/PageHeader";
+import Button, { IconButton } from "@/components/ui/Button";
+import Field, { inputClass, selectClass } from "@/components/ui/Field";
+import StatBand, { Stat } from "@/components/ui/StatBand";
+import SplitBar from "@/components/ui/SplitBar";
+import Skeleton from "@/components/ui/Skeleton";
+import { cn } from "@/components/ui/cn";
+import { focusRing, panelClass, transition } from "@/components/ui/styles";
+import BandCell from "@/components/expenses/ledger/BandCell";
+import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
+import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
+import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
+import { useMediaQuery } from "@/components/expenses/ledger/useMediaQuery";
 import TripCluster, { buildExpenseListItems, tripItemKey } from "@/components/trips/TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
@@ -37,14 +57,19 @@ interface ExpenseSummary {
   /** The "Paid by" person's own share of the listed expenses. */
   payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
 }
+/** Company vs pocket spend of the filtered expenses (base currency). */
+interface PaymentSplit { company: number; pocket: number }
 
 const CUSTOM_DATE_PRESET = "custom";
 const PAGE_SIZE = 25;
 const EXPORT_LIMIT = 10000;
 const UNDO_WINDOW_MS = 5000;
+/** Wide enough for the ledger plus the detail side panel. */
+const SIDE_PANEL_QUERY = "(min-width: 1280px)";
+const DETAIL_PANEL_ID = "expense-detail-panel";
 
 function getDatePresetOptions(): { value: string; label: string }[] {
-  const options = [{ value: "", label: "All Time" }];
+  const options = [{ value: "", label: "All time" }];
   const now = new Date();
   for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -53,7 +78,7 @@ function getDatePresetOptions(): { value: string; label: string }[] {
       label: format(d, "MMMM yyyy"),
     });
   }
-  options.push({ value: CUSTOM_DATE_PRESET, label: "Custom Range" });
+  options.push({ value: CUSTOM_DATE_PRESET, label: "Custom range" });
   return options;
 }
 
@@ -84,10 +109,65 @@ interface PendingDelete {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/** An active filter, shown as a chip that removes it. */
+function FilterChip({ children, onRemove }: { children: ReactNode; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className={cn(
+        "inline-flex h-10 max-w-full cursor-pointer items-center gap-1.5 rounded-control border border-accent-line bg-accent-soft pl-3 pr-2 text-[13px] font-medium text-accent hover:bg-tint-2",
+        transition,
+        focusRing
+      )}
+    >
+      <span className="ell">{children}</span>
+      <X aria-hidden="true" size={14} strokeWidth={1.75} className="shrink-0" />
+      <span className="sr-only">(remove filter)</span>
+    </button>
+  );
+}
+
+/** On/off switch for the "Group trips" view. */
+function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      title={checked ? "Each trip is one expandable row. Switch off for a flat list." : "Show each trip's expenses as one expandable row"}
+      className={cn(
+        "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-control px-1 text-sm text-ink",
+        focusRing
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full",
+          transition,
+          checked ? "bg-accent" : "bg-rule"
+        )}
+      >
+        <span
+          className={cn(
+            "inline-block h-4 w-4 rounded-full bg-surface transition-transform duration-140",
+            checked ? "translate-x-[18px]" : "translate-x-0.5"
+          )}
+        />
+      </span>
+      <Luggage aria-hidden="true" size={16} strokeWidth={1.6} className="text-cat-tr" />
+      Group trips
+    </button>
+  );
+}
+
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
   const { isAdmin } = useAuth();
+  const sidePanel = useMediaQuery(SIDE_PANEL_QUERY);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   /** Trips on the loaded pages, keyed by id (grouped view only). */
   const [trips, setTrips] = useState<Record<string, TripSummary>>({});
@@ -95,10 +175,10 @@ export default function ExpensesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
 
-  /** The open row: an expense id, or `tripItemKey(tripId)` for a trip cluster. */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  /** Expense to open inside the expanded trip cluster (deep links). */
-  const [clusterExpenseId, setClusterExpenseId] = useState<string | null>(null);
+  /** The open expense: its detail shows in the side panel, or under its row. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** The expanded trip cluster, as `tripItemKey(tripId)`. */
+  const [openTripKey, setOpenTripKey] = useState<string | null>(null);
   /** Show each trip's expenses as one expandable row (`?view=flat` turns it off). */
   const [groupTrips, setGroupTrips] = useState(true);
 
@@ -113,7 +193,8 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
-  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
+  const [split, setSplit] = useState<PaymentSplit | null>(null);
+  const [splitRefreshKey, setSplitRefreshKey] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loadingLookups, setLoadingLookups] = useState(true);
@@ -121,7 +202,6 @@ export default function ExpensesPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
-  const [view, setView] = useState<"list" | "insights">("list");
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
@@ -284,8 +364,27 @@ export default function ExpensesPage() {
   );
 
   // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
-  // analytics rail reflects the active filters without refetching on "Load more".
+  // company/pocket split reflects the active filters without refetching on "Load more".
   const filterQuery = useMemo(() => buildFilterParams().toString(), [buildFilterParams]);
+
+  // Company vs pocket for the totals band; the list summary only has the total.
+  useEffect(() => {
+    if (!urlSynced) return;
+    let active = true;
+    api
+      .get(`/api/dashboard/charts?${filterQuery}`)
+      .then((data: { paymentSources?: { name: string; total: number }[] }) => {
+        if (!active) return;
+        const total = (name: string) => data.paymentSources?.find((row) => row.name === name)?.total ?? 0;
+        setSplit({ company: total("company"), pocket: total("pocket") });
+      })
+      .catch(() => {
+        // Keep the last good split; the band still shows the total.
+      });
+    return () => {
+      active = false;
+    };
+  }, [urlSynced, filterQuery, splitRefreshKey]);
 
   // Commit any deletes still inside their undo window. Called before reloading
   // the list (so the server result matches the UI) and on unmount.
@@ -333,12 +432,10 @@ export default function ExpensesPage() {
         if (pendingExpandId.current) {
           const target = loaded.find((e) => e._id === pendingExpandId.current);
           const tripId = target?.trip?._id;
-          if (target && tripId && loadedTrips[tripId]) {
-            // The expense lives inside a trip cluster: open both.
-            setExpandedId(tripItemKey(tripId));
-            setClusterExpenseId(target._id);
-          } else if (target) {
-            setExpandedId(target._id);
+          if (target) {
+            // An expense inside a trip cluster opens with its cluster.
+            if (tripId && loadedTrips[tripId]) setOpenTripKey(tripItemKey(tripId));
+            setSelectedId(target._id);
           }
           pendingExpandId.current = null;
         }
@@ -415,6 +512,17 @@ export default function ExpensesPage() {
     [expenses, groupTrips, trips]
   );
 
+  // Moves an expense's amounts in or out of the totals band (delete / undo).
+  const adjustTotals = (expense: Expense, sign: 1 | -1) => {
+    const { pocketBase, companyBase } = getPaymentBreakdown(expense);
+    setSummary((prev) => ({
+      ...prev,
+      totalAmount: prev.totalAmount + sign * baseAmount(expense),
+      totalExpenses: Math.max(0, prev.totalExpenses + sign),
+    }));
+    setSplit((prev) => prev && { company: prev.company + sign * companyBase, pocket: prev.pocket + sign * pocketBase });
+  };
+
   // Optimistically remove the expense and give the user a short undo window
   // before the delete is committed to the server.
   const handleDelete = (expense: Expense) => {
@@ -432,13 +540,9 @@ export default function ExpensesPage() {
       list.some((e) => e._id !== expense._id && keyOf(e) === itemKey);
 
     setExpenses((prev) => prev.filter((e) => e._id !== expense._id));
-    setSummary((prev) => ({
-      ...prev,
-      totalAmount: prev.totalAmount - (expense.amountInBaseCurrency ?? expense.amount),
-      totalExpenses: Math.max(0, prev.totalExpenses - 1),
-    }));
+    adjustTotals(expense, -1);
     if (!rowStaysListed(expenses)) setTotalCount((prev) => Math.max(0, prev - 1));
-    if (expandedId === expense._id) setExpandedId(null);
+    if (selectedId === expense._id) setSelectedId(null);
 
     const restore = () => {
       const rowReappears = !rowStaysListed(expensesRef.current);
@@ -447,11 +551,7 @@ export default function ExpensesPage() {
         next.splice(Math.min(index, next.length), 0, expense);
         return next;
       });
-      setSummary((prev) => ({
-        ...prev,
-        totalAmount: prev.totalAmount + (expense.amountInBaseCurrency ?? expense.amount),
-        totalExpenses: prev.totalExpenses + 1,
-      }));
+      adjustTotals(expense, 1);
       if (rowReappears) setTotalCount((prev) => prev + 1);
     };
 
@@ -460,7 +560,7 @@ export default function ExpensesPage() {
       pendingDeletes.current.delete(expense._id);
       try {
         await api.delete(`/api/expenses/${expense._id}`);
-        setAnalyticsRefreshKey((key) => key + 1);
+        setSplitRefreshKey((key) => key + 1);
       } catch {
         restore();
         toast("Failed to delete expense", "error");
@@ -484,406 +584,308 @@ export default function ExpensesPage() {
     });
   };
 
-  const toggleExpand = (key: string) => {
-    setExpandedId((prev) => (prev === key ? null : key));
-    // A deep-linked expense only opens with its cluster the first time.
-    setClusterExpenseId(null);
+  const toggleSelected = (expense: Expense | null) => {
+    setSelectedId((prev) => (expense && prev !== expense._id ? expense._id : null));
+  };
+
+  const toggleTrip = (key: string) => {
+    setOpenTripKey((prev) => (prev === key ? null : key));
   };
 
   const toggleGroupTrips = () => {
     // Keep the open expense open across the switch (it may move in or out of a cluster).
-    if (expandedId && !expandedId.startsWith("trip:")) pendingExpandId.current = expandedId;
-    else if (clusterExpenseId) pendingExpandId.current = clusterExpenseId;
-    setExpandedId(null);
-    setClusterExpenseId(null);
+    pendingExpandId.current = selectedId;
+    setSelectedId(null);
+    setOpenTripKey(null);
     setGroupTrips((prev) => !prev);
   };
 
+  const clearDateFilter = () => {
+    setDatePreset("");
+    setCustomFrom("");
+    setCustomTo("");
+  };
+
   const isFiltered = Boolean(search) || hasAnyFilter;
+  const selectedExpense = selectedId ? expenses.find((e) => e._id === selectedId) ?? null : null;
 
   if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
+  const periodLabel =
+    datePreset === CUSTOM_DATE_PRESET
+      ? `${customFrom || "…"} → ${customTo || "…"}`
+      : datePresetOptions.find((o) => o.value === datePreset)?.label ?? "All time";
+  const userName = (id: string) => users.find((u) => u._id === id)?.name;
+  const payerLabel = userName(filterPayer) ?? "this person";
+
   return (
-    <div className="animate-fade-in flex h-full min-h-0 flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Expenses</h1>
-          <p className="text-sm text-muted-foreground">Manage and track all expenses.</p>
-        </div>
-        <Link href="/dashboard/expenses/new" className="btn-primary shadow-md shadow-brand-500/20">
-          <Plus className="h-4 w-4" />
-          Add Expense
-        </Link>
-      </div>
+    <div className="animate-fade-in flex flex-col gap-6">
+      <PageHeader
+        title="Expenses"
+        meta={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            {isAdmin ? "Everyone" : "Your expenses"} · {periodLabel}
+            {refreshingExpenses && <InlineLoader label="Refreshing..." />}
+          </span>
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              icon={Download}
+              loading={exporting}
+              onClick={handleExport}
+              disabled={expenses.length === 0}
+              title="Download the currently filtered expenses as CSV"
+            >
+              Export CSV
+            </Button>
+            <Button icon={Plus} href="/dashboard/expenses/new">
+              New expense
+            </Button>
+          </>
+        }
+      />
 
-      {/* Filters — full width so they visibly drive both the list and the analytics rail */}
-      <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-        <div className="space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search expenses..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="input-field pl-10 pr-10"
-            />
+      <div className="flex flex-col gap-3">
+        <form
+          aria-label="Filters"
+          onSubmit={(e) => e.preventDefault()}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="relative min-w-0 flex-[3_1_240px]">
+            <Field label="Search" icon={Search}>
+              <input
+                type="text"
+                placeholder="Title, vendor, note"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className={cn(inputClass, "pr-11")}
+              />
+            </Field>
             {searchInput && (
-              <button
+              <IconButton
+                icon={X}
+                size="sm"
                 onClick={() => setSearchInput("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground"
                 aria-label="Clear search"
-              >
-                <XIcon className="h-4 w-4" />
-              </button>
+                className="absolute bottom-0.5 right-0.5"
+              />
             )}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="relative">
-              <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-400" />
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={datePreset}
-                onChange={(e) => setDatePreset(e.target.value)}
-                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                aria-label="Filter by date"
-              >
-                {datePresetOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <MultiSelect
-              options={departments.map((d) => ({ value: d._id, label: d.name }))}
-              selected={filterDepts}
-              onChange={setFilterDepts}
-              placeholder="All Departments"
-              ariaLabel="Filter by department"
-              icon={<Filter className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-blue-400" />}
-            />
-            <MultiSelect
-              options={categories.map((c) => ({ value: c._id, label: c.name }))}
-              selected={filterCats}
-              onChange={setFilterCats}
-              placeholder="All Categories"
-              ariaLabel="Filter by category"
-              icon={<Tag className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-amber-400" />}
-            />
-            {isAdmin && (
-              <div className="relative">
-                <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-400" />
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <select
-                  value={filterUser}
-                  onChange={(e) => setFilterUser(e.target.value)}
-                  className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                  aria-label="Filter by user"
-                >
-                  <option value="">All Users</option>
-                  {users.map((u) => (
-                    <option key={u._id} value={u._id}>{u.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {isAdmin && (
-              <div className="relative">
-                <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-400" />
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <select
-                  value={filterPayer}
-                  onChange={(e) => setFilterPayer(e.target.value)}
-                  className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                  aria-label="Filter by payer"
-                  title="Expenses counted towards this person on Spend by User"
-                >
-                  <option value="">Paid by anyone</option>
-                  {users.map((u) => (
-                    <option key={u._id} value={u._id}>Paid by {u.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Custom date range inputs */}
+          <Field label="Dates" icon={Calendar} className="flex-[1_1_150px]">
+            <select value={datePreset} onChange={(e) => setDatePreset(e.target.value)} className={selectClass}>
+              {datePresetOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
           {datePreset === CUSTOM_DATE_PRESET && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  From
-                </label>
+            <>
+              <Field label="From" className="flex-[1_1_150px]">
                 <input
                   type="date"
                   value={customFrom}
                   max={customTo || undefined}
                   onChange={(e) => setCustomFrom(e.target.value)}
-                  className="input-field w-full text-sm"
-                  aria-label="From date"
+                  className={inputClass}
                 />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  To
-                </label>
+              </Field>
+              <Field label="To" className="flex-[1_1_150px]">
                 <input
                   type="date"
                   value={customTo}
                   min={customFrom || undefined}
                   onChange={(e) => setCustomTo(e.target.value)}
-                  className="input-field w-full text-sm"
-                  aria-label="To date"
+                  className={inputClass}
                 />
-              </div>
-            </div>
+              </Field>
+            </>
           )}
-        </div>
-        {/* Active filter pills */}
+          <Field label="Department" icon={Building2} className="flex-[1_1_150px]">
+            <MultiSelect
+              options={departments.map((d) => ({ value: d._id, label: d.name }))}
+              selected={filterDepts}
+              onChange={setFilterDepts}
+              placeholder={`All ${departments.length}`}
+            />
+          </Field>
+          <Field label="Category" icon={Tag} className="flex-[1_1_150px]">
+            <MultiSelect
+              options={categories.map((c) => ({ value: c._id, label: c.name }))}
+              selected={filterCats}
+              onChange={setFilterCats}
+              placeholder={`All ${categories.length}`}
+            />
+          </Field>
+          {isAdmin && (
+            <Field label="Submitted by" icon={UserIcon} className="flex-[1_1_150px]">
+              <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} className={selectClass}>
+                <option value="">Anyone</option>
+                {users.map((u) => (
+                  <option key={u._id} value={u._id}>{u.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {isAdmin && (
+            <Field label="Paid by" icon={Wallet} className="flex-[1_1_150px]">
+              <select
+                value={filterPayer}
+                onChange={(e) => setFilterPayer(e.target.value)}
+                className={selectClass}
+                title="Expenses counted towards this person on Spend by User"
+              >
+                <option value="">Anyone</option>
+                {users.map((u) => (
+                  <option key={u._id} value={u._id}>{u.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <GroupTripsSwitch checked={groupTrips} onToggle={toggleGroupTrips} />
+        </form>
+
         {hasAnyFilter && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-            <span className="text-xs text-muted-foreground">Filters:</span>
-            {hasDateFilter && (
-              <button
-                onClick={() => {
-                  setDatePreset("");
-                  setCustomFrom("");
-                  setCustomTo("");
-                }}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
-              >
-                {datePreset === CUSTOM_DATE_PRESET
-                  ? `${customFrom || "…"} → ${customTo || "…"}`
-                  : datePresetOptions.find((o) => o.value === datePreset)?.label}{" "}
-                &times;
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="cap text-ink-3">Filtered by</span>
+            {hasDateFilter && <FilterChip onRemove={clearDateFilter}>{periodLabel}</FilterChip>}
             {filterDepts.map((id) => (
-              <button
-                key={id}
-                onClick={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20"
-              >
-                {departments.find((d) => d._id === id)?.name} &times;
-              </button>
+              <FilterChip key={id} onRemove={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}>
+                {departments.find((d) => d._id === id)?.name}
+              </FilterChip>
             ))}
             {filterCats.map((id) => (
-              <button
-                key={id}
-                onClick={() => setFilterCats((prev) => prev.filter((v) => v !== id))}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
-              >
-                {categories.find((c) => c._id === id)?.name} &times;
-              </button>
+              <FilterChip key={id} onRemove={() => setFilterCats((prev) => prev.filter((v) => v !== id))}>
+                {categories.find((c) => c._id === id)?.name}
+              </FilterChip>
             ))}
-            {filterUser && (
-              <button
-                onClick={() => setFilterUser("")}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
-              >
-                {users.find((u) => u._id === filterUser)?.name} &times;
-              </button>
-            )}
-            {filterPayer && (
-              <button
-                onClick={() => setFilterPayer("")}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
-              >
-                Paid by {users.find((u) => u._id === filterPayer)?.name} &times;
-              </button>
-            )}
+            {filterUser && <FilterChip onRemove={() => setFilterUser("")}>Submitted by {userName(filterUser)}</FilterChip>}
+            {filterPayer && <FilterChip onRemove={() => setFilterPayer("")}>Paid by {userName(filterPayer)}</FilterChip>}
           </div>
         )}
       </div>
 
-      {/* Mobile view toggle — hidden at xl where both panes are always visible */}
-      <div
-        className="flex rounded-xl border border-line bg-surface p-1 xl:hidden"
-        role="group"
-        aria-label="Toggle between expenses and insights"
-      >
-        <button
-          type="button"
-          onClick={() => setView("list")}
-          aria-pressed={view === "list"}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-            view === "list"
-              ? "bg-brand-500 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Expenses
-        </button>
-        <button
-          type="button"
-          onClick={() => setView("insights")}
-          aria-pressed={view === "insights"}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-            view === "insights"
-              ? "bg-brand-500 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Insights
-        </button>
-      </div>
+      <StatBand>
+        <Stat
+          headline
+          label={`${periodLabel} total`}
+          value={formatBaseCurrency(summary.totalAmount)}
+          sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}`}
+        />
+        <BandCell label="Company · pocket">
+          {split ? (
+            <SplitBar company={split.company} pocket={split.pocket} />
+          ) : (
+            <Skeleton className="h-3.5 w-full" />
+          )}
+        </BandCell>
+        {filterPayer && summary.payerSpend && (
+          <Stat
+            label={`Paid by ${payerLabel}`}
+            icon={UserIcon}
+            value={formatBaseCurrency(summary.payerSpend.totalSpend)}
+            sub={`${formatBaseCurrency(summary.payerSpend.pocketSpend)} pocket · ${formatBaseCurrency(summary.payerSpend.companySpend)} company`}
+          />
+        )}
+      </StatBand>
 
-      {/* Split pane: expense list (left) + live analytics rail (right) */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        {/* Left: summary bar + expense list */}
+      <div className="flex flex-wrap items-start gap-5">
         <section
-          aria-label="Expenses list"
-          className={`min-w-0 space-y-6 ${view === "list" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
+          aria-label="Expense ledger"
+          className={cn(panelClass, LEDGER_CONTAINER, "min-w-0 grow-[999] basis-[520px] overflow-hidden")}
         >
-          {/* Summary bar — sticky so the total stays visible on long lists */}
-          <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
-                <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
-                  <TrendingUp className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                    {datePreset === CUSTOM_DATE_PRESET
-                      ? "Custom Range"
-                      : datePreset
-                        ? datePresetOptions.find((o) => o.value === datePreset)?.label
-                        : "All Time"}{" "}
-                    Total
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
-                    {formatBaseCurrency(summary.totalAmount)}
-                  </p>
-                </div>
-                <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                  {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
-                </span>
-                {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
-              </div>
-              {filterPayer && summary.payerSpend && (
-                <div className="rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-300">
-                    Paid by {users.find((u) => u._id === filterPayer)?.name ?? "this person"}
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-violet-900 dark:text-violet-100">
-                    {formatBaseCurrency(summary.payerSpend.totalSpend)}
-                  </p>
-                  <p className="text-xs tabular-nums text-muted-foreground">
-                    {formatBaseCurrency(summary.payerSpend.pocketSpend)} pocket ·{" "}
-                    {formatBaseCurrency(summary.payerSpend.companySpend)} company
-                  </p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={groupTrips}
-                  onClick={toggleGroupTrips}
-                  className="inline-flex items-center gap-2 rounded-xl border border-line-strong bg-surface px-3 py-2.5 text-sm font-semibold text-foreground shadow-sm transition-all duration-200 hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background"
-                  title={groupTrips ? "Each trip is one expandable row. Switch off for a flat list." : "Show each trip's expenses as one expandable row"}
-                >
-                  <Plane className="h-4 w-4 text-sky-500" aria-hidden="true" />
-                  Group trips
-                  <span
-                    aria-hidden="true"
-                    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${
-                      groupTrips ? "bg-brand-500" : "bg-line-strong"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                        groupTrips ? "translate-x-[18px]" : "translate-x-0.5"
-                      }`}
-                    />
-                  </span>
-                </button>
-                <button
-                  onClick={handleExport}
-                  disabled={exporting || expenses.length === 0}
-                  className="btn-secondary text-sm"
-                  title="Download the currently filtered expenses as CSV"
-                >
-                  {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
-                  Export CSV
-                </button>
-              </div>
-            </div>
-          </div>
-
           {listItems.length === 0 ? (
             <EmptyState
-              icon={<Receipt className="h-8 w-8" />}
+              icon={<Receipt />}
               title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
-              description={search || hasAnyFilter ? "Try adjusting your filters." : "Create your first expense to get started."}
+              description={isFiltered ? "Try adjusting your filters." : "Create your first expense to get started."}
               action={
-                !search && !hasAnyFilter ? (
-                  <Link href="/dashboard/expenses/new" className="btn-primary">
-                    <Plus className="h-4 w-4" />
-                    Add Expense
-                  </Link>
+                !isFiltered ? (
+                  <Button icon={Plus} href="/dashboard/expenses/new">
+                    Add expense
+                  </Button>
                 ) : undefined
               }
             />
           ) : (
-            <div className="space-y-2.5">
-              {listItems.map((item) =>
-                item.kind === "trip" ? (
-                  <TripCluster
-                    key={item.key}
-                    trip={item.trip}
-                    expenses={item.expenses}
-                    expanded={expandedId === item.key}
-                    onToggle={() => toggleExpand(item.key)}
-                    onDelete={handleDelete}
-                    initialExpandedId={expandedId === item.key ? clusterExpenseId : null}
-                    filtered={isFiltered}
-                  />
-                ) : (
-                  <ExpenseCard
-                    key={item.key}
-                    expense={item.expense}
-                    expanded={expandedId === item.key}
-                    onToggle={() => toggleExpand(item.key)}
-                    onDelete={handleDelete}
-                    showTripBadge={!groupTrips}
-                  />
-                )
-              )}
-
-              {/* Pagination */}
-              <div className="flex flex-col items-center gap-3 pt-3">
-                <p className="text-xs text-muted-foreground">
+            <>
+              <LedgerHead />
+              <ul>
+                {listItems.map((item) => (
+                  <li key={item.key}>
+                    {item.kind === "trip" ? (
+                      <TripCluster
+                        trip={item.trip}
+                        expenses={item.expenses}
+                        expanded={openTripKey === item.key}
+                        onToggle={() => toggleTrip(item.key)}
+                        selectedId={selectedId}
+                        onSelect={toggleSelected}
+                        inlineDetail={!sidePanel}
+                        detailId={DETAIL_PANEL_ID}
+                        onDelete={handleDelete}
+                        filtered={isFiltered}
+                      />
+                    ) : (
+                      <ExpenseRow
+                        expense={item.expense}
+                        selected={selectedId === item.expense._id}
+                        onSelect={() => toggleSelected(item.expense)}
+                        inlineDetail={!sidePanel}
+                        detailId={DETAIL_PANEL_ID}
+                        editHref={expenseEditHref(item.expense._id)}
+                        onDelete={handleDelete}
+                        showTripLink={!groupTrips}
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule px-4 py-2.5 text-[13px] text-ink-3">
+                <span>
                   {groupTrips
                     ? `Showing ${listItems.length} of ${totalCount} item${totalCount !== 1 ? "s" : ""} · each trip counts as one`
                     : `Showing ${listItems.length} of ${totalCount} expense${totalCount !== 1 ? "s" : ""}`}
-                </p>
+                </span>
                 {listItems.length < totalCount && (
-                  <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
-                    {loadingMore ? (
-                      <>
-                        <Spinner size="sm" /> Loading...
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className="h-4 w-4" />
-                        Load more
-                      </>
-                    )}
-                  </button>
+                  <Button variant="secondary" icon={ChevronDown} loading={loadingMore} onClick={loadMore}>
+                    {loadingMore ? "Loading..." : "Load more"}
+                  </Button>
                 )}
               </div>
-            </div>
+            </>
           )}
         </section>
 
-        {/* Right: live analytics rail driven by the same filters as the list */}
-        <aside
-          aria-label="Expense analytics"
-          className={`min-w-0 ${view === "insights" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
-        >
-          <ExpenseAnalytics filterQuery={filterQuery} refreshKey={analyticsRefreshKey} />
-        </aside>
+        {sidePanel && (
+          <aside
+            id={DETAIL_PANEL_ID}
+            aria-label="Selected expense"
+            className={cn(
+              panelClass,
+              "sticky top-4 flex max-h-[calc(100dvh-2rem)] min-w-0 grow basis-[340px] flex-col overflow-y-auto"
+            )}
+          >
+            {selectedExpense ? (
+              <ExpenseDetail
+                key={selectedExpense._id}
+                expense={selectedExpense}
+                editHref={expenseEditHref(selectedExpense._id)}
+                onDelete={handleDelete}
+                onClose={() => setSelectedId(null)}
+                showHeader
+                className="bg-wash-r p-5"
+              />
+            ) : (
+              <EmptyState
+                icon={<MousePointerClick />}
+                title="No expense selected"
+                description="Pick a row to see its receipt, who paid and what you can do with it."
+              />
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );

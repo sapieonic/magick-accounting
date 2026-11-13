@@ -210,7 +210,7 @@ describe("TripDetailPage", () => {
     const types = screen.getAllByTestId("type-row");
     expect(types).toHaveLength(2);
     expect(types[0]).toHaveTextContent("Flight");
-    expect(types[0]).toHaveTextContent("56%");
+    expect(types[0]).toHaveTextContent("56.0%");
     expect(types[1]).toHaveTextContent("Stay");
 
     const payers = screen.getAllByTestId("payer-row");
@@ -351,6 +351,24 @@ describe("TripDetailPage", () => {
     await within(dialog).findByText("Airport cab");
     await user.click(within(dialog).getByRole("button", { name: /Select all/ }));
     expect(within(dialog).getByRole("button", { name: "Add 2 to trip" })).toBeEnabled();
+  });
+
+  it("suggests unlinked expenses from the trip's days and adds one", async () => {
+    const user = userEvent.setup();
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    const panel = await screen.findByRole("region", { name: "Might belong here" });
+    await within(panel).findByText("Airport cab");
+    await user.click(within(panel).getByRole("button", { name: "Add Airport cab to this trip" }));
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith(`/api/trips/${TRIP_ID}/expenses`, { add: ["7".repeat(24)] })
+    );
+    expect(toastMock).toHaveBeenCalledWith('Added "Airport cab" to this trip');
+    await waitFor(() =>
+      expect(vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`)).toHaveLength(2)
+    );
   });
 
   it("removes an expense from the trip and refreshes", async () => {

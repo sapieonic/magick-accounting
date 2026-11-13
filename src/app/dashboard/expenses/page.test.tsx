@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ExpensesPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -43,25 +43,6 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/lib/csv", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/csv")>()),
   downloadCsv: vi.fn(),
-}));
-
-vi.mock("recharts", () => ({
-  ResponsiveContainer: ({ children }: any) => <div data-testid="responsive-container">{children}</div>,
-  AreaChart: ({ data }: any) => <div data-testid="area-chart" data-chart-data={JSON.stringify(data)} />,
-  Area: () => <div data-testid="area" />,
-  XAxis: () => <div data-testid="xaxis" />,
-  YAxis: () => <div data-testid="yaxis" />,
-  CartesianGrid: () => <div data-testid="grid" />,
-  PieChart: ({ children }: any) => <div data-testid="pie-chart">{children}</div>,
-  Pie: ({ data, children }: any) => (
-    <div data-testid="pie" data-pie-data={JSON.stringify(data)}>
-      {children}
-    </div>
-  ),
-  BarChart: ({ children, data }: any) => <div data-testid="bar-chart" data-chart-data={JSON.stringify(data)}>{children}</div>,
-  Bar: () => <div data-testid="bar" />,
-  Cell: () => <div data-testid="cell" />,
-  Tooltip: () => <div data-testid="tooltip" />,
 }));
 
 const expense = {
@@ -188,22 +169,55 @@ describe("ExpensesPage", () => {
     vi.useRealTimers();
   });
 
-  it("gives the expenses list and analytics rail separate desktop scroll regions", async () => {
+  it("shows the filtered total with its company/pocket split", async () => {
     render(<ExpensesPage />);
 
-    const listRegion = await screen.findByLabelText("Expenses list");
-    const analyticsRegion = await screen.findByLabelText("Expense analytics");
-
-    expect(listRegion).toHaveClass("xl:overflow-y-auto");
-    expect(listRegion).toHaveClass("xl:min-h-0");
-    expect(analyticsRegion).toHaveClass("xl:overflow-y-auto");
-    expect(analyticsRegion).toHaveClass("xl:min-h-0");
-    // The rail loads its charts separately, so wait for them.
-    expect(await screen.findByText("Monthly Trend")).toBeInTheDocument();
-    expect(screen.getByText("Top Categories")).toBeInTheDocument();
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(within(totals).getByText("All time total")).toBeInTheDocument();
+    expect(within(totals).getByText("1 expense")).toBeInTheDocument();
+    // The split comes from the charts endpoint with the same filters as the list.
+    expect(await within(totals).findByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
+    // The total, and all of it company-paid.
+    expect(within(totals).getAllByText("₹5,678.76")).toHaveLength(2);
+    expect(api.get).toHaveBeenCalledWith("/api/dashboard/charts?");
+    // The old analytics rail is gone.
+    expect(screen.queryByLabelText("Expense analytics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Monthly Trend")).not.toBeInTheDocument();
   });
 
-  it("refreshes analytics after a delete commits", async () => {
+  it("shows the selected expense in a side panel on wide screens", async () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    vi.stubGlobal("matchMedia", matchMedia);
+    try {
+      listedExpenses = [expense, splitExpense];
+      render(<ExpensesPage />);
+
+      const panel = await screen.findByRole("complementary", { name: "Selected expense" });
+      expect(within(panel).getByText("No expense selected")).toBeInTheDocument();
+
+      const row = screen.getByRole("button", { name: "Team offsite hotel" });
+      fireEvent.click(row);
+      expect(row).toHaveAttribute("aria-expanded", "true");
+      expect(row).toHaveAttribute("aria-controls", "expense-detail-panel");
+      expect(within(panel).getByRole("heading", { name: "Team offsite hotel" })).toBeInTheDocument();
+      expect(within(panel).getByText("Split · $40.00 pocket / $60.00 company")).toBeInTheDocument();
+      expect(within(panel).getByText("= ₹8,350.00 at ₹83.50 per USD, fixed on entry")).toBeInTheDocument();
+      expect(within(panel).getByRole("link", { name: "Edit" })).toHaveAttribute("href", "/dashboard/expenses/expense-2/edit");
+
+      fireEvent.click(within(panel).getByRole("button", { name: "Close details" }));
+      expect(row).toHaveAttribute("aria-expanded", "false");
+      expect(within(panel).getByText("No expense selected")).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("refreshes the company/pocket split after a delete commits", async () => {
     render(<ExpensesPage />);
 
     await screen.findByText("AWS India Cloud Services");
@@ -281,8 +295,8 @@ describe("ExpensesPage", () => {
     });
     render(<ExpensesPage />);
 
-    const payerFilter = await screen.findByRole("combobox", { name: /filter by payer/i });
-    await waitFor(() => expect(screen.getByRole("option", { name: "Paid by Manas Nilorout" })).toBeInTheDocument());
+    const payerFilter = await screen.findByRole("combobox", { name: "Paid by" });
+    await waitFor(() => expect(within(payerFilter).getByRole("option", { name: "Manas Nilorout" })).toBeInTheDocument());
     fireEvent.change(payerFilter, { target: { value: "user-1" } });
 
     await waitFor(() =>
