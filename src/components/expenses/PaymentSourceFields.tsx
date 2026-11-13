@@ -1,7 +1,14 @@
 "use client";
 
-import { Plus, X as XIcon } from "lucide-react";
+import { Building2, Plus, SquareSplitHorizontal, Users, Wallet, X as XIcon } from "lucide-react";
+import Button, { IconButton } from "@/components/ui/Button";
+import Field, { inputClass, selectClass } from "@/components/ui/Field";
+import SegmentedControl, { type SegmentOption } from "@/components/ui/SegmentedControl";
+import SplitBar from "@/components/ui/SplitBar";
+import { Dot } from "@/components/ui/Badge";
+import { cn } from "@/components/ui/cn";
 import { moneyToCents } from "@/lib/asset";
+import { formatCurrency } from "@/lib/currency";
 import { getPaymentSplitError, type PaymentEntrySource } from "@/lib/expense";
 
 /** One payer row of a `multiple` payment while it is being edited. */
@@ -35,11 +42,30 @@ export function paymentDraftsToPayload(paymentSource: string, payments: PaymentD
   }));
 }
 
+const SOURCE_OPTIONS: SegmentOption<string>[] = [
+  { value: "pocket", label: "Pocket", icon: Wallet },
+  { value: "company", label: "Company", icon: Building2 },
+  { value: "split", label: "Split", icon: SquareSplitHorizontal },
+  { value: "multiple", label: "Several people", icon: Users },
+];
+
+const ENTRY_SOURCE_OPTIONS: SegmentOption<PaymentEntrySource>[] = [
+  { value: "pocket", label: "Pocket" },
+  { value: "company", label: "Company" },
+];
+
+// Four segments must fit a phone: icons only from `sm` up.
+const compactSegments = "[&>button]:px-2.5 [&_svg]:hidden sm:[&>button]:px-3.5 sm:[&_svg]:block";
+
+const noteClass = "text-[13px] text-ink-2 [text-wrap:pretty]";
+
 interface PaymentSourceFieldsProps {
   paymentSource: string;
   pocketAmount: string;
   amount: string;
   currencySymbol: string;
+  /** ISO code for formatted amounts in notes and the split bar. Default INR. */
+  currencyCode?: string;
   onPaymentSourceChange: (paymentSource: string) => void;
   onPocketAmountChange: (pocketAmount: string) => void;
   /** Error to show under the pocket input; the page decides when to reveal it. */
@@ -55,11 +81,13 @@ interface PaymentSourceFieldsProps {
   paymentsError?: string | null;
 }
 
+/** "Who paid": pocket / company / split / several people, with the live split. */
 export default function PaymentSourceFields({
   paymentSource,
   pocketAmount,
   amount,
   currencySymbol,
+  currencyCode = "INR",
   onPaymentSourceChange,
   onPocketAmountChange,
   error,
@@ -72,6 +100,9 @@ export default function PaymentSourceFields({
 }: PaymentSourceFieldsProps) {
   const isSplit = paymentSource === "split";
   const isMultiple = paymentSource === "multiple" && Boolean(onPaymentsChange);
+  const format = (cents: number) => formatCurrency(cents / 100, currencyCode);
+  const totalCents = moneyToCents(amount);
+  const total = totalCents > 0 ? format(totalCents) : "amount";
 
   const handleSourceChange = (value: string) => {
     onPaymentSourceChange(value);
@@ -79,30 +110,91 @@ export default function PaymentSourceFields({
       onPaymentsChange([newPaymentDraft({ paidBy: defaultPayerId }), newPaymentDraft()]);
     }
   };
-  const companyCents = moneyToCents(amount) - moneyToCents(pocketAmount);
-  const companyAmount =
-    isSplit && !getPaymentSplitError(amount, pocketAmount) ? (companyCents / 100).toFixed(2) : "";
+  const splitFits = isSplit && !getPaymentSplitError(amount, pocketAmount);
+  const pocketCents = moneyToCents(pocketAmount);
+  const companyCents = totalCents - pocketCents;
+  const companyAmount = splitFits ? (companyCents / 100).toFixed(2) : "";
 
   return (
-    <div className="space-y-5">
-      <div>
-        <label htmlFor="paymentSource" className="mb-1.5 block text-sm font-medium text-muted">
-          Payment Source <span className="text-red-500 dark:text-red-400">*</span>
-        </label>
-        <select
-          id="paymentSource"
-          required
-          disabled={disabled}
-          value={paymentSource}
-          onChange={(e) => handleSourceChange(e.target.value)}
-          className="input-field"
-        >
-          <option value="pocket">Paid from pocket</option>
-          <option value="company">Paid from company account</option>
-          <option value="split">Split (pocket + company)</option>
-          {onPaymentsChange && <option value="multiple">Paid by several people</option>}
-        </select>
-      </div>
+    // A disabled fieldset disables every control inside, the segment buttons included.
+    <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-4 [&:disabled_[role=group]]:opacity-60">
+      <SegmentedControl
+        aria-label="Payment source"
+        options={onPaymentsChange ? SOURCE_OPTIONS : SOURCE_OPTIONS.filter((o) => o.value !== "multiple")}
+        value={paymentSource}
+        onChange={handleSourceChange}
+        fullWidth
+        className={compactSegments}
+      />
+
+      {paymentSource === "pocket" && (
+        <p className={noteClass}>The full {total} is credited to you for reimbursement.</p>
+      )}
+      {paymentSource === "company" && (
+        <p className={noteClass}>The full {total} is recorded against the company. Nothing is owed to anyone.</p>
+      )}
+
+      {isSplit && (
+        <div className="flex flex-col gap-3">
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))]">
+            <Field
+              label={
+                <span className="inline-flex items-center gap-1.5">
+                  <Dot tone="amber" />
+                  Paid from pocket ({currencySymbol})
+                </span>
+              }
+              error={error}
+            >
+              <input
+                id="pocketAmount"
+                type="number"
+                required
+                min="0.01"
+                step="0.01"
+                value={pocketAmount}
+                onChange={(e) => onPocketAmountChange(e.target.value)}
+                placeholder="0.00"
+                className={cn(inputClass, "num text-right")}
+              />
+            </Field>
+            <Field
+              label={
+                <span className="inline-flex items-center gap-1.5">
+                  <Dot tone="accent" />
+                  Paid by company ({currencySymbol})
+                </span>
+              }
+              hint="Worked out as the amount minus the pocket share."
+            >
+              <input
+                id="companyAmount"
+                type="text"
+                readOnly
+                tabIndex={-1}
+                value={companyAmount}
+                placeholder="—"
+                aria-live="polite"
+                className={cn(inputClass, "num text-right read-only:bg-sunk")}
+              />
+            </Field>
+          </div>
+          {splitFits && (
+            <>
+              <SplitBar
+                company={companyCents / 100}
+                pocket={pocketCents / 100}
+                format={(n) => formatCurrency(n, currencyCode)}
+                legend="none"
+                size="sm"
+              />
+              <p className={noteClass}>
+                {format(pocketCents)} is credited to you. {format(companyCents)} goes to the company.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {isMultiple && onPaymentsChange && (
         <PayerRows
@@ -111,59 +203,11 @@ export default function PaymentSourceFields({
           members={members}
           amount={amount}
           currencySymbol={currencySymbol}
+          currencyCode={currencyCode}
           error={paymentsError}
-          disabled={disabled}
         />
       )}
-
-      {isSplit && (
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <label htmlFor="pocketAmount" className="mb-1.5 block text-sm font-medium text-muted">
-              Paid from pocket ({currencySymbol}) <span className="text-red-500 dark:text-red-400">*</span>
-            </label>
-            <input
-              id="pocketAmount"
-              type="number"
-              required
-              disabled={disabled}
-              min="0.01"
-              step="0.01"
-              value={pocketAmount}
-              onChange={(e) => onPocketAmountChange(e.target.value)}
-              placeholder="0.00"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? "pocketAmount-error" : undefined}
-              className="input-field tabular-nums"
-            />
-            {error && (
-              <p id="pocketAmount-error" className="mt-1 text-xs text-red-500 dark:text-red-400">
-                {error}
-              </p>
-            )}
-          </div>
-          <div>
-            <label htmlFor="companyAmount" className="mb-1.5 block text-sm font-medium text-muted">
-              Paid by company ({currencySymbol})
-            </label>
-            <input
-              id="companyAmount"
-              type="text"
-              readOnly
-              tabIndex={-1}
-              value={companyAmount}
-              placeholder="—"
-              aria-describedby="companyAmount-hint"
-              aria-live="polite"
-              className="input-field tabular-nums"
-            />
-            <p id="companyAmount-hint" className="mt-1 text-xs text-muted-foreground">
-              Worked out as the amount minus the pocket share.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
+    </fieldset>
   );
 }
 
@@ -173,24 +217,22 @@ interface PayerRowsProps {
   members: PayerOption[];
   amount: string;
   currencySymbol: string;
+  currencyCode: string;
   error?: string | null;
-  disabled: boolean;
 }
 
 const MIN_PAYMENTS = 2;
 
-function PayerRows({
-  payments,
-  onChange,
-  members,
-  amount,
-  currencySymbol,
-  error,
-  disabled,
-}: PayerRowsProps) {
-  const enteredCents = payments.reduce((total, entry) => total + moneyToCents(entry.amount), 0);
+function PayerRows({ payments, onChange, members, amount, currencySymbol, currencyCode, error }: PayerRowsProps) {
   const errorId = error ? "payments-error" : undefined;
-  const remainingCents = moneyToCents(amount) - enteredCents;
+  let pocketCents = 0;
+  let companyCents = 0;
+  for (const entry of payments) {
+    if (entry.source === "pocket") pocketCents += moneyToCents(entry.amount);
+    else companyCents += moneyToCents(entry.amount);
+  }
+  const remainingCents = moneyToCents(amount) - pocketCents - companyCents;
+  const format = (cents: number) => formatCurrency(cents / 100, currencyCode);
 
   const update = (key: string, fields: Partial<PaymentDraft>) =>
     onChange(payments.map((entry) => (entry.key === key ? { ...entry, ...fields } : entry)));
@@ -201,36 +243,26 @@ function PayerRows({
       newPaymentDraft({ amount: remainingCents > 0 ? (remainingCents / 100).toFixed(2) : "" }),
     ]);
 
-  const sourceButtonClass = (active: boolean) =>
-    `flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-      active ? "bg-brand-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
-    }`;
-
   return (
-    <fieldset className="space-y-3 rounded-xl border border-line p-4" disabled={disabled}>
-      <legend className="px-1 text-sm font-medium text-muted">
-        Payments <span className="text-red-500 dark:text-red-400">*</span>
-      </legend>
-      <p className="text-xs text-muted-foreground">
-        Add each person who paid part of this expense, and whether they paid from their own pocket
-        or with a company account.
+    <fieldset className="flex min-w-0 flex-col gap-3">
+      <legend className="cap float-left mb-1 w-full text-ink-3">Payers</legend>
+      <p className={noteClass}>
+        Add each person who paid part of this expense, and whether they paid from their own pocket or with a
+        company account.
       </p>
 
-      <ul className="space-y-3">
+      <ul className="flex flex-col border-y border-rule-2">
         {payments.map((entry, index) => {
           const position = index + 1;
           return (
-            <li
-              key={entry.key}
-              className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto_auto] sm:items-center"
-            >
+            <li key={entry.key} className="flex flex-wrap items-center gap-2 border-t border-rule-2 py-2.5 first:border-t-0">
               <select
                 aria-label={`Payer ${position}`}
                 aria-describedby={errorId}
                 required
                 value={entry.paidBy}
                 onChange={(e) => update(entry.key, { paidBy: e.target.value })}
-                className="input-field"
+                className={cn(selectClass, "min-w-0 grow basis-[200px]")}
               >
                 <option value="">Select a person</option>
                 {members.map((member) => (
@@ -249,60 +281,57 @@ function PayerRows({
                 step="0.01"
                 value={entry.amount}
                 onChange={(e) => update(entry.key, { amount: e.target.value })}
-                placeholder={`${currencySymbol} 0.00`}
-                className="input-field tabular-nums"
+                placeholder="0.00"
+                className={cn(inputClass, "num min-w-0 grow basis-[120px] text-right")}
               />
-              <div
-                role="group"
-                aria-label={`Payment ${position} paid from`}
-                className="flex rounded-xl border border-line bg-surface p-1"
-              >
-                <button
-                  type="button"
-                  aria-pressed={entry.source === "pocket"}
-                  onClick={() => update(entry.key, { source: "pocket" })}
-                  className={sourceButtonClass(entry.source === "pocket")}
-                >
-                  Pocket
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={entry.source === "company"}
-                  onClick={() => update(entry.key, { source: "company" })}
-                  className={sourceButtonClass(entry.source === "company")}
-                >
-                  Company
-                </button>
+              <div className="flex items-center gap-1">
+                <SegmentedControl
+                  aria-label={`Payment ${position} paid from`}
+                  options={ENTRY_SOURCE_OPTIONS}
+                  value={entry.source}
+                  onChange={(source) => update(entry.key, { source })}
+                />
+                <IconButton
+                  icon={XIcon}
+                  size="sm"
+                  onClick={() => onChange(payments.filter((other) => other.key !== entry.key))}
+                  disabled={payments.length <= MIN_PAYMENTS}
+                  aria-label={`Remove payment ${position}`}
+                />
               </div>
-              <button
-                type="button"
-                onClick={() => onChange(payments.filter((other) => other.key !== entry.key))}
-                disabled={payments.length <= MIN_PAYMENTS}
-                aria-label={`Remove payment ${position}`}
-                className="justify-self-end rounded p-1.5 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <XIcon className="h-4 w-4" />
-              </button>
             </li>
           );
         })}
       </ul>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" onClick={addPayment} className="btn-ghost px-3 py-1.5">
-          <Plus className="h-4 w-4" /> Add payment
-        </button>
-        <p className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <Button variant="ghost" size="sm" icon={Plus} onClick={addPayment} className="-ml-3 text-accent">
+          Add payment
+        </Button>
+        <p
+          aria-live="polite"
+          className={cn("text-[13px] [font-variant-numeric:tabular-nums]", remainingCents === 0 ? "text-ink-2" : "text-amber")}
+        >
           {remainingCents === 0
             ? "Payments match the total"
             : remainingCents > 0
-              ? `${currencySymbol}${(remainingCents / 100).toFixed(2)} left to assign`
-              : `${currencySymbol}${(-remainingCents / 100).toFixed(2)} over the total`}
+              ? `${format(remainingCents)} left to assign`
+              : `${format(-remainingCents)} over the total`}
         </p>
       </div>
 
+      {pocketCents + companyCents > 0 && (
+        <SplitBar
+          company={companyCents / 100}
+          pocket={pocketCents / 100}
+          format={(n) => formatCurrency(n, currencyCode)}
+          legend="inline"
+          size="sm"
+        />
+      )}
+
       {error && (
-        <p id="payments-error" className="text-xs text-red-500 dark:text-red-400">
+        <p id="payments-error" className="text-xs text-danger">
           {error}
         </p>
       )}

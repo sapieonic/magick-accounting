@@ -48,6 +48,11 @@ function PayersHarness({ amount = "1000" }: { amount?: string }) {
   );
 }
 
+/** A "Who paid" option (the segmented "Payment source" control). */
+function sourceButton(name: string) {
+  return within(screen.getByRole("group", { name: /payment source/i })).getByRole("button", { name });
+}
+
 describe("getPaymentSplitError", () => {
   it("accepts a pocket share strictly between 0 and the amount", () => {
     expect(getPaymentSplitError("1000", "0.01")).toBeNull();
@@ -74,7 +79,7 @@ describe("PaymentSourceFields", () => {
 
     expect(screen.queryByLabelText(/paid from pocket \(₹\)/i)).not.toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "split");
+    await user.click(sourceButton("Split"));
     const pocket = screen.getByLabelText(/paid from pocket \(₹\)/i);
     const company = screen.getByLabelText(/paid by company \(₹\)/i);
     expect(company).toHaveAttribute("readonly");
@@ -83,7 +88,7 @@ describe("PaymentSourceFields", () => {
     await user.type(pocket, "250.5");
     expect(company).toHaveValue("749.50");
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "company");
+    await user.click(sourceButton("Company"));
     expect(screen.queryByLabelText(/paid by company/i)).not.toBeInTheDocument();
   });
 
@@ -91,7 +96,7 @@ describe("PaymentSourceFields", () => {
     const user = userEvent.setup();
     render(<Harness amount="100" />);
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "split");
+    await user.click(sourceButton("Split"));
     await user.type(screen.getByLabelText(/paid from pocket/i), "150");
     expect(screen.getByLabelText(/paid by company/i)).toHaveValue("");
   });
@@ -100,7 +105,7 @@ describe("PaymentSourceFields", () => {
     const user = userEvent.setup();
     render(<Harness error="Pocket amount must be more than 0 and less than the total amount" />);
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "split");
+    await user.click(sourceButton("Split"));
     const pocket = screen.getByLabelText(/paid from pocket/i);
     expect(pocket).toHaveAttribute("aria-invalid", "true");
     expect(pocket).toHaveAccessibleDescription(
@@ -110,26 +115,27 @@ describe("PaymentSourceFields", () => {
 
   it("only offers several payers when the page handles payer rows", () => {
     render(<Harness />);
-    expect(screen.queryByRole("option", { name: /several people/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /several people/i })).not.toBeInTheDocument();
+    expect(sourceButton("Pocket")).toHaveAttribute("aria-pressed", "true");
   });
 
   it("starts two payer rows, the first for the current user", async () => {
     const user = userEvent.setup();
     render(<PayersHarness />);
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.click(sourceButton("Several people"));
 
     expect(screen.getByLabelText("Payer 1")).toHaveValue(MEMBERS[0]._id);
     expect(screen.getByLabelText("Payer 2")).toHaveValue("");
     expect(screen.getByRole("button", { name: /remove payment 1/i })).toBeDisabled();
-    expect(screen.getByText("₹1000.00 left to assign")).toBeInTheDocument();
+    expect(screen.getByText("₹1,000.00 left to assign")).toBeInTheDocument();
   });
 
   it("records each payer's amount and pocket/company toggle", async () => {
     const user = userEvent.setup();
     render(<PayersHarness />);
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.click(sourceButton("Several people"));
     await user.type(screen.getByLabelText(/amount for payment 1/i), "600");
     await user.selectOptions(screen.getByLabelText("Payer 2"), MEMBERS[1]._id);
     await user.type(screen.getByLabelText(/amount for payment 2/i), "400");
@@ -151,7 +157,7 @@ describe("PaymentSourceFields", () => {
     const user = userEvent.setup();
     render(<PayersHarness />);
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.click(sourceButton("Several people"));
     await user.type(screen.getByLabelText(/amount for payment 1/i), "300");
     await user.type(screen.getByLabelText(/amount for payment 2/i), "200");
     await user.click(screen.getByRole("button", { name: /add payment/i }));
@@ -160,6 +166,33 @@ describe("PaymentSourceFields", () => {
     await user.click(screen.getByRole("button", { name: /remove payment 1/i }));
     expect(screen.queryByLabelText(/amount for payment 3/i)).not.toBeInTheDocument();
     expect(screen.getByText("₹300.00 left to assign")).toBeInTheDocument();
+  });
+
+  it("explains who is owed, and shows the live split once it fits", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    expect(screen.getByText("The full ₹1,000.00 is credited to you for reimbursement.")).toBeInTheDocument();
+
+    await user.click(sourceButton("Split"));
+    expect(screen.queryByRole("img", { name: /company paid/i })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/paid from pocket/i), "250");
+    expect(screen.getByRole("img", { name: "Company paid 75.0%, pocket 25.0%" })).toBeInTheDocument();
+    expect(screen.getByText("₹250.00 is credited to you. ₹750.00 goes to the company.")).toBeInTheDocument();
+  });
+
+  it("disables every option while locked", () => {
+    render(
+      <PaymentSourceFields
+        paymentSource="pocket"
+        pocketAmount=""
+        amount="100"
+        currencySymbol="₹"
+        onPaymentSourceChange={() => undefined}
+        onPocketAmountChange={() => undefined}
+        disabled
+      />
+    );
+    for (const name of ["Pocket", "Company", "Split"]) expect(sourceButton(name)).toBeDisabled();
   });
 
   it("drops the payer list from the payload for other sources", () => {

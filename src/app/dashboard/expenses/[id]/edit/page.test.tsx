@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EditExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
@@ -78,8 +78,17 @@ function mockExpense(expense: Record<string, unknown>, trips: unknown[] = []) {
   });
 }
 
+/** A "Who paid" option (the segmented "Payment source" control). */
+function sourceButton(name: string) {
+  return within(screen.getByRole("group", { name: /payment source/i })).getByRole("button", { name });
+}
+
+async function findSourceButton(name: string) {
+  return within(await screen.findByRole("group", { name: /payment source/i })).getByRole("button", { name });
+}
+
 function submit() {
-  fireEvent.submit(screen.getByRole("button", { name: "Update Expense" }).closest("form")!);
+  fireEvent.submit(screen.getByRole("button", { name: "Save changes" }).closest("form")!);
 }
 
 describe("EditExpensePage split payment", () => {
@@ -93,7 +102,7 @@ describe("EditExpensePage split payment", () => {
     mockExpense(splitExpense);
     render(<EditExpensePage />);
 
-    expect(await screen.findByLabelText(/payment source/i)).toHaveValue("split");
+    expect(await findSourceButton("Split")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText(/paid from pocket \(₹\)/i)).toHaveValue(400);
     expect(screen.getByLabelText(/paid by company \(₹\)/i)).toHaveValue("600.00");
   });
@@ -123,7 +132,7 @@ describe("EditExpensePage split payment", () => {
     mockExpense({ ...splitExpense, paymentSource: "pocket", pocketAmount: 1000, pocketAmountInBaseCurrency: 1000 });
     render(<EditExpensePage />);
 
-    await user.selectOptions(await screen.findByLabelText(/payment source/i), "split");
+    await user.click(await findSourceButton("Split"));
     expect(screen.getByLabelText(/paid from pocket/i)).toHaveValue(null);
     expect(screen.queryByText(/enter the amount paid from pocket/i)).not.toBeInTheDocument();
 
@@ -155,7 +164,7 @@ describe("EditExpensePage split payment", () => {
     );
 
     vi.mocked(api.put).mockClear();
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "company");
+    await user.click(sourceButton("Company"));
     submit();
 
     await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
@@ -227,10 +236,10 @@ describe("EditExpensePage unsaved changes", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<EditExpensePage />);
 
-    const source = await screen.findByLabelText(/payment source/i);
-    await user.selectOptions(source, "multiple");
+    await screen.findByRole("group", { name: /payment source/i });
+    await user.click(sourceButton("Several people"));
     expect(screen.getByLabelText("Payer 1")).toBeInTheDocument();
-    await user.selectOptions(source, "pocket");
+    await user.click(sourceButton("Pocket"));
     await user.click(screen.getByRole("button", { name: /back to expenses/i }));
 
     expect(confirmSpy).not.toHaveBeenCalled();
@@ -354,10 +363,56 @@ describe("EditExpensePage returnTo", () => {
       window.history.replaceState({}, "", `/dashboard/expenses/expense-1/edit?returnTo=${encodeURIComponent(returnTo)}`);
       render(<EditExpensePage />);
 
-      await screen.findByLabelText(/payment source/i);
+      await screen.findByRole("group", { name: /payment source/i });
       submit();
       await waitFor(() => expect(router.push).toHaveBeenCalledWith("/dashboard/expenses"));
       expect(screen.getByRole("button", { name: /back to expenses/i })).toBeInTheDocument();
     }
   );
+});
+
+describe("EditExpensePage linked assets", () => {
+  const linked = [{ _id: "asset-1", assetTag: "AST-001", name: "MacBook Pro", allocatedAmount: 900 }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.startsWith("/api/expenses/")) {
+        return Promise.resolve({ expense: { ...splitExpense, receiptKey: "receipts/r.png" }, assets: linked });
+      }
+      if (url.startsWith("/api/lookups")) {
+        return Promise.resolve({
+          departments: [{ _id: "department-1", name: "Engineering" }],
+          categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+          currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+        });
+      }
+      return Promise.resolve({ trips: [] });
+    });
+  });
+
+  it("locks the accounting fields for non-admins", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "u1" }, isAdmin: false } as any);
+    render(<EditExpensePage />);
+
+    expect(await screen.findByRole("link", { name: /macbook pro/i })).toHaveAttribute("href", "/dashboard/assets/asset-1");
+    expect(screen.getByLabelText(/^amount/i)).toBeDisabled();
+    expect(screen.getByLabelText("Currency")).toBeDisabled();
+    expect(sourceButton("Pocket")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove receipt" })).toBeDisabled();
+    expect(screen.getByLabelText(/^title/i)).toBeEnabled();
+    expect(screen.queryByRole("link", { name: /add more assets/i })).not.toBeInTheDocument();
+  });
+
+  it("lets admins edit and add more assets, with the currency still fixed", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { _id: "u1" }, isAdmin: true } as any);
+    render(<EditExpensePage />);
+
+    expect(await screen.findByRole("link", { name: /add more assets/i })).toHaveAttribute(
+      "href",
+      "/dashboard/expenses/expense-1/assets/new"
+    );
+    expect(screen.getByLabelText(/^amount/i)).toBeEnabled();
+    expect(screen.getByLabelText("Currency")).toBeDisabled();
+  });
 });

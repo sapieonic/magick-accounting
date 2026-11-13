@@ -39,8 +39,17 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>, amou
   await user.selectOptions(screen.getByLabelText(/^category/i), "category-1");
 }
 
+/** A "Who paid" option (the segmented "Payment source" control). */
+function sourceButton(name: string) {
+  return within(screen.getByRole("group", { name: /payment source/i })).getByRole("button", { name });
+}
+
+async function findSourceButton(name: string) {
+  return within(await screen.findByRole("group", { name: /payment source/i })).getByRole("button", { name });
+}
+
 function submit() {
-  fireEvent.submit(screen.getByRole("button", { name: "Create Expense" }).closest("form")!);
+  fireEvent.submit(screen.getByRole("button", { name: "Save expense" }).closest("form")!);
 }
 
 describe("NewExpensePage split payment", () => {
@@ -61,7 +70,7 @@ describe("NewExpensePage split payment", () => {
     render(<NewExpensePage />);
     await fillRequiredFields(user, "500");
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "split");
+    await user.click(sourceButton("Split"));
     await user.type(screen.getByLabelText(/paid from pocket \(₹\)/i), "500");
 
     expect(screen.getByText(/pocket amount must be more than 0 and less than the total amount/i)).toBeInTheDocument();
@@ -74,7 +83,7 @@ describe("NewExpensePage split payment", () => {
     render(<NewExpensePage />);
     await fillRequiredFields(user, "500");
 
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "split");
+    await user.click(sourceButton("Split"));
     await user.type(screen.getByLabelText(/paid from pocket/i), "120.25");
     expect(screen.getByLabelText(/paid by company \(₹\)/i)).toHaveValue("379.75");
 
@@ -90,7 +99,7 @@ describe("NewExpensePage split payment", () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<NewExpensePage />);
-    await user.selectOptions(await screen.findByLabelText(/payment source/i), "split");
+    await user.click(await findSourceButton("Split"));
     await user.type(screen.getByLabelText(/paid from pocket/i), "120");
 
     await user.click(screen.getByRole("button", { name: /back to expenses/i }));
@@ -103,7 +112,7 @@ describe("NewExpensePage split payment", () => {
   it("holds back the split error until an amount is entered", async () => {
     const user = userEvent.setup();
     render(<NewExpensePage />);
-    await user.selectOptions(await screen.findByLabelText(/payment source/i), "split");
+    await user.click(await findSourceButton("Split"));
     await user.type(screen.getByLabelText(/paid from pocket/i), "120");
 
     expect(screen.queryByText(/less than the total amount/i)).not.toBeInTheDocument();
@@ -114,7 +123,7 @@ describe("NewExpensePage split payment", () => {
     vi.mocked(api.postFormData).mockResolvedValue({ title: "Cab", amount: 100 });
     render(<NewExpensePage />);
     await fillRequiredFields(user, "500");
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "split");
+    await user.click(sourceButton("Split"));
     await user.type(screen.getByLabelText(/paid from pocket/i), "120");
 
     const fileInput = screen
@@ -123,7 +132,7 @@ describe("NewExpensePage split payment", () => {
     await user.upload(fileInput, new File(["receipt"], "cab.png", { type: "image/png" }));
 
     await waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(100));
-    expect(screen.getByLabelText(/payment source/i)).toHaveValue("split");
+    expect(await findSourceButton("Split")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText(/paid from pocket/i)).toHaveValue(120);
     expect(screen.getByText(/pocket amount must be more than 0 and less than the total amount/i)).toBeInTheDocument();
   });
@@ -160,7 +169,7 @@ describe("NewExpensePage paid by several people", () => {
   });
 
   async function fillPayers(user: ReturnType<typeof userEvent.setup>, first: string, second: string) {
-    await user.selectOptions(screen.getByLabelText(/payment source/i), "multiple");
+    await user.click(sourceButton("Several people"));
     await user.type(screen.getByLabelText(/amount for payment 1/i), first);
     await user.selectOptions(screen.getByLabelText("Payer 2"), ravi._id);
     await user.type(screen.getByLabelText(/amount for payment 2/i), second);
@@ -214,7 +223,7 @@ describe("NewExpensePage paid by several people", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<NewExpensePage />);
 
-    await user.selectOptions(await screen.findByLabelText(/payment source/i), "multiple");
+    await user.click(await findSourceButton("Several people"));
     await user.click(screen.getByRole("button", { name: /back to expenses/i }));
     expect(confirmSpy).not.toHaveBeenCalled();
 
@@ -407,5 +416,65 @@ describe("NewExpensePage business trips", () => {
 
     expect(screen.getByLabelText(/business trip/i)).toHaveValue(trip._id);
     expect(screen.getByLabelText(/^department/i)).toHaveValue("department-2");
+  });
+});
+
+describe("NewExpensePage receipt auto-fill", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem("expense-upload-modal-skip", "true");
+    vi.mocked(useAuth).mockReturnValue({ user: null, isAdmin: false } as any);
+    vi.mocked(api.get).mockResolvedValue({
+      departments: [{ _id: "department-1", name: "Engineering", isDefault: true }],
+      categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+      currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+    });
+  });
+
+  async function uploadReceipt(user: ReturnType<typeof userEvent.setup>) {
+    const fileInput = (await screen.findByTestId("receipt-dropzone")).querySelector(
+      "input[type=file]"
+    ) as HTMLInputElement;
+    await user.upload(fileInput, new File(["receipt"], "dinner.png", { type: "image/png" }));
+  }
+
+  it("marks the fields read from the receipt until they're edited", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.postFormData).mockResolvedValue({ title: "Dinner", amount: 1873, category: "category-1" });
+    render(<NewExpensePage />);
+    await uploadReceipt(user);
+
+    expect(await screen.findByText("Auto-fill read 3 fields.")).toBeInTheDocument();
+    expect(screen.getAllByText("from receipt")).toHaveLength(3);
+    expect(screen.getByLabelText(/^title/i)).toHaveValue("Dinner");
+
+    await user.type(screen.getByLabelText(/^title/i), " with client");
+    expect(screen.getAllByText("from receipt")).toHaveLength(2);
+  });
+
+  it("reads the receipt again on request, and clears the marks when it's removed", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.postFormData).mockResolvedValue({ title: "Dinner" });
+    render(<NewExpensePage />);
+    await uploadReceipt(user);
+    await screen.findByText("Auto-fill read 1 field.");
+
+    await user.click(screen.getByRole("button", { name: /read again/i }));
+    await waitFor(() => expect(api.postFormData).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: "Remove receipt" }));
+    expect(screen.queryByText("from receipt")).not.toBeInTheDocument();
+    expect(screen.queryByText(/auto-fill read/i)).not.toBeInTheDocument();
+  });
+
+  it("offers a retry when the receipt can't be read", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.postFormData).mockRejectedValue(new Error("Model unavailable"));
+    render(<NewExpensePage />);
+    await uploadReceipt(user);
+
+    expect(await screen.findByText(/couldn't read this receipt/i)).toBeInTheDocument();
+    expect(toastMock).toHaveBeenCalledWith("Model unavailable", "error");
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 });

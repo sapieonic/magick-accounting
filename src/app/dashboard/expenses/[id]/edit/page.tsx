@@ -3,42 +3,39 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { Package } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import Spinner from "@/components/ui/Spinner";
-import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
-import PaymentSourceFields, {
+import Button from "@/components/ui/Button";
+import Panel from "@/components/ui/Panel";
+import { cn } from "@/components/ui/cn";
+import { rowClass } from "@/components/ui/styles";
+import {
   newPaymentDraft,
   paymentDraftsToPayload,
   type PayerOption,
   type PaymentDraft,
 } from "@/components/expenses/PaymentSourceFields";
-import TripFields, { useTripOptions } from "@/components/expenses/TripFields";
-import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
-import { isTravelType, type TravelType } from "@/lib/trip";
-import { ArrowLeft, Package, Upload, X as XIcon } from "lucide-react";
-
-interface Department {
-  _id: string;
-  name: string;
-  isDefault?: boolean;
-}
-
-interface Category {
-  _id: string;
-  name: string;
-}
-
-interface CurrencyOption {
-  _id: string;
-  code: string;
-  name: string;
-  symbol: string;
-  isBase: boolean;
-}
+import { useTripOptions } from "@/components/expenses/TripFields";
+import ExpenseForm from "@/components/expenses/form/ExpenseForm";
+import ReceiptPanel from "@/components/expenses/form/ReceiptPanel";
+import { FORM_PAD_X } from "@/components/expenses/form/FormFooter";
+import {
+  LOOKUPS_URL,
+  MAX_RECEIPT_SIZE,
+  RECEIPT_TOO_LARGE,
+  discardUploadedReceipt,
+  getSubmitError,
+  toExpensePayload,
+  useReceiptUpload,
+  useUnsavedChangesWarning,
+} from "@/components/expenses/form/expense-form";
+import { EMPTY_LOOKUPS, emptyExpenseValues, type ExpenseFormValues, type ExpenseLookups } from "@/components/expenses/form/types";
+import { formatCurrency } from "@/lib/currency";
+import { isTravelType } from "@/lib/trip";
 
 interface StoredPayment {
   paidBy: PayerOption | null;
@@ -66,41 +63,94 @@ function backLabel(returnTo: string): string {
   return returnTo.startsWith("/dashboard/trips/") ? "Back to Trip" : "Back";
 }
 
+/** Payer rows only count while "several people" is chosen, so trying it and switching back isn't a change. */
+function effectiveValues(values: ExpenseFormValues) {
+  return { ...values, payments: paymentDraftsToPayload(values.paymentSource, values.payments) };
+}
+
+/** Company assets bought with this expense, and the way to add more. */
+function LinkedAssetsPanel({
+  expenseId,
+  assets,
+  currencyCode,
+  canAddMore,
+}: {
+  expenseId: string;
+  assets: LinkedAsset[];
+  currencyCode: string;
+  canAddMore: boolean;
+}) {
+  const createHref = `/dashboard/expenses/${expenseId}/assets/new`;
+  if (assets.length === 0) {
+    return (
+      <Panel title="Company assets">
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-[13px] text-ink-3">
+            This expense has no linked assets. Create inventory records without entering the purchase again.
+          </p>
+          <Button variant="secondary" size="sm" icon={Package} href={createHref}>
+            Create assets
+          </Button>
+        </div>
+      </Panel>
+    );
+  }
+  return (
+    <Panel
+      title="Company assets"
+      meta={`${assets.length} linked`}
+      flush
+      footer={
+        canAddMore ? (
+          <Button variant="ghost" size="sm" icon={Package} href={createHref} className="-ml-3 text-accent">
+            Add more assets from this expense
+          </Button>
+        ) : undefined
+      }
+    >
+      <p className={cn(FORM_PAD_X, "pb-3 text-[13px] text-ink-3")}>
+        The expense amount and GST cannot be reduced below their asset allocations.
+      </p>
+      <ul>
+        {assets.map((asset) => (
+          <li key={asset._id}>
+            <Link
+              href={`/dashboard/assets/${asset._id}`}
+              className={cn(rowClass, FORM_PAD_X, "flex min-h-12 items-center justify-between gap-3 py-2")}
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="ell text-sm font-medium text-ink">{asset.name}</span>
+                <span className="num text-xs text-ink-3">{asset.assetTag}</span>
+              </span>
+              <span className="num whitespace-nowrap text-sm text-ink-2">
+                {formatCurrency(asset.allocatedAmount, currencyCode)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 export default function EditExpensePage() {
   useTitle("Edit Expense");
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
-  const [members, setMembers] = useState<PayerOption[]>([]);
+  const [lookups, setLookups] = useState<ExpenseLookups>(EMPTY_LOOKUPS);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const { upload, uploading: uploadingReceipt } = useReceiptUpload();
   const [linkedAssets, setLinkedAssets] = useState<LinkedAsset[]>([]);
+  const [currencyCode, setCurrencyCode] = useState("INR");
   const { trips } = useTripOptions();
   // The stored trip, so it still shows by name if it isn't in `trips`.
   const [storedTrip, setStoredTrip] = useState<{ _id: string; name: string } | null>(null);
 
-  const emptyForm = {
-    title: "",
-    amount: "",
-    gstAmount: "",
-    currency: "",
-    category: "",
-    department: "",
-    date: "",
-    description: "",
-    paymentSource: "pocket",
-    pocketAmount: "",
-    payments: [] as PaymentDraft[],
-    trip: "",
-    travelType: null as TravelType | null,
-  };
-  const [form, setForm] = useState(emptyForm);
-  const [initialForm, setInitialForm] = useState(emptyForm);
+  const [form, setForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
+  const [initialForm, setInitialForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
   const [initialHadReceipt, setInitialHadReceipt] = useState(false);
   // Where Back, Cancel and Save go, e.g. the trip the edit was opened from.
   const [returnTo, setReturnTo] = useState(DEFAULT_RETURN_TO);
@@ -116,25 +166,11 @@ export default function EditExpensePage() {
   const [newReceipt, setNewReceipt] = useState<{ file: File; filename: string } | null>(null);
 
   // Warn before discarding unsaved edits on a full page unload.
-  // Payer rows only count while "several people" is chosen, so trying that
-  // option and switching back isn't an unsaved change.
-  const effectiveForm = (value: typeof form) => ({
-    ...value,
-    payments: paymentDraftsToPayload(value.paymentSource, value.payments),
-  });
   const isDirty =
-    JSON.stringify(effectiveForm(form)) !== JSON.stringify(effectiveForm(initialForm)) ||
+    JSON.stringify(effectiveValues(form)) !== JSON.stringify(effectiveValues(initialForm)) ||
     newReceipt !== null ||
     (initialHadReceipt && !existingReceipt && !newReceipt);
-
-  useEffect(() => {
-    if (!isDirty || submitting) return;
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isDirty, submitting]);
+  useUnsavedChangesWarning(isDirty && !submitting);
 
   const handleCancel = () => {
     if (isDirty && !window.confirm("Discard your changes to this expense?")) {
@@ -146,18 +182,14 @@ export default function EditExpensePage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [expData, lookupData] = await Promise.all([
-          api.get(`/api/expenses/${params.id}`),
-          api.get("/api/lookups?include=departments,categories,currencies,members"),
-        ]);
+        const [expData, lookupData] = await Promise.all([api.get(`/api/expenses/${params.id}`), api.get(LOOKUPS_URL)]);
 
         const exp = expData.expense;
-        const storedPayments: StoredPayment[] =
-          exp.paymentSource === "multiple" ? exp.payments || [] : [];
+        const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
-        const storedTripId: string =
-          (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
-        const loadedForm = {
+        setCurrencyCode(exp.currency?.code || "INR");
+        const storedTripId: string = (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
+        const loadedForm: ExpenseFormValues = {
           title: exp.title,
           amount: exp.amount.toString(),
           gstAmount: exp.gstAmount != null ? exp.gstAmount.toString() : "",
@@ -179,9 +211,7 @@ export default function EditExpensePage() {
           trip: storedTripId,
           travelType: storedTripId && isTravelType(exp.travelType) ? exp.travelType : null,
         };
-        setStoredTrip(
-          storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null
-        );
+        setStoredTrip(storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null);
         setForm(loadedForm);
         setInitialForm(loadedForm);
 
@@ -190,9 +220,6 @@ export default function EditExpensePage() {
           setInitialHadReceipt(true);
         }
 
-        setDepartments(lookupData.departments);
-        setCategories(lookupData.categories);
-        setCurrencies(lookupData.currencies);
         // Keep current payers selectable even if they no longer appear in the member list.
         const payerOptions = new Map<string, PayerOption>(
           (lookupData.members || []).map((member: PayerOption) => [member._id, member])
@@ -200,7 +227,12 @@ export default function EditExpensePage() {
         for (const { paidBy } of storedPayments) {
           if (paidBy?._id && !payerOptions.has(paidBy._id)) payerOptions.set(paidBy._id, paidBy);
         }
-        setMembers([...payerOptions.values()]);
+        setLookups({
+          departments: lookupData.departments,
+          categories: lookupData.categories,
+          currencies: lookupData.currencies,
+          members: [...payerOptions.values()],
+        });
       } catch {
         toast("Failed to load expense", "error");
         router.push("/dashboard/expenses");
@@ -212,58 +244,19 @@ export default function EditExpensePage() {
   }, [params.id, toast, router]);
 
   const handleReceiptFile = (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      toast("File too large. Maximum size is 10MB.", "error");
+    if (file.size > MAX_RECEIPT_SIZE) {
+      toast(RECEIPT_TOO_LARGE, "error");
       return;
     }
     setNewReceipt({ file, filename: file.name });
     setExistingReceipt(null);
   };
 
-  const uploadReceipt = async (): Promise<{ key: string; filename: string }> => {
-    if (!newReceipt?.file) throw new Error("No receipt selected");
-    setUploadingReceipt(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", newReceipt.file);
-
-      const result = await api.postFormData("/api/upload", formData);
-      return { key: result.key, filename: result.filename };
-    } finally {
-      setUploadingReceipt(false);
-    }
-  };
-
-  const splitError =
-    form.paymentSource === "split" ? getPaymentSplitError(form.amount, form.pocketAmount) : null;
-  // The browser's `required` check covers an empty pocket field; a filled-in
-  // one errors as soon as it (or the amount, once entered) stops fitting.
-  const visibleSplitError = form.pocketAmount !== "" && form.amount !== "" ? splitError : null;
-  const paymentsError =
-    form.paymentSource === "multiple"
-      ? getPaymentEntriesError(form.amount, paymentDraftsToPayload("multiple", form.payments))
-      : null;
-  // As above: blank payer rows are left to `required`; once every row is
-  // filled in, a mismatch with the total shows inline.
-  const visiblePaymentsError =
-    form.amount !== "" && form.payments.every((entry) => entry.paidBy && entry.amount !== "")
-      ? paymentsError
-      : null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const gstAmount = form.gstAmount ? parseFloat(form.gstAmount) : null;
-    if (gstAmount != null && gstAmount > parseFloat(form.amount)) {
-      toast("GST amount cannot exceed the total amount", "error");
-      return;
-    }
-    if (splitError) {
-      toast(splitError, "error");
-      return;
-    }
-    if (paymentsError) {
-      toast(paymentsError, "error");
+    const formError = getSubmitError(form);
+    if (formError) {
+      toast(formError, "error");
       return;
     }
 
@@ -271,18 +264,10 @@ export default function EditExpensePage() {
     let uploadedReceiptKey: string | null = null;
 
     try {
-      const updateData: Record<string, unknown> = {
-        ...form,
-        amount: parseFloat(form.amount),
-        gstAmount,
-        pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
-        payments: paymentDraftsToPayload(form.paymentSource, form.payments),
-        trip: form.trip || null,
-        travelType: form.trip ? form.travelType : null,
-      };
+      const updateData: Record<string, unknown> = toExpensePayload(form);
 
       if (newReceipt?.file) {
-        const uploaded = await uploadReceipt();
+        const uploaded = await upload(newReceipt.file);
         uploadedReceiptKey = uploaded.key;
         updateData.receiptKey = uploaded.key;
         updateData.receiptFilename = uploaded.filename;
@@ -295,9 +280,7 @@ export default function EditExpensePage() {
       toast("Expense updated");
       router.push(returnTo);
     } catch (err) {
-      if (uploadedReceiptKey) {
-        await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
-      }
+      await discardUploadedReceipt(uploadedReceiptKey);
       toast(err instanceof Error ? err.message : "Failed to update expense", "error");
     } finally {
       setSubmitting(false);
@@ -307,268 +290,48 @@ export default function EditExpensePage() {
   if (loading) return <FormSkeleton />;
   const hasLinkedAssets = linkedAssets.length > 0;
   const accountingLocked = hasLinkedAssets && !isAdmin;
+  const expenseId = String(params.id);
 
   return (
-    <div className="animate-fade-in">
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={handleCancel}
-          className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {backLabel(returnTo)}
-        </button>
-        <h1 className="text-2xl font-bold text-foreground">Edit Expense</h1>
-      </div>
-
-      <form onSubmit={handleSubmit} className="card mx-auto max-w-2xl p-6">
-        {linkedAssets.length > 0 && (
-          <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
-            <div className="flex items-start gap-3">
-              <Package className="mt-0.5 h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground">
-                  Linked to {linkedAssets.length} company asset{linkedAssets.length === 1 ? "" : "s"}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  The expense amount and GST cannot be reduced below their asset allocations.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {linkedAssets.map((asset) => (
-                    <Link
-                      key={asset._id}
-                      href={`/dashboard/assets/${asset._id}`}
-                      className="rounded-md bg-surface px-2 py-1 text-xs font-semibold text-indigo-700 shadow-sm hover:text-indigo-900 dark:text-indigo-300"
-                    >
-                      {asset.assetTag} · {asset.name}
-                    </Link>
-                  ))}
-                </div>
-                {isAdmin && <Link
-                  href={`/dashboard/expenses/${params.id}/assets/new`}
-                  className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 dark:text-indigo-300"
-                >
-                  <Package className="h-3.5 w-3.5" /> Add more assets from this expense
-                </Link>}
-              </div>
-            </div>
-          </div>
-        )}
-        {linkedAssets.length === 0 && (
-          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/5">
-            <div><p className="text-sm font-semibold text-foreground">This expense has no linked assets</p><p className="mt-1 text-xs text-muted-foreground">Create inventory records without entering the purchase again.</p></div>
-            <Link href={`/dashboard/expenses/${params.id}/assets/new`} className="btn-secondary shrink-0"><Package className="h-4 w-4" /> Create assets</Link>
-          </div>
-        )}
-        <div className="space-y-5">
-          <div>
-            <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-muted">
-              Title <span className="text-red-500 dark:text-red-400">*</span>
-            </label>
-            <input
-              id="title"
-              type="text"
-              required
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              className="input-field"
-            />
-          </div>
-
-          <div className="grid gap-5 sm:grid-cols-3">
-            <div>
-              <label htmlFor="currency" className="mb-1.5 block text-sm font-medium text-muted">
-                Currency <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <select
-                id="currency"
-                required
-                disabled={hasLinkedAssets}
-                value={form.currency}
-                onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                className="input-field"
-              >
-                <option value="">Select</option>
-                {currencies.map((c) => (
-                  <option key={c._id} value={c._id}>{c.symbol} {c.code}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="amount" className="mb-1.5 block text-sm font-medium text-muted">
-                Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"}) <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <input
-                id="amount"
-                type="number"
-                required
-                disabled={accountingLocked}
-                min="0"
-                step="0.01"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                className="input-field tabular-nums"
-              />
-            </div>
-            <div>
-              <label htmlFor="date" className="mb-1.5 block text-sm font-medium text-muted">
-                Date <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <input
-                id="date"
-                type="date"
-                required
-                disabled={accountingLocked}
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="input-field"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="gstAmount" className="mb-1.5 block text-sm font-medium text-muted">
-              GST Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"})
-              <span className="ml-1 text-xs font-normal text-muted-foreground">— optional</span>
-            </label>
-            <input
-              id="gstAmount"
-              type="number"
-              min="0"
-              disabled={accountingLocked}
-              step="0.01"
-              value={form.gstAmount}
-              onChange={(e) => setForm({ ...form, gstAmount: e.target.value })}
-              placeholder="0.00"
-              className="input-field tabular-nums"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tax portion already included in the amount above. Leave blank if not applicable.
-            </p>
-          </div>
-
-          <TripFields
-            trips={trips}
-            trip={form.trip}
-            travelType={form.travelType}
-            onTripChange={(trip) =>
-              setForm((prev) => ({ ...prev, trip, travelType: trip ? prev.travelType : null }))
-            }
-            onTravelTypeChange={(travelType) =>
-              setForm((prev) => ({ ...prev, travelType: prev.trip ? travelType : null }))
-            }
-            date={form.date}
-            currentTrip={storedTrip}
-          />
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <label htmlFor="category" className="mb-1.5 block text-sm font-medium text-muted">
-                Category <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <select
-                id="category"
-                required
-                disabled={accountingLocked}
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="input-field"
-              >
-                <option value="">Select a category</option>
-                {categories.map((c) => (
-                  <option key={c._id} value={c._id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="department" className="mb-1.5 block text-sm font-medium text-muted">
-                Department <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <select
-                id="department"
-                required
-                disabled={accountingLocked}
-                value={form.department}
-                onChange={(e) => setForm({ ...form, department: e.target.value })}
-                className="input-field"
-              >
-                <option value="">Select a department</option>
-                {departments.map((d) => (
-                  <option key={d._id} value={d._id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <PaymentSourceFields
-            paymentSource={form.paymentSource}
-            pocketAmount={form.pocketAmount}
-            amount={form.amount}
-            currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "?"}
-            onPaymentSourceChange={(paymentSource) => setForm((prev) => ({ ...prev, paymentSource }))}
-            onPocketAmountChange={(pocketAmount) => setForm((prev) => ({ ...prev, pocketAmount }))}
-            error={visibleSplitError}
+    <ExpenseForm
+      heading="Edit expense"
+      backLabel={backLabel(returnTo)}
+      onCancel={handleCancel}
+      values={form}
+      onValuesChange={setForm}
+      onTripChange={(trip) => setForm((prev) => ({ ...prev, trip, travelType: trip ? prev.travelType : null }))}
+      onTravelTypeChange={(travelType) =>
+        setForm((prev) => ({ ...prev, travelType: prev.trip ? travelType : null }))
+      }
+      lookups={lookups}
+      trips={trips}
+      currentTrip={storedTrip}
+      defaultPayerId={user?._id}
+      locked={accountingLocked}
+      currencyLocked={hasLinkedAssets}
+      receipt={
+        <>
+          <ReceiptPanel
+            file={newReceipt?.file}
+            filename={newReceipt?.filename || existingReceipt?.filename || null}
+            onFile={handleReceiptFile}
+            onRemove={() => {
+              setNewReceipt(null);
+              setExistingReceipt(null);
+            }}
             disabled={accountingLocked}
-            payments={form.payments}
-            onPaymentsChange={(payments) => setForm((prev) => ({ ...prev, payments }))}
-            members={members}
-            defaultPayerId={user?._id}
-            paymentsError={visiblePaymentsError}
           />
-
-          <div>
-            <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">
-              Description
-            </label>
-            <textarea
-              id="description"
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="input-field resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-muted">Receipt</label>
-            {existingReceipt || newReceipt ? (
-              <div className="flex items-center gap-3 rounded-lg border border-line bg-subtle px-4 py-3">
-                <Upload className="h-5 w-5 text-muted-foreground" />
-                <span className="flex-1 truncate text-sm text-muted">
-                  {newReceipt?.filename || existingReceipt?.filename}
-                </span>
-                <button
-                  type="button"
-                  disabled={accountingLocked}
-                  onClick={() => { setNewReceipt(null); setExistingReceipt(null); }}
-                  className="cursor-pointer rounded p-1 text-muted-foreground hover:text-muted"
-                  aria-label="Remove receipt"
-                >
-                  <XIcon className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <ReceiptDropzone onFile={handleReceiptFile} acceptPaste disabled={accountingLocked} />
-            )}
-          </div>
-        </div>
-
-        <div className="mt-8 flex justify-end gap-3 border-t border-line pt-6">
-          <button type="button" onClick={handleCancel} className="btn-secondary">
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary" disabled={submitting || uploadingReceipt}>
-            {submitting || uploadingReceipt ? (
-              <>
-                <Spinner size="sm" /> Saving...
-              </>
-            ) : (
-              "Update Expense"
-            )}
-          </button>
-        </div>
-      </form>
-    </div>
+          <LinkedAssetsPanel
+            expenseId={expenseId}
+            assets={linkedAssets}
+            currencyCode={currencyCode}
+            canAddMore={isAdmin}
+          />
+        </>
+      }
+      onSubmit={handleSubmit}
+      submitLabel="Save changes"
+      busy={submitting || uploadingReceipt}
+    />
   );
 }
