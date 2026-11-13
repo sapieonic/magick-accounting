@@ -155,7 +155,7 @@ its left side only, for rows with trailing icon buttons), `transition`,
 
 Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Skeleton` (+ page skeletons),
 `Spinner` (`decorative` when visible text says what is loading) / `InlineLoader` (one status, named by its label),
-`Toast` (top-right under the top bar at every width, clear of the tab bar and sticky form footers),
+`Toast` (bottom-right, lifted above the mobile tab bar and any sticky `FormFooter` so it never covers Save or page-header actions),
 `MultiSelect`, `CommandPalette`,
 `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
 

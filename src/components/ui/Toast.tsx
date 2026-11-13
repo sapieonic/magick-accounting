@@ -59,10 +59,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* The bottom edge belongs to the tab bar and sticky form footers (with
-          their Save buttons), so toasts drop in under the top bar at every width. */}
+      {/* Bottom-right, lifted clear of the mobile tab bar (55px + safe area) and
+          of a sticky FormFooter (~69px) so a toast never covers Save, a page
+          header's actions or its heading. */}
       <div
-        className="fixed inset-x-4 top-[calc(72px+env(safe-area-inset-top))] z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-5"
+        className="fixed inset-x-4 bottom-[calc(55px+max(10px,env(safe-area-inset-bottom))+80px)] z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-5 lg:bottom-[88px]"
         aria-live="polite"
         data-testid="toast-region"
       >

@@ -65,7 +65,8 @@ export default function Panel({
             </div>
           )}
           {(meta || actions) && (
-            <div className="ml-auto flex flex-wrap items-baseline gap-3 text-[13px] text-ink-3">
+            // Bare action links get a 24px minimum target (WCAG 2.5.8).
+            <div className="ml-auto flex flex-wrap items-baseline gap-3 text-[13px] text-ink-3 [&>a]:inline-flex [&>a]:min-h-6 [&>a]:items-center">
               {meta && <span className="text-xs">{meta}</span>}
               {actions}
             </div>

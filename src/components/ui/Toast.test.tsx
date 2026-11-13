@@ -97,15 +97,15 @@ describe("Toast", () => {
     });
   });
 
-  it("anchors toasts to the top at every width, clear of the tab bar and sticky form footers", () => {
+  it("anchors toasts bottom-right, lifted above the tab bar and sticky form footers", () => {
     render(
       <ToastProvider>
         <p>page</p>
       </ToastProvider>
     );
     const region = screen.getByTestId("toast-region");
-    expect(region.className).toMatch(/(^|\s)top-\[calc\(72px/);
-    expect(region.className).not.toMatch(/(^|\s|:)bottom-/);
-    expect(region.className).not.toMatch(/top-auto/);
+    expect(region.className).toMatch(/(^|\s)bottom-\[calc\(55px\+max\(10px,env\(safe-area-inset-bottom\)\)\+80px\)\]/);
+    expect(region).toHaveClass("lg:bottom-[88px]");
+    expect(region.className).not.toMatch(/(^|\s|:)top-/);
   });
 });
