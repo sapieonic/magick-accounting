@@ -41,10 +41,13 @@ export const rowSelectedClass = "!bg-accent-soft shadow-[inset_3px_0_0_rgb(var(-
 /** Inline text link in accent colour. */
 export const linkClass = cn("font-medium text-accent hover:text-ink", transition);
 
+/** Side padding of a panel's head, body and footer; reuse it for edge-to-edge rows inside a flush panel. */
+export const panelPadX = "px-[clamp(16px,2vw,24px)]";
+
 /** Ruled surface: 1px rule, 8px radius, no shadow. */
 export const panelClass = "rounded-panel border border-rule bg-surface";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ghost-danger";
 export type ButtonSize = "sm" | "md";
 
 const buttonVariants: Record<ButtonVariant, string> = {
@@ -52,6 +55,8 @@ const buttonVariants: Record<ButtonVariant, string> = {
   secondary: "border border-rule bg-surface text-ink hover:border-accent-line hover:bg-hover",
   ghost: "text-ink-2 hover:bg-tint-2 hover:text-ink",
   danger: "border border-rule bg-surface text-danger hover:border-danger/40 hover:bg-danger-soft",
+  /** Quiet destructive control (delete icon in a row): ink until hovered. */
+  "ghost-danger": "text-ink-2 hover:bg-danger-soft hover:text-danger",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {

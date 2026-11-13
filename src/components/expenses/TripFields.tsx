@@ -268,13 +268,10 @@ export default function TripFields({
                   key={type}
                   role="radio"
                   pressed={checked}
-                  aria-pressed={undefined}
-                  aria-checked={checked}
                   tabIndex={tabbable ? 0 : -1}
                   disabled={disabled}
                   onClick={() => onTravelTypeChange(checked ? null : type)}
                   onKeyDown={(e) => handleChipKeyDown(e, index)}
-                  className="disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <TravelTypeIcon type={type} className={cn("h-[15px] w-[15px]", !checked && "text-ink-3")} />
                   {TRAVEL_TYPE_META[type].label}

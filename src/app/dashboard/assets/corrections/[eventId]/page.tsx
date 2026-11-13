@@ -12,7 +12,7 @@ import Badge from "@/components/ui/Badge";
 import PageHeader from "@/components/ui/PageHeader";
 import Panel, { PanelGrid } from "@/components/ui/Panel";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import DetailList, { type DetailItem } from "@/components/assets/DetailList";
+import DetailList, { type DetailItem } from "@/components/ui/DetailList";
 
 interface Correction {
   assetTag: string;

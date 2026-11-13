@@ -11,21 +11,9 @@ import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
 import TripFields, { type TripOption } from "@/components/expenses/TripFields";
 import { formatCurrency } from "@/lib/currency";
 import type { TravelType } from "@/lib/trip";
+import FormSection, { FieldGrid, FormFooter } from "@/components/ui/FormSection";
 import { getPaymentErrors } from "./expense-form";
-import FormFooter, { FORM_PAD_X } from "./FormFooter";
 import type { AiField, ExpenseFormValues, ExpenseLookups } from "./types";
-
-const FIELD_GRID = "grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))]";
-
-/** A ruled section of the form panel with an h2. */
-function FormSection({ title, children }: { title?: string; children: ReactNode }) {
-  return (
-    <section className={cn("flex min-w-0 flex-col gap-4 border-t border-rule-2 first:border-t-0", FORM_PAD_X, "py-5")}>
-      {title && <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>}
-      {children}
-    </section>
-  );
-}
 
 /** "from receipt" marker for a Field's label row. */
 function FromReceipt() {
@@ -155,176 +143,178 @@ export default function ExpenseForm({
           aria-label="Expense details"
           className={cn(panelClass, "flex min-w-0 flex-[2_1_460px] flex-col")}
         >
-          <FormSection title="Details">
-            <Field label="Title" aside={aside("title")}>
-              <input
-                id="title"
-                type="text"
-                required
-                value={values.title}
-                onChange={(e) => set("title", e.target.value)}
-                placeholder="e.g. Office supplies from Amazon"
-                className={cn(inputClass, ai("title") && aiFilledClass)}
-              />
-            </Field>
-
-            <div className={FIELD_GRID}>
-              <Field
-                label="Amount"
-                aside={aside("amount", "currency")}
-                hint={
-                  currency && !currency.isBase
-                    ? `Converted to INR at the current ${currency.code} rate when you save.`
-                    : "Base currency, no conversion."
-                }
-              >
-                <AmountControl
-                  id="amount"
-                  type="number"
+          <div className="flex flex-col divide-y divide-rule-2">
+            <FormSection title="Details">
+              <Field label="Title" aside={aside("title")}>
+                <input
+                  id="title"
+                  type="text"
                   required
-                  disabled={locked}
-                  min="0"
-                  step="0.01"
-                  value={values.amount}
-                  onChange={(e) => set("amount", e.target.value)}
-                  placeholder="0.00"
-                  className={cn(inputClass, "num min-w-0 flex-1 text-right", ai("amount") && aiFilledClass)}
-                  currencySelect={
-                    <select
-                      aria-label="Currency"
-                      required
-                      disabled={currencyLocked}
-                      value={values.currency}
-                      onChange={(e) => set("currency", e.target.value)}
-                      className={cn(selectClass, "w-[7.5rem] shrink-0", ai("currency") && aiFilledClass)}
-                    >
-                      <option value="">Select</option>
-                      {lookups.currencies.map((c) => (
-                        <option key={c._id} value={c._id}>
-                          {c.code} {c.symbol}
-                        </option>
-                      ))}
-                    </select>
+                  value={values.title}
+                  onChange={(e) => set("title", e.target.value)}
+                  placeholder="e.g. Office supplies from Amazon"
+                  className={cn(inputClass, ai("title") && aiFilledClass)}
+                />
+              </Field>
+
+              <FieldGrid>
+                <Field
+                  label="Amount"
+                  aside={aside("amount", "currency")}
+                  hint={
+                    currency && !currency.isBase
+                      ? `Converted to INR at the current ${currency.code} rate when you save.`
+                      : "Base currency, no conversion."
                   }
-                />
-              </Field>
-
-              <Field
-                label={`GST amount (${symbol})`}
-                optional
-                aside={aside("gstAmount")}
-                hint="Tax already included in the amount. Leave blank if not applicable."
-              >
-                <input
-                  id="gstAmount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  disabled={locked}
-                  value={values.gstAmount}
-                  onChange={(e) => set("gstAmount", e.target.value)}
-                  placeholder="0.00"
-                  className={cn(inputClass, "num text-right", ai("gstAmount") && aiFilledClass)}
-                />
-              </Field>
-
-              <Field label="Date" aside={aside("date")}>
-                <input
-                  id="date"
-                  type="date"
-                  required
-                  disabled={locked}
-                  value={values.date}
-                  onChange={(e) => {
-                    if (!onDateChange) return set("date", e.target.value);
-                    onDateChange(e.target.value);
-                    onEdit?.("date");
-                  }}
-                  className={cn(inputClass, ai("date") && aiFilledClass)}
-                />
-              </Field>
-
-              <Field label="Category" aside={aside("category")}>
-                <select
-                  id="category"
-                  required
-                  disabled={locked}
-                  value={values.category}
-                  onChange={(e) => set("category", e.target.value)}
-                  className={cn(selectClass, ai("category") && aiFilledClass)}
                 >
-                  <option value="">Select a category</option>
-                  {lookups.categories.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                  <AmountControl
+                    id="amount"
+                    type="number"
+                    required
+                    disabled={locked}
+                    min="0"
+                    step="0.01"
+                    value={values.amount}
+                    onChange={(e) => set("amount", e.target.value)}
+                    placeholder="0.00"
+                    className={cn(inputClass, "num min-w-0 flex-1 text-right", ai("amount") && aiFilledClass)}
+                    currencySelect={
+                      <select
+                        aria-label="Currency"
+                        required
+                        disabled={currencyLocked}
+                        value={values.currency}
+                        onChange={(e) => set("currency", e.target.value)}
+                        className={cn(selectClass, "w-[7.5rem] shrink-0", ai("currency") && aiFilledClass)}
+                      >
+                        <option value="">Select</option>
+                        {lookups.currencies.map((c) => (
+                          <option key={c._id} value={c._id}>
+                            {c.code} {c.symbol}
+                          </option>
+                        ))}
+                      </select>
+                    }
+                  />
+                </Field>
 
-              <Field label="Department">
-                <select
-                  id="department"
-                  required
-                  disabled={locked}
-                  value={values.department}
-                  onChange={(e) => set("department", e.target.value)}
-                  className={selectClass}
+                <Field
+                  label={`GST amount (${symbol})`}
+                  optional
+                  aside={aside("gstAmount")}
+                  hint="Tax already included in the amount. Leave blank if not applicable."
                 >
-                  <option value="">Select a department</option>
-                  {lookups.departments.map((d) => (
-                    <option key={d._id} value={d._id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+                  <input
+                    id="gstAmount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={locked}
+                    value={values.gstAmount}
+                    onChange={(e) => set("gstAmount", e.target.value)}
+                    placeholder="0.00"
+                    className={cn(inputClass, "num text-right", ai("gstAmount") && aiFilledClass)}
+                  />
+                </Field>
 
-            <TripFields
-              trips={trips}
-              trip={values.trip}
-              travelType={values.travelType}
-              onTripChange={onTripChange}
-              onTravelTypeChange={onTravelTypeChange}
-              date={values.date}
-              currentTrip={currentTrip}
-            />
-          </FormSection>
+                <Field label="Date" aside={aside("date")}>
+                  <input
+                    id="date"
+                    type="date"
+                    required
+                    disabled={locked}
+                    value={values.date}
+                    onChange={(e) => {
+                      if (!onDateChange) return set("date", e.target.value);
+                      onDateChange(e.target.value);
+                      onEdit?.("date");
+                    }}
+                    className={cn(inputClass, ai("date") && aiFilledClass)}
+                  />
+                </Field>
 
-          <FormSection title="Who paid">
-            <PaymentSourceFields
-              paymentSource={values.paymentSource}
-              pocketAmount={values.pocketAmount}
-              amount={values.amount}
-              currencySymbol={symbol}
-              currencyCode={currency?.code}
-              onPaymentSourceChange={(paymentSource) => onValuesChange((prev) => ({ ...prev, paymentSource }))}
-              onPocketAmountChange={(pocketAmount) => onValuesChange((prev) => ({ ...prev, pocketAmount }))}
-              error={visibleSplitError}
-              disabled={locked}
-              payments={values.payments}
-              onPaymentsChange={(payments) => onValuesChange((prev) => ({ ...prev, payments }))}
-              members={lookups.members}
-              defaultPayerId={defaultPayerId}
-              paymentsError={visiblePaymentsError}
-            />
-          </FormSection>
+                <Field label="Category" aside={aside("category")}>
+                  <select
+                    id="category"
+                    required
+                    disabled={locked}
+                    value={values.category}
+                    onChange={(e) => set("category", e.target.value)}
+                    className={cn(selectClass, ai("category") && aiFilledClass)}
+                  >
+                    <option value="">Select a category</option>
+                    {lookups.categories.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
 
-          <FormSection>
-            <Field label="Description" optional aside={aside("description")}>
-              <textarea
-                id="description"
-                rows={3}
-                value={values.description}
-                onChange={(e) => set("description", e.target.value)}
-                placeholder="Anything finance should know"
-                className={cn(textareaClass, "resize-y", ai("description") && aiFilledClass)}
+                <Field label="Department">
+                  <select
+                    id="department"
+                    required
+                    disabled={locked}
+                    value={values.department}
+                    onChange={(e) => set("department", e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="">Select a department</option>
+                    {lookups.departments.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </FieldGrid>
+
+              <TripFields
+                trips={trips}
+                trip={values.trip}
+                travelType={values.travelType}
+                onTripChange={onTripChange}
+                onTravelTypeChange={onTravelTypeChange}
+                date={values.date}
+                currentTrip={currentTrip}
               />
-            </Field>
-          </FormSection>
+            </FormSection>
 
-          {children && <FormSection>{children}</FormSection>}
+            <FormSection title="Who paid">
+              <PaymentSourceFields
+                paymentSource={values.paymentSource}
+                pocketAmount={values.pocketAmount}
+                amount={values.amount}
+                currencySymbol={symbol}
+                currencyCode={currency?.code}
+                onPaymentSourceChange={(paymentSource) => onValuesChange((prev) => ({ ...prev, paymentSource }))}
+                onPocketAmountChange={(pocketAmount) => onValuesChange((prev) => ({ ...prev, pocketAmount }))}
+                error={visibleSplitError}
+                disabled={locked}
+                payments={values.payments}
+                onPaymentsChange={(payments) => onValuesChange((prev) => ({ ...prev, payments }))}
+                members={lookups.members}
+                defaultPayerId={defaultPayerId}
+                paymentsError={visiblePaymentsError}
+              />
+            </FormSection>
+
+            <FormSection>
+              <Field label="Description" optional aside={aside("description")}>
+                <textarea
+                  id="description"
+                  rows={3}
+                  value={values.description}
+                  onChange={(e) => set("description", e.target.value)}
+                  placeholder="Anything finance should know"
+                  className={cn(textareaClass, "resize-y", ai("description") && aiFilledClass)}
+                />
+              </Field>
+            </FormSection>
+
+            {children && <FormSection>{children}</FormSection>}
+          </div>
 
           <FormFooter className="justify-between">
             <span className="text-sm text-ink-2">

@@ -9,7 +9,8 @@ export { inputClass, selectClass, textareaClass, aiFilledClass } from "@/compone
 interface FieldProps {
   label: ReactNode;
   /** Single control (input/select/textarea/MultiSelect…). It receives `id`,
-   * `aria-describedby` and `aria-invalid` automatically unless it sets them. */
+   * `aria-describedby` and `aria-invalid` automatically unless it sets them,
+   * or `htmlFor` is given. */
   children: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
@@ -19,7 +20,9 @@ interface FieldProps {
   aside?: ReactNode;
   /** Appends a visually quiet "optional". */
   optional?: boolean;
-  /** Use when the control renders its own id elsewhere. */
+  /** Id of the labelled control inside a compound child (chips + input).
+   * The child is then left untouched; describe the control with
+   * `${htmlFor}-hint` / `${htmlFor}-error`. */
   htmlFor?: string;
   className?: string;
 }
@@ -39,7 +42,8 @@ export default function Field({
   className,
 }: FieldProps) {
   const autoId = useId();
-  const only = Children.count(children) === 1 && isValidElement(children) ? (children as ReactElement<ControlProps>) : null;
+  const only =
+    !htmlFor && Children.count(children) === 1 && isValidElement(children) ? (children as ReactElement<ControlProps>) : null;
   const controlId = htmlFor ?? only?.props.id ?? autoId;
   const hintId = hint && !error ? `${controlId}-hint` : undefined;
   const errorId = error ? `${controlId}-error` : undefined;

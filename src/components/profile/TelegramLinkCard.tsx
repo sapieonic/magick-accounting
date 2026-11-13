@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { Send, ExternalLink, Unlink, Camera, FileText, Forward } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import Modal from "@/components/ui/Modal";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Spinner from "@/components/ui/Spinner";
 import Panel from "@/components/ui/Panel";
 import Button from "@/components/ui/Button";
@@ -124,6 +124,7 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
   return (
     <Panel
       title="Telegram"
+      description="Add expenses by sending receipts to our Telegram bot."
       actions={state && <Badge tone={state.tone} dot>{state.label}</Badge>}
       bodyClassName="gap-4"
       footer={
@@ -139,8 +140,6 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
         )
       }
     >
-      <p className="-mt-1 text-[13px] text-ink-3">Add expenses by sending receipts to our Telegram bot.</p>
-
       {!status && !loadError && (
         <div className="flex justify-center py-6">
           <Spinner />
@@ -245,19 +244,17 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
 
-      <Modal isOpen={confirmUnlink} onClose={() => setConfirmUnlink(false)} title="Unlink Telegram">
-        <p className="text-sm text-ink-2">
-          The bot will stop accepting expenses from {linkedName}. Expenses you already added stay as they are.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" onClick={() => setConfirmUnlink(false)} disabled={unlinking}>
-            Cancel
-          </Button>
-          <Button variant="danger" onClick={unlink} loading={unlinking}>
-            {unlinking ? "Unlinking..." : "Unlink"}
-          </Button>
-        </div>
-      </Modal>
+      <ConfirmDialog
+        isOpen={confirmUnlink}
+        onClose={() => setConfirmUnlink(false)}
+        onConfirm={unlink}
+        title="Unlink Telegram"
+        confirmLabel="Unlink"
+        busyLabel="Unlinking..."
+        busy={unlinking}
+      >
+        The bot will stop accepting expenses from {linkedName}. Expenses you already added stay as they are.
+      </ConfirmDialog>
     </Panel>
   );
 }

@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import BrandLogo from "@/components/layout/BrandLogo";
+import Avatar from "@/components/ui/Avatar";
 import { ADMIN_ITEMS, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
 import pkg from "../../../package.json";
@@ -28,15 +29,6 @@ const railIconButton = cn(
   "transition-colors duration-140 hover:bg-rail-hover hover:text-white",
   railFocus
 );
-
-function initials(name?: string) {
-  return (name ?? "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
 
 function RailLink({
   item,
@@ -142,21 +134,7 @@ function RailContent({
               profileActive && "bg-rail-active"
             )}
           >
-            {user?.photoURL ? (
-              <img
-                src={user.photoURL}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="h-8 w-8 shrink-0 rounded-full object-cover"
-              />
-            ) : (
-              <span
-                aria-hidden="true"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rail-line text-xs font-semibold text-[#EEF0FF]"
-              >
-                {initials(user?.name) || "?"}
-              </span>
-            )}
+            <Avatar name={user?.name} photoURL={user?.photoURL} tone="rail" />
             {iconOnly ? (
               <span className="sr-only">Profile</span>
             ) : (

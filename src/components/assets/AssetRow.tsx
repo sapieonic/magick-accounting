@@ -3,7 +3,6 @@ import { format } from "date-fns";
 import { Download } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { IconButton } from "@/components/ui/Button";
-import Spinner from "@/components/ui/Spinner";
 import { cn } from "@/components/ui/cn";
 import { rowClass } from "@/components/ui/styles";
 import AssetGlyph from "@/components/assets/AssetGlyph";
@@ -138,14 +137,11 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
             <span aria-hidden="true">—</span>
             <span className="sr-only">No receipt</span>
           </span>
-        ) : openingReceipt ? (
-          <span className="flex h-10 w-10 items-center justify-center">
-            <Spinner size="sm" />
-          </span>
         ) : (
           <IconButton
             size="sm"
             icon={Download}
+            loading={openingReceipt}
             aria-label={`Open receipt for ${asset.name}`}
             onClick={() => onOpenReceipt(asset)}
           />

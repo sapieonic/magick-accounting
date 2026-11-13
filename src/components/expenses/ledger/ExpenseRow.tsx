@@ -221,10 +221,10 @@ export default function ExpenseRow({
           {onDelete && (
             <IconButton
               icon={Trash2}
+              variant="ghost-danger"
               size="sm"
               onClick={() => onDelete(expense)}
               aria-label={`Delete ${expense.title}`}
-              className="hover:!bg-danger-soft hover:!text-danger"
             />
           )}
         </div>

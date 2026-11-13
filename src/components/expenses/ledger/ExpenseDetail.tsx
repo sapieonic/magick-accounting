@@ -32,7 +32,7 @@ import { Dot } from "@/components/ui/Badge";
 import CategoryGlyph, { CategoryDot } from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
 import { linkClass } from "@/components/ui/styles";
-import DetailList, { type DetailItem } from "@/components/expenses/ledger/DetailList";
+import DetailList, { type DetailItem } from "@/components/ui/DetailList";
 import PaymentDot from "@/components/expenses/ledger/PaymentDot";
 import { conversionNote, expenseDate, isImageFile, paymentSourceDetail } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";

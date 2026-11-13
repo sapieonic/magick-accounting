@@ -1,10 +1,12 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
-import { panelClass } from "@/components/ui/styles";
+import { panelClass, panelPadX } from "@/components/ui/styles";
 
 interface PanelProps {
   /** Section heading (h2). Also labels the section for assistive tech. */
   title?: ReactNode;
+  /** One quiet line under the title. */
+  description?: ReactNode;
   /** Small note right of the title (units, ranges). */
   meta?: ReactNode;
   /** Links/buttons right of the title. */
@@ -29,6 +31,7 @@ interface PanelProps {
  */
 export default function Panel({
   title,
+  description,
   meta,
   actions,
   footer,
@@ -41,8 +44,7 @@ export default function Panel({
   id,
 }: PanelProps) {
   const headingId = useId();
-  const hasHead = title || meta || actions;
-  const pad = "px-[clamp(16px,2vw,24px)]";
+  const hasHead = title || description || meta || actions;
   return (
     <section
       id={id}
@@ -51,8 +53,17 @@ export default function Panel({
       style={grow ? { flexGrow: grow } : undefined}
     >
       {hasHead && (
-        <div className={cn("flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pb-3 pt-5", pad)}>
-          {title && <h2 id={headingId} className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>}
+        <div className={cn("flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pb-3 pt-5", panelPadX)}>
+          {(title || description) && (
+            <div className="flex min-w-0 flex-col gap-0.5">
+              {title && (
+                <h2 id={headingId} className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+                  {title}
+                </h2>
+              )}
+              {description && <p className="text-[13px] text-ink-3 [text-wrap:pretty]">{description}</p>}
+            </div>
+          )}
           {(meta || actions) && (
             <div className="ml-auto flex flex-wrap items-baseline gap-3 text-[13px] text-ink-3">
               {meta && <span className="text-xs">{meta}</span>}
@@ -61,11 +72,11 @@ export default function Panel({
           )}
         </div>
       )}
-      <div className={cn("flex min-w-0 flex-1 flex-col", !flush && cn(pad, "pb-5", !hasHead && "pt-5"), bodyClassName)}>
+      <div className={cn("flex min-w-0 flex-1 flex-col", !flush && cn(panelPadX, "pb-5", !hasHead && "pt-5"), bodyClassName)}>
         {children}
       </div>
       {footer && (
-        <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", pad)}>
+        <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", panelPadX)}>
           {footer}
         </div>
       )}

@@ -3,13 +3,32 @@
 import { useEffect, useRef, ReactNode } from "react";
 import { X } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** Width class of the sheet from `sm` up. Default "max-w-lg". */
   maxWidth?: string;
+}
+
+/**
+ * The dialog's action row, pinned to the bottom of the scrolling sheet; put it
+ * last inside the form or body. Buttons stack (primary on top) on phones.
+ */
+export function ModalFooter({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "sticky bottom-0 -mx-5 mt-1 flex flex-col-reverse gap-2 border-t border-rule bg-surface px-5 py-3 sm:flex-row sm:items-center sm:justify-end",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 export default function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-lg" }: ModalProps) {
@@ -50,7 +69,10 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
       <div
         ref={contentRef}
         tabIndex={-1}
-        className={`animate-slide-up flex max-h-[92dvh] w-full flex-col ${maxWidth} rounded-t-panel border border-rule bg-surface shadow-elevated outline-none sm:rounded-panel`}
+        className={cn(
+          "animate-slide-up flex max-h-[92dvh] w-full flex-col rounded-t-panel border border-rule bg-surface shadow-elevated outline-none sm:rounded-panel",
+          maxWidth
+        )}
       >
         <div className="flex items-center justify-between gap-3 border-b border-rule py-2 pl-5 pr-2">
           <h2 className="text-base font-semibold tracking-[-0.015em] text-ink">{title}</h2>

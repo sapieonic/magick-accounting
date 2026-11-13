@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { differenceInCalendarDays, parseISO } from "date-fns";
-import { CalendarDays, Luggage, MapPin, Plus, Search, X } from "lucide-react";
+import { CalendarDays, Luggage, MapPin, Plus, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatBaseCurrency } from "@/lib/currency";
@@ -15,8 +15,9 @@ import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
 import { InlineLoader } from "@/components/ui/Spinner";
 import PageHeader from "@/components/ui/PageHeader";
-import Button, { IconButton } from "@/components/ui/Button";
-import Field, { inputClass } from "@/components/ui/Field";
+import Button from "@/components/ui/Button";
+import Field from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
 import SegmentedControl from "@/components/ui/SegmentedControl";
 import { cn } from "@/components/ui/cn";
 import { focusRing, panelClass, transition } from "@/components/ui/styles";
@@ -232,25 +233,9 @@ export default function TripsPage() {
       />
 
       <div className="flex flex-wrap items-end gap-3">
-        <div className="relative min-w-0 flex-[1_1_280px] sm:max-w-md">
-          <Field label="Search trips" icon={Search}>
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Trip name or destination"
-              className={cn(inputClass, "pr-11")}
-            />
-          </Field>
-          {searchInput && (
-            <IconButton
-              icon={X}
-              size="sm"
-              onClick={() => setSearchInput("")}
-              aria-label="Clear search"
-              className="absolute bottom-0.5 right-0.5"
-            />
-          )}
-        </div>
+        <Field label="Search trips" className="flex-[1_1_280px] sm:max-w-md">
+          <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Trip name or destination" />
+        </Field>
         <SegmentedControl options={STATUS_OPTIONS} value={status} onChange={setStatus} aria-label="Trip status" />
         {refreshing && <InlineLoader label="Searching..." className="min-h-11" />}
       </div>

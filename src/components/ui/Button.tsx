@@ -100,6 +100,8 @@ interface IconButtonOwnProps {
   "aria-label": string;
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Shows a spinner in place of the icon and disables the button. */
+  loading?: boolean;
   className?: string;
 }
 
@@ -116,13 +118,17 @@ export type IconButtonProps = IconAsButton | IconAsLink;
 
 /** 40/44px square icon-only button (ghost by default). Shows its label as a tooltip. */
 export function IconButton(props: IconButtonProps) {
-  const { icon: Icon, variant = "ghost", size = "md", className, ...rest } = props;
+  const { icon: Icon, variant = "ghost", size = "md", loading = false, className, ...rest } = props;
   const classes = cn(iconButtonClass({ variant, size }), className);
-  const glyph = <Icon aria-hidden="true" size={size === "sm" ? 18 : 20} strokeWidth={ICON_STROKE} />;
+  const glyph = loading ? (
+    <ButtonSpinner />
+  ) : (
+    <Icon aria-hidden="true" size={size === "sm" ? 18 : 20} strokeWidth={ICON_STROKE} />
+  );
   const title = rest.title ?? rest["aria-label"];
 
   if (rest.href !== undefined) {
-    const { href, ...anchor } = rest as Omit<IconAsLink, "icon" | "variant" | "size" | "className">;
+    const { href, ...anchor } = rest as Omit<IconAsLink, "icon" | "variant" | "size" | "loading" | "className">;
     return (
       <Link href={href} className={classes} title={title} {...anchor}>
         {glyph}
@@ -130,9 +136,16 @@ export function IconButton(props: IconButtonProps) {
     );
   }
 
-  const { type = "button", ...button } = rest as Omit<IconAsButton, "icon" | "variant" | "size" | "className">;
+  const { type = "button", disabled, ...button } = rest as Omit<IconAsButton, "icon" | "variant" | "size" | "loading" | "className">;
   return (
-    <button type={type} className={classes} title={title} {...button}>
+    <button
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={classes}
+      title={title}
+      {...button}
+    >
       {glyph}
     </button>
   );

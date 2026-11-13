@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { CircleDot, IndianRupee, Package, PackageCheck, Plus, Search, Tag, Undo2, UserMinus } from "lucide-react";
+import { CircleDot, IndianRupee, Package, PackageCheck, Plus, Tag, Undo2, UserMinus } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +11,8 @@ import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
-import Field, { inputClass, selectClass } from "@/components/ui/Field";
+import Field, { selectClass } from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
 import PageHeader from "@/components/ui/PageHeader";
 import Panel from "@/components/ui/Panel";
 import Spinner from "@/components/ui/Spinner";
@@ -191,14 +192,8 @@ export default function AssetsPage() {
         onSubmit={(e) => e.preventDefault()}
         className="flex flex-wrap items-end gap-3"
       >
-        <Field label="Search assets" icon={Search} className="flex-[3_1_240px]">
-          <input
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Asset tag, name, serial or model"
-            className={inputClass}
-          />
+        <Field label="Search assets" className="flex-[3_1_240px]">
+          <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Asset tag, name, serial or model" />
         </Field>
         <Field label="Status" icon={CircleDot} className="flex-[1_1_160px]">
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}>

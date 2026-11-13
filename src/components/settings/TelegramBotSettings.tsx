@@ -10,9 +10,10 @@ import Panel from "@/components/ui/Panel";
 import Button from "@/components/ui/Button";
 import { Dot } from "@/components/ui/Badge";
 import Field, { inputClass } from "@/components/ui/Field";
+import { FieldGrid } from "@/components/ui/FormSection";
 import { cn } from "@/components/ui/cn";
 import { ICON_STROKE, linkClass } from "@/components/ui/styles";
-import ConfirmDialog from "@/components/org/ConfirmDialog";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
 export interface TelegramSettingsView {
@@ -224,7 +225,7 @@ export default function TelegramBotSettings({ id = "telegram" }: { id?: string }
                 <li>Paste the token BotFather gives you below and connect.</li>
               </ol>
             )}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-4">
+            <FieldGrid min={260}>
               <Field
                 label="Bot token"
                 hint={view.configured ? "Leave empty to keep the current token." : "Stored on the server; never shown again."}
@@ -252,7 +253,7 @@ export default function TelegramBotSettings({ id = "telegram" }: { id?: string }
                   className={inputClass}
                 />
               </Field>
-            </div>
+            </FieldGrid>
             <div className="flex flex-wrap justify-end gap-2">
               {view.configured && (
                 <Button

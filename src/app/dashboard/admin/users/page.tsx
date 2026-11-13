@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Shield, ShieldCheck, User as UserIcon, Users, type LucideIcon } from "lucide-react";
+import { Shield, ShieldCheck, User as UserIcon, Users, type LucideIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -15,10 +15,10 @@ import Panel from "@/components/ui/Panel";
 import Badge, { type Tone } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import SegmentedControl from "@/components/ui/SegmentedControl";
-import { inputClass } from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
 import { cn } from "@/components/ui/cn";
-import { ICON_STROKE, rowClass } from "@/components/ui/styles";
-import UserAvatar from "@/components/org/UserAvatar";
+import { rowClass } from "@/components/ui/styles";
+import Avatar from "@/components/ui/Avatar";
 import UserSpendPanels from "@/components/org/UserSpendPanels";
 
 type Role = "master_admin" | "admin" | "user";
@@ -140,22 +140,13 @@ export default function AdminUsersPage() {
             flush
           >
             <div className="flex flex-wrap items-center gap-2 px-[clamp(16px,2vw,24px)] pb-3">
-              <label className="relative min-w-0 flex-[1_1_240px]">
-                <span className="sr-only">Search users</span>
-                <Search
-                  aria-hidden="true"
-                  size={16}
-                  strokeWidth={ICON_STROKE}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3"
-                />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search name or email"
-                  className={cn(inputClass, "pl-9")}
-                />
-              </label>
+              <SearchInput
+                aria-label="Search users"
+                value={query}
+                onValueChange={setQuery}
+                placeholder="Search name or email"
+                className="flex-[1_1_240px]"
+              />
               <SegmentedControl<RoleFilter>
                 aria-label="Filter by role"
                 value={roleFilter}
@@ -201,7 +192,7 @@ export default function AdminUsersPage() {
                       )}
                     >
                       <span className="flex min-w-0 flex-[1_1_240px] items-center gap-3">
-                        <UserAvatar name={user.name} photoURL={user.photoURL} />
+                        <Avatar name={user.name} photoURL={user.photoURL} size={36} />
                         <span className="flex min-w-0 flex-col">
                           <span className="ell font-medium text-ink">{user.name}</span>
                           <span className="ell text-[13px] text-ink-3">{user.email}</span>

@@ -12,7 +12,7 @@ import { FormSkeleton } from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
 import Panel from "@/components/ui/Panel";
 import { cn } from "@/components/ui/cn";
-import { rowClass } from "@/components/ui/styles";
+import { panelPadX, rowClass } from "@/components/ui/styles";
 import {
   newPaymentDraft,
   paymentDraftsToPayload,
@@ -22,7 +22,6 @@ import {
 import { useTripOptions } from "@/components/expenses/TripFields";
 import ExpenseForm from "@/components/expenses/form/ExpenseForm";
 import ReceiptPanel from "@/components/expenses/form/ReceiptPanel";
-import { FORM_PAD_X } from "@/components/expenses/form/FormFooter";
 import {
   LOOKUPS_URL,
   MAX_RECEIPT_SIZE,
@@ -99,6 +98,7 @@ function LinkedAssetsPanel({
     <Panel
       title="Company assets"
       meta={`${assets.length} linked`}
+      description="The expense amount and GST cannot be reduced below their asset allocations."
       flush
       footer={
         canAddMore ? (
@@ -108,15 +108,12 @@ function LinkedAssetsPanel({
         ) : undefined
       }
     >
-      <p className={cn(FORM_PAD_X, "pb-3 text-[13px] text-ink-3")}>
-        The expense amount and GST cannot be reduced below their asset allocations.
-      </p>
       <ul>
         {assets.map((asset) => (
           <li key={asset._id}>
             <Link
               href={`/dashboard/assets/${asset._id}`}
-              className={cn(rowClass, FORM_PAD_X, "flex min-h-12 items-center justify-between gap-3 py-2")}
+              className={cn(rowClass, panelPadX, "flex min-h-12 items-center justify-between gap-3 py-2")}
             >
               <span className="flex min-w-0 flex-col">
                 <span className="ell text-sm font-medium text-ink">{asset.name}</span>

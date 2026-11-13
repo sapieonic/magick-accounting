@@ -11,7 +11,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Field, { inputClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
 import { ICON_STROKE, rowClass } from "@/components/ui/styles";
-import ConfirmDialog, { DialogActions } from "@/components/org/ConfirmDialog";
+import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
 export interface AllowedDomain {
@@ -110,6 +110,7 @@ export default function DomainSettings({ id, domains, onChanged }: DomainSetting
               </span>
               <IconButton
                 icon={Trash2}
+                variant="ghost-danger"
                 size="sm"
                 onClick={() => setDeleteTarget(domain)}
                 disabled={lastOne}

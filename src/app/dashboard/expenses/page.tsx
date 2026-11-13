@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   Calendar,
@@ -10,11 +10,9 @@ import {
   MousePointerClick,
   Plus,
   Receipt,
-  Search,
   Tag,
   User as UserIcon,
   Wallet,
-  X,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
 import { api } from "@/lib/api";
@@ -30,18 +28,19 @@ import EmptyState from "@/components/ui/EmptyState";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
 import PageHeader from "@/components/ui/PageHeader";
-import Button, { IconButton } from "@/components/ui/Button";
+import Button from "@/components/ui/Button";
 import Field, { inputClass, selectClass } from "@/components/ui/Field";
-import StatBand, { Stat } from "@/components/ui/StatBand";
+import SearchInput from "@/components/ui/SearchInput";
+import { RemovableChip } from "@/components/ui/Badge";
+import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
 import SplitBar from "@/components/ui/SplitBar";
 import Skeleton from "@/components/ui/Skeleton";
 import { cn } from "@/components/ui/cn";
 import { focusRing, panelClass, transition } from "@/components/ui/styles";
-import BandCell from "@/components/expenses/ledger/BandCell";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
 import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
-import { useMediaQuery } from "@/components/expenses/ledger/useMediaQuery";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import TripCluster, { buildExpenseListItems, tripItemKey } from "@/components/trips/TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
@@ -107,25 +106,6 @@ interface PendingDelete {
   expense: Expense;
   index: number;
   timer: ReturnType<typeof setTimeout>;
-}
-
-/** An active filter, shown as a chip that removes it. */
-function FilterChip({ children, onRemove }: { children: ReactNode; onRemove: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onRemove}
-      className={cn(
-        "inline-flex h-10 max-w-full cursor-pointer items-center gap-1.5 rounded-control border border-accent-line bg-accent-soft pl-3 pr-2 text-[13px] font-medium text-accent hover:bg-tint-2",
-        transition,
-        focusRing
-      )}
-    >
-      <span className="ell">{children}</span>
-      <X aria-hidden="true" size={14} strokeWidth={1.75} className="shrink-0" />
-      <span className="sr-only">(remove filter)</span>
-    </button>
-  );
 }
 
 /** On/off switch for the "Group trips" view. */
@@ -653,26 +633,9 @@ export default function ExpensesPage() {
           onSubmit={(e) => e.preventDefault()}
           className="flex flex-wrap items-end gap-3"
         >
-          <div className="relative min-w-0 flex-[3_1_240px]">
-            <Field label="Search" icon={Search}>
-              <input
-                type="text"
-                placeholder="Title, vendor, note"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className={cn(inputClass, "pr-11")}
-              />
-            </Field>
-            {searchInput && (
-              <IconButton
-                icon={X}
-                size="sm"
-                onClick={() => setSearchInput("")}
-                aria-label="Clear search"
-                className="absolute bottom-0.5 right-0.5"
-              />
-            )}
-          </div>
+          <Field label="Search" className="flex-[3_1_240px]">
+            <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Title, vendor, note" />
+          </Field>
           <Field label="Dates" icon={Calendar} className="flex-[1_1_150px]">
             <select value={datePreset} onChange={(e) => setDatePreset(e.target.value)} className={selectClass}>
               {datePresetOptions.map((opt) => (
@@ -749,19 +712,19 @@ export default function ExpensesPage() {
         {hasAnyFilter && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="cap text-ink-3">Filtered by</span>
-            {hasDateFilter && <FilterChip onRemove={clearDateFilter}>{periodLabel}</FilterChip>}
+            {hasDateFilter && <RemovableChip onRemove={clearDateFilter}>{periodLabel}</RemovableChip>}
             {filterDepts.map((id) => (
-              <FilterChip key={id} onRemove={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}>
+              <RemovableChip key={id} onRemove={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}>
                 {departments.find((d) => d._id === id)?.name}
-              </FilterChip>
+              </RemovableChip>
             ))}
             {filterCats.map((id) => (
-              <FilterChip key={id} onRemove={() => setFilterCats((prev) => prev.filter((v) => v !== id))}>
+              <RemovableChip key={id} onRemove={() => setFilterCats((prev) => prev.filter((v) => v !== id))}>
                 {categories.find((c) => c._id === id)?.name}
-              </FilterChip>
+              </RemovableChip>
             ))}
-            {filterUser && <FilterChip onRemove={() => setFilterUser("")}>Submitted by {userName(filterUser)}</FilterChip>}
-            {filterPayer && <FilterChip onRemove={() => setFilterPayer("")}>Paid by {userName(filterPayer)}</FilterChip>}
+            {filterUser && <RemovableChip onRemove={() => setFilterUser("")}>Submitted by {userName(filterUser)}</RemovableChip>}
+            {filterPayer && <RemovableChip onRemove={() => setFilterPayer("")}>Paid by {userName(filterPayer)}</RemovableChip>}
           </div>
         )}
       </div>

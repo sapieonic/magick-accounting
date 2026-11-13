@@ -12,7 +12,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Field, { inputClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
 import { rowClass } from "@/components/ui/styles";
-import ConfirmDialog, { DialogActions } from "@/components/org/ConfirmDialog";
+import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
 export interface CurrencyRecord {
@@ -171,6 +171,7 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
                   />
                   <IconButton
                     icon={Trash2}
+                    variant="ghost-danger"
                     size="sm"
                     aria-label={`Delete ${curr.code}`}
                     onClick={() => setDeleteTarget(curr)}

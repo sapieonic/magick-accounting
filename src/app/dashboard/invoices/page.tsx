@@ -14,7 +14,7 @@ import Button from "@/components/ui/Button";
 import Field, { inputClass, selectClass, textareaClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
 import { linkClass, panelClass } from "@/components/ui/styles";
-import FormSection, { FieldGrid, SectionRow } from "@/components/invoice/ui/FormSection";
+import FormSection, { FieldGrid, SectionRow } from "@/components/ui/FormSection";
 import LineItemsTable, { newLineRow, type LineRow } from "@/components/invoice/ui/LineItemsTable";
 import InvoiceSummary from "@/components/invoice/ui/InvoiceSummary";
 import { computeTotals, formatDiscountLabel } from "@/lib/invoice";
@@ -300,43 +300,39 @@ export default function InvoicesPage() {
 
           <SectionRow>
             <FormSection title="From" description="Your company, as printed on the invoice.">
-              <div className="flex flex-col gap-4">
-                <Field label={<>Name{required}</>}>
-                  <input type="text" required {...bindSeller("name")} className={inputClass} />
-                </Field>
-                <FieldGrid min={180}>
-                  <Field label="Email">
-                    <input type="email" {...bindSeller("email")} className={inputClass} />
-                  </Field>
-                  <Field label="GSTIN">
-                    <input type="text" {...bindSeller("gstin")} placeholder="36ABCDE1234F1Z5" className={numClass} />
-                  </Field>
-                </FieldGrid>
-                <Field label="Address" hint="One line per row.">
-                  <textarea
-                    rows={3}
-                    {...bindSeller("address")}
-                    placeholder={"e.g.\nTelangana\nIndia"}
-                    className={cn(textareaClass, "resize-none")}
-                  />
-                </Field>
-              </div>
-            </FormSection>
-            <FormSection title="Bill to" description="The customer you are invoicing.">
-              <div className="flex flex-col gap-4">
-                <Field label={<>Name{required}</>}>
-                  <input
-                    type="text"
-                    required
-                    {...bindCustomer("name")}
-                    placeholder="e.g. Mr. Ashish Chauhan"
-                    className={inputClass}
-                  />
+              <Field label={<>Name{required}</>}>
+                <input type="text" required {...bindSeller("name")} className={inputClass} />
+              </Field>
+              <FieldGrid min={180}>
+                <Field label="Email">
+                  <input type="email" {...bindSeller("email")} className={inputClass} />
                 </Field>
                 <Field label="GSTIN">
-                  <input type="text" {...bindCustomer("gstin")} placeholder="36ABCDE1234F1Z5" className={numClass} />
+                  <input type="text" {...bindSeller("gstin")} placeholder="36ABCDE1234F1Z5" className={numClass} />
                 </Field>
-              </div>
+              </FieldGrid>
+              <Field label="Address" hint="One line per row.">
+                <textarea
+                  rows={3}
+                  {...bindSeller("address")}
+                  placeholder={"e.g.\nTelangana\nIndia"}
+                  className={cn(textareaClass, "resize-none")}
+                />
+              </Field>
+            </FormSection>
+            <FormSection title="Bill to" description="The customer you are invoicing.">
+              <Field label={<>Name{required}</>}>
+                <input
+                  type="text"
+                  required
+                  {...bindCustomer("name")}
+                  placeholder="e.g. Mr. Ashish Chauhan"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="GSTIN">
+                <input type="text" {...bindCustomer("gstin")} placeholder="36ABCDE1234F1Z5" className={numClass} />
+              </Field>
             </FormSection>
           </SectionRow>
 

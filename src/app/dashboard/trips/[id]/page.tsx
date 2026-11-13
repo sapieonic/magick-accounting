@@ -27,12 +27,13 @@ import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, w
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
-import Modal from "@/components/ui/Modal";
+import Avatar from "@/components/ui/Avatar";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Skeleton from "@/components/ui/Skeleton";
 import { InlineLoader } from "@/components/ui/Spinner";
 import PageHeader from "@/components/ui/PageHeader";
 import Button from "@/components/ui/Button";
-import StatBand, { Stat } from "@/components/ui/StatBand";
+import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
 import Panel, { PanelGrid } from "@/components/ui/Panel";
 import RankedBar from "@/components/ui/RankedBar";
 import EmptyState from "@/components/ui/EmptyState";
@@ -40,9 +41,8 @@ import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import TripTimeline from "@/components/trips/TripTimeline";
 import TripFormModal from "@/components/trips/TripFormModal";
 import AddExistingExpensesModal from "@/components/trips/AddExistingExpensesModal";
-import { BudgetMeter, PersonAvatar, TripStatusBadge } from "@/components/trips/TripMeta";
+import { BudgetMeter, TripStatusBadge } from "@/components/trips/TripMeta";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
-import BandCell from "@/components/expenses/ledger/BandCell";
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
@@ -499,10 +499,10 @@ export default function TripDetailPage() {
 
         <PanelGrid min={300} className="min-w-0 grow basis-[320px]">
           {summary.expenseCount > 0 && (
-            <Panel title="By travel type">
-              <p className="-mt-1 mb-3 text-[13px] text-ink-3">
-                {isAdmin ? "Where the trip money went." : "Where your money on this trip went."}
-              </p>
+            <Panel
+              title="By travel type"
+              description={isAdmin ? "Where the trip money went." : "Where your money on this trip went."}
+            >
               <ul className="flex flex-col gap-3">
                 {byType.map((row) => {
                   const total = Math.max(row.total, 0);
@@ -530,8 +530,7 @@ export default function TripDetailPage() {
           )}
 
           {summary.expenseCount > 0 && (
-            <Panel title="Who paid">
-              <p className="-mt-1 mb-1 text-[13px] text-ink-3">Out-of-pocket spend is what the company owes each person.</p>
+            <Panel title="Who paid" description="Out-of-pocket spend is what the company owes each person.">
               {summary.byPayer.length === 0 ? (
                 <p className="py-2 text-sm text-ink-3">No payments recorded yet.</p>
               ) : (
@@ -542,7 +541,7 @@ export default function TripDetailPage() {
                       data-testid="payer-row"
                       className="flex items-center gap-3 border-t border-rule-2 py-3 first:border-t-0 last:pb-0"
                     >
-                      <PersonAvatar person={row.user} />
+                      <Avatar name={row.user.name || row.user.email} photoURL={row.user.photoURL} />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="ell text-ink">{row.user.name}</span>
                         <span className="num text-xs text-ink-3">
@@ -571,8 +570,8 @@ export default function TripDetailPage() {
                 Might belong here
               </span>
             }
+            description="Dated inside the trip, by a traveller, not yet linked."
           >
-            <p className="-mt-1 mb-3 text-[13px] text-ink-3">Dated inside the trip, by a traveller, not yet linked.</p>
             {candidates === null ? (
               <Skeleton className="h-[62px] w-full" />
             ) : suggestions.length === 0 ? (
@@ -621,8 +620,17 @@ export default function TripDetailPage() {
         onClose={() => setAddOpen(false)}
         onAdded={handleAdded}
       />
-      <Modal isOpen={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)} title="Delete trip">
-        <div className="flex flex-col gap-3 text-sm text-ink-2">
+      <ConfirmDialog
+        isOpen={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDeleteTrip}
+        title="Delete trip"
+        icon={Trash2}
+        confirmLabel="Delete trip"
+        busyLabel="Deleting..."
+        busy={deleting}
+      >
+        <div className="flex flex-col gap-3">
           <p>
             Delete <span className="font-semibold text-ink">{trip.name}</span>?
           </p>
@@ -631,15 +639,7 @@ export default function TripDetailPage() {
             receipts and amounts. Their travel type tags are cleared.
           </p>
         </div>
-        <div className="-mx-5 mt-5 flex flex-col-reverse gap-2 border-t border-rule px-5 pt-4 sm:flex-row sm:justify-end">
-          <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-            Cancel
-          </Button>
-          <Button variant="danger" icon={Trash2} onClick={handleDeleteTrip} loading={deleting}>
-            {deleting ? "Deleting..." : "Delete trip"}
-          </Button>
-        </div>
-      </Modal>
+      </ConfirmDialog>
     </div>
   );
 }

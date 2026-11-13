@@ -13,7 +13,7 @@ import { panelClass } from "@/components/ui/styles";
 import { cn } from "@/components/ui/cn";
 import StatBand, { Stat } from "@/components/ui/StatBand";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import FormFooter, { FORM_PAD_X } from "@/components/expenses/form/FormFooter";
+import FormSection, { FormFooter } from "@/components/ui/FormSection";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -140,7 +140,7 @@ export default function AddAssetsToExpensePage() {
       </StatBand>
 
       <form onSubmit={submit} aria-label="Assets to create" className={cn(panelClass, "flex min-w-0 flex-col")}>
-        <div className={cn(FORM_PAD_X, "py-5")}>
+        <FormSection>
           <AssetPurchaseSection
             assets={assets}
             onChange={setAssets}
@@ -150,7 +150,7 @@ export default function AddAssetsToExpensePage() {
             canAssignOthers={isAdmin}
             currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
           />
-        </div>
+        </FormSection>
         <FormFooter className="justify-end">
           <Button type="submit" icon={PackagePlus} loading={saving} disabled={assets.length === 0}>
             {saving ? "Creating…" : "Create linked assets"}

@@ -9,7 +9,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import Panel, { PanelGrid } from "@/components/ui/Panel";
 import Badge, { type Tone } from "@/components/ui/Badge";
 import SegmentedControl from "@/components/ui/SegmentedControl";
-import ProfileAvatar from "@/components/profile/ProfileAvatar";
+import Avatar from "@/components/ui/Avatar";
 import TelegramLinkCard from "@/components/profile/TelegramLinkCard";
 
 const ROLES: Record<"master_admin" | "admin" | "user", { label: string; tone: Tone; note: string }> = {
@@ -46,7 +46,7 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
-        <ProfileAvatar name={user.name} photoURL={user.photoURL} />
+        <Avatar name={user.name} photoURL={user.photoURL} size={56} />
         <PageHeader
           className="min-w-0 flex-1"
           eyebrow="Profile"

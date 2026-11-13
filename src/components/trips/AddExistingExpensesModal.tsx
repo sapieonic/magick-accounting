@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Inbox, Search } from "lucide-react";
+import { Check, Inbox } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import type { ExpenseListItem } from "@/types/expense";
 import Modal from "@/components/ui/Modal";
 import Skeleton from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
-import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
-import Field, { inputClass } from "@/components/ui/Field";
+import Field from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
 import { focusRing, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
-import { MODAL_FOOTER } from "@/components/trips/formParts";
+import { DialogActions } from "@/components/ui/ConfirmDialog";
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 
 interface AddExistingExpensesModalProps {
@@ -143,13 +143,8 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
         <p className="text-sm text-ink-3">
           Expenses not in any trip, dated from two months before to two weeks after this trip.
         </p>
-        <Field label="Search expenses" icon={Search}>
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Title or description"
-            className={inputClass}
-          />
+        <Field label="Search expenses">
+          <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Title or description" />
         </Field>
 
         {!ready || (loading && candidates.length === 0) ? (
@@ -237,7 +232,14 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
           </p>
         )}
 
-        <div className={MODAL_FOOTER}>
+        <DialogActions
+          onCancel={onClose}
+          onConfirm={handleAdd}
+          disabled={selected.size === 0}
+          confirmLabel={selected.size > 0 ? `Add ${selected.size} to trip` : "Add to trip"}
+          busyLabel="Adding..."
+          busy={saving}
+        >
           <p className="text-center text-xs text-ink-3 sm:mr-auto sm:text-left">
             {selected.size > 0 ? (
               <>
@@ -247,13 +249,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
               "Pick the expenses that belong to this trip"
             )}
           </p>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={handleAdd} disabled={selected.size === 0} loading={saving}>
-            {saving ? "Adding..." : selected.size > 0 ? `Add ${selected.size} to trip` : "Add to trip"}
-          </Button>
-        </div>
+        </DialogActions>
       </div>
     </Modal>
   );

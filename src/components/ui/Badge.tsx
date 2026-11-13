@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import { X, type LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 import { focusRing, transition } from "@/components/ui/styles";
 
@@ -52,20 +52,23 @@ export default function Badge({ tone = "neutral", icon: Icon, dot, className, ch
 }
 
 interface ChipProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
-  /** Toggle state; rendered as aria-pressed. */
+  /** Toggle state: aria-pressed, or aria-checked with `role="radio"` (inside a radiogroup). */
   pressed?: boolean;
   icon?: LucideIcon;
   children: ReactNode;
 }
 
-/** 44px toggle chip for quick filters (mobile filter row, presets). */
+/** 44px toggle chip for quick filters (mobile filter row, presets) or one option of a radiogroup. */
 export function Chip({ pressed = false, icon: Icon, className, children, type = "button", ...rest }: ChipProps) {
+  const radio = rest.role === "radio";
   return (
     <button
       type={type}
-      aria-pressed={pressed}
+      aria-pressed={radio ? undefined : pressed}
+      aria-checked={radio ? pressed : undefined}
       className={cn(
         "inline-flex h-11 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-control border px-3 text-sm",
+        "disabled:cursor-not-allowed disabled:opacity-50",
         transition,
         focusRing,
         pressed
@@ -79,6 +82,35 @@ export function Chip({ pressed = false, icon: Icon, className, children, type = 
         <Icon aria-hidden="true" size={15} strokeWidth={1.75} className={pressed ? undefined : "text-ink-3"} />
       )}
       {children}
+    </button>
+  );
+}
+
+interface RemovableChipProps {
+  /** Removes the value (an active filter, a picked place or person). */
+  onRemove: () => void;
+  /** Accessible name, e.g. "Remove Pune"; default: the label + "(remove)". */
+  removeLabel?: string;
+  children: ReactNode;
+}
+
+/** A picked value shown as an indigo chip; the whole chip is the remove button. */
+export function RemovableChip({ onRemove, removeLabel, children }: RemovableChipProps) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      aria-label={removeLabel}
+      title={removeLabel}
+      className={cn(
+        "inline-flex h-10 max-w-full cursor-pointer items-center gap-1.5 rounded-control border border-accent-line bg-accent-soft pl-3 pr-2 text-[13px] font-medium text-accent hover:bg-tint-2",
+        transition,
+        focusRing
+      )}
+    >
+      <span className="ell">{children}</span>
+      <X aria-hidden="true" size={14} strokeWidth={1.75} className="shrink-0" />
+      {!removeLabel && <span className="sr-only">(remove)</span>}
     </button>
   );
 }

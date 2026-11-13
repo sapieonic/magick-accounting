@@ -21,7 +21,7 @@ import { cn } from "@/components/ui/cn";
 import { linkClass, ICON_STROKE } from "@/components/ui/styles";
 import AssetStatusBadge, { ASSET_STATUSES, TERMINAL_STATUSES } from "@/components/assets/AssetStatusBadge";
 import { AssetEventList, AssignmentList, type AssetAssignment, type AssetEvent } from "@/components/assets/AssetHistory";
-import DetailList from "@/components/assets/DetailList";
+import DetailList from "@/components/ui/DetailList";
 import { useReceiptOpener } from "@/components/assets/useReceiptOpener";
 
 interface UserOption { _id: string; name: string; email: string }

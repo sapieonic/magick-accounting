@@ -99,10 +99,11 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
               </span>
               <IconButton
                 icon={Trash2}
+                variant="ghost-danger"
                 aria-label={`Remove item ${n}`}
                 onClick={() => onRemove(i)}
                 disabled={rows.length === 1}
-                className="justify-self-end hover:text-danger [grid-area:del]"
+                className="justify-self-end [grid-area:del]"
               />
             </li>
           );

@@ -18,7 +18,7 @@ import Badge from "@/components/ui/Badge";
 import Field, { inputClass, textareaClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
 import { rowClass } from "@/components/ui/styles";
-import ConfirmDialog, { DialogActions } from "@/components/org/ConfirmDialog";
+import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 
 export interface OrgItem {
   _id: string;
@@ -226,6 +226,7 @@ export default function OrgListPage<T extends OrgItem>({ config }: { config: Org
                   {manageable && (
                     <IconButton
                       icon={Trash2}
+                      variant="ghost-danger"
                       size="sm"
                       aria-label={`Delete ${item.name}`}
                       onClick={() => setDeleteTarget(item)}

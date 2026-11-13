@@ -6,7 +6,7 @@ import RankedBar from "@/components/ui/RankedBar";
 import SplitBar from "@/components/ui/SplitBar";
 import { linkClass } from "@/components/ui/styles";
 import { formatBaseCurrency } from "@/lib/currency";
-import UserAvatar from "@/components/org/UserAvatar";
+import Avatar from "@/components/ui/Avatar";
 
 export interface UserSpend {
   _id: string;
@@ -81,7 +81,7 @@ export default function UserSpendPanels({ users }: { users: UserSpend[] }) {
             rows={spend}
             render={({ user, value }) => (
               <RankedBar
-                leading={<UserAvatar name={user.name} photoURL={user.photoURL} size="sm" />}
+                leading={<Avatar name={user.name} photoURL={user.photoURL} size={24} />}
                 label={user.name}
                 amount={formatBaseCurrency(value)}
                 ratio={max > 0 ? value / max : 0}
@@ -102,7 +102,7 @@ export default function UserSpendPanels({ users }: { users: UserSpend[] }) {
               rows={source}
               render={({ user, company: c, pocket: p }) => (
                 <div className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
-                  <UserAvatar name={user.name} photoURL={user.photoURL} size="sm" className="row-span-2" />
+                  <Avatar name={user.name} photoURL={user.photoURL} size={24} className="row-span-2" />
                   <span className="ell">{user.name}</span>
                   <span className="flex flex-wrap justify-end gap-x-2 text-[13px]">
                     <span className="num whitespace-nowrap">

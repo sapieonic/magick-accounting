@@ -8,13 +8,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { TripListItem } from "@/types/trip";
 import Modal from "@/components/ui/Modal";
 import MultiSelect from "@/components/ui/MultiSelect";
-import Button from "@/components/ui/Button";
 import Field, { inputClass, selectClass, textareaClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
-import { MODAL_FOOTER, RemovableChip } from "@/components/trips/formParts";
-
-/** Two fields side by side, wrapping on narrow sheets. */
-const FIELD_ROW = "grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))]";
+import { RemovableChip } from "@/components/ui/Badge";
+import { DialogActions } from "@/components/ui/ConfirmDialog";
+import { FieldGrid } from "@/components/ui/FormSection";
 
 function Required() {
   return (
@@ -278,17 +276,18 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
               {form.destinations.map((place) => (
                 <li key={place}>
                   <RemovableChip
-                    label={place}
                     removeLabel={`Remove ${place}`}
                     onRemove={() => update("destinations", form.destinations.filter((d) => d !== place))}
-                  />
+                  >
+                    {place}
+                  </RemovableChip>
                 </li>
               ))}
             </ul>
           )}
         </div>
 
-        <div className={FIELD_ROW}>
+        <FieldGrid>
           <Field label={<>Start date <Required /></>} icon={CalendarDays}>
             <input type="date" value={form.startDate} onChange={(e) => setStartDate(e.target.value)} className={inputClass} />
           </Field>
@@ -305,7 +304,7 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
               className={inputClass}
             />
           </Field>
-        </div>
+        </FieldGrid>
 
         <div className="flex flex-col gap-2">
           <Field label={<>Travelers <Required /></>} icon={Users}>
@@ -322,15 +321,12 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
               {form.travelers.map((id) => (
                 <li key={id}>
                   <RemovableChip
-                    label={
-                      <>
-                        {labelFor(id)}
-                        {id === user?._id && <span className="ml-1 font-normal text-ink-3">(you)</span>}
-                      </>
-                    }
                     removeLabel={`Remove traveler ${labelFor(id)}`}
                     onRemove={() => update("travelers", form.travelers.filter((t) => t !== id))}
-                  />
+                  >
+                    {labelFor(id)}
+                    {id === user?._id && <span className="ml-1 font-normal text-ink-3">(you)</span>}
+                  </RemovableChip>
                 </li>
               ))}
             </ul>
@@ -347,7 +343,7 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
           />
         </Field>
 
-        <div className={FIELD_ROW}>
+        <FieldGrid>
           <Field label="Department" icon={Building2}>
             <select value={form.department} onChange={(e) => update("department", e.target.value)} className={selectClass}>
               <option value="">No department</option>
@@ -373,7 +369,7 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
               className={cn(inputClass, "num")}
             />
           </Field>
-        </div>
+        </FieldGrid>
 
         <Field label="Notes" icon={StickyNote}>
           <textarea
@@ -393,14 +389,12 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
           </div>
         )}
 
-        <div className={MODAL_FOOTER}>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={saving}>
-            {saving ? "Saving..." : isEdit ? "Save changes" : "Create trip"}
-          </Button>
-        </div>
+        <DialogActions
+          onCancel={onClose}
+          confirmLabel={isEdit ? "Save changes" : "Create trip"}
+          busyLabel="Saving..."
+          busy={saving}
+        />
       </form>
     </Modal>
   );

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Copy, PackagePlus, Plus, Trash2 } from "lucide-react";
 import Button, { IconButton } from "@/components/ui/Button";
 import Field, { inputClass, selectClass } from "@/components/ui/Field";
+import { FieldGrid } from "@/components/ui/FormSection";
 import { cn } from "@/components/ui/cn";
 
 export interface AssetDraft {
@@ -84,8 +85,6 @@ function capitalizedCost(asset: AssetDraft): number {
   );
 }
 
-const GRID_200 = "grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))]";
-const GRID_160 = "grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr))]";
 
 /** A labelled group of asset fields under a quiet caption. */
 function Group({ title, children }: { title: string; children: ReactNode }) {
@@ -166,15 +165,15 @@ export default function AssetPurchaseSection({
                 <IconButton icon={Copy} size="sm" onClick={() => duplicateAsset(asset)} aria-label={`Duplicate asset ${n}`} />
                 <IconButton
                   icon={Trash2}
+                  variant="ghost-danger"
                   size="sm"
                   onClick={() => onChange(assets.filter((item) => item.id !== asset.id))}
                   aria-label={`Remove asset ${n}`}
-                  className="hover:bg-danger-soft hover:text-danger"
                 />
               </div>
             </div>
 
-            <div className={GRID_200}>
+            <FieldGrid>
               <Field label="Asset name">
                 <input
                   aria-label={`Asset ${n} name`}
@@ -265,10 +264,10 @@ export default function AssetPurchaseSection({
                   className={inputClass}
                 />
               </Field>
-            </div>
+            </FieldGrid>
 
             <Group title="Cost">
-              <div className={GRID_160}>
+              <FieldGrid min={160}>
                 <Field label={`Allocated amount ${money}`}>
                   <input
                     aria-label={`Asset ${n} allocated amount`}
@@ -303,7 +302,7 @@ export default function AssetPurchaseSection({
                     className={cn(inputClass, "num text-right")}
                   />
                 </Field>
-              </div>
+              </FieldGrid>
               <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-control bg-sunk px-3 py-2 text-xs text-ink-3">
                 <span>
                   Capitalized cost{" "}
@@ -317,7 +316,7 @@ export default function AssetPurchaseSection({
             </Group>
 
             <Group title="Depreciation">
-              <div className={GRID_160}>
+              <FieldGrid min={160}>
                 <Field label="Method">
                   <select
                     aria-label={`Asset ${n} depreciation method`}
@@ -365,7 +364,7 @@ export default function AssetPurchaseSection({
                     className={inputClass}
                   />
                 </Field>
-              </div>
+              </FieldGrid>
             </Group>
           </div>
         );

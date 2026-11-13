@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { CalendarClock, CircleCheck } from "lucide-react";
+import Avatar from "@/components/ui/Avatar";
 import Badge from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
 import { formatBaseCurrency } from "@/lib/currency";
@@ -15,29 +16,6 @@ export function TripStatusBadge({ status, children }: { status: TripStatus; chil
   return <Badge icon={CircleCheck}>{label}</Badge>;
 }
 
-function initials(person: TripPerson): string {
-  const parts = (person.name || person.email || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
-}
-
-const AVATAR_SIZES = {
-  sm: "h-7 w-7 text-[10px]",
-  md: "h-8 w-8 text-[11px]",
-} as const;
-
-/** A person's photo, or their initials when they have none. */
-export function PersonAvatar({ person, size = "md" }: { person: TripPerson; size?: keyof typeof AVATAR_SIZES }) {
-  const box = cn("shrink-0 rounded-full ring-2 ring-surface", AVATAR_SIZES[size]);
-  return person.photoURL ? (
-    <img src={person.photoURL} alt={person.name} title={person.name} className={cn(box, "object-cover")} referrerPolicy="no-referrer" />
-  ) : (
-    <span title={person.name} className={cn(box, "flex items-center justify-center bg-accent-soft font-semibold text-accent")}>
-      {initials(person)}
-    </span>
-  );
-}
-
 /** Overlapping avatars, at most `max`, then "+N". */
 export function TravelerAvatars({ travelers, max = 4 }: { travelers: TripPerson[]; max?: number }) {
   if (travelers.length === 0) return null;
@@ -47,10 +25,10 @@ export function TravelerAvatars({ travelers, max = 4 }: { travelers: TripPerson[
   return (
     <div className="flex shrink-0 items-center -space-x-2" role="img" aria-label={`Travelers: ${names}`} title={names}>
       {shown.map((person) => (
-        <PersonAvatar key={person._id} person={person} size="sm" />
+        <Avatar key={person._id} name={person.name || person.email} photoURL={person.photoURL} size={28} className="ring-2 ring-surface" />
       ))}
       {extra > 0 && (
-        <span className={cn(AVATAR_SIZES.sm, "flex items-center justify-center rounded-full bg-sunk font-semibold text-ink-2 ring-2 ring-surface")}>
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sunk text-[10px] font-semibold text-ink-2 ring-2 ring-surface">
           +{extra}
         </span>
       )}

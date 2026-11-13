@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import Panel from "@/components/ui/Panel";
 import Button from "@/components/ui/Button";
 import Field, { inputClass, textareaClass } from "@/components/ui/Field";
+import { FieldGrid } from "@/components/ui/FormSection";
 import { cn } from "@/components/ui/cn";
 import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
@@ -49,7 +50,6 @@ export function normalizeInvoiceSettings(raw: Record<string, unknown>): InvoiceS
   };
 }
 
-const gridClass = "grid grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-4";
 
 interface InvoiceDefaultsSettingsProps {
   id: string;
@@ -98,14 +98,14 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
       meta="Seller and bank details used to pre-fill new invoices."
     >
       <form onSubmit={handleSave} className="flex flex-col gap-5">
-        <div className={gridClass}>
+        <FieldGrid min={240}>
           <Field label="Seller name">
             <input {...bind("sellerName", { placeholder: "e.g. Magickvoice Llp" })} />
           </Field>
           <Field label="GSTIN">
             <input {...bind("sellerGstin", { placeholder: "36ABCDE1234F1Z5", className: cn(inputClass, "num") })} />
           </Field>
-        </div>
+        </FieldGrid>
         <Field label="Address">
           <textarea
             rows={2}
@@ -115,7 +115,7 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
             className={cn(textareaClass, "resize-none")}
           />
         </Field>
-        <div className={gridClass}>
+        <FieldGrid min={240}>
           <Field label="HSN/SAC code" hint="Applied to every invoice — shown above Place of Supply.">
             <input {...bind("hsnSac", { placeholder: "e.g. 998314", className: cn(inputClass, "num") })} />
           </Field>
@@ -128,13 +128,13 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
           >
             <input {...bind("sgstRate", { ...rateProps, className: cn(inputClass, "num") })} />
           </Field>
-        </div>
+        </FieldGrid>
 
         <div role="group" aria-labelledby={`${id}-bank`} className="flex flex-col gap-4 border-t border-rule-2 pt-4">
           <span id={`${id}-bank`} className="cap text-ink-3">
             Bank details
           </span>
-          <div className={gridClass}>
+          <FieldGrid min={240}>
             <Field label="Account name">
               <input {...bind("bankAccountName")} />
             </Field>
@@ -147,7 +147,7 @@ export default function InvoiceDefaultsSettings({ id, settings }: InvoiceDefault
             <Field label="IFSC">
               <input {...bind("bankIfsc", { className: cn(inputClass, "num") })} />
             </Field>
-          </div>
+          </FieldGrid>
         </div>
 
         <div className="flex justify-end">

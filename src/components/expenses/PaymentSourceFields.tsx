@@ -3,6 +3,7 @@
 import { Building2, Plus, SquareSplitHorizontal, Users, Wallet, X as XIcon } from "lucide-react";
 import Button, { IconButton } from "@/components/ui/Button";
 import Field, { inputClass, selectClass } from "@/components/ui/Field";
+import { FieldGrid } from "@/components/ui/FormSection";
 import SegmentedControl, { type SegmentOption } from "@/components/ui/SegmentedControl";
 import SplitBar from "@/components/ui/SplitBar";
 import { Dot } from "@/components/ui/Badge";
@@ -53,9 +54,6 @@ const ENTRY_SOURCE_OPTIONS: SegmentOption<PaymentEntrySource>[] = [
   { value: "pocket", label: "Pocket" },
   { value: "company", label: "Company" },
 ];
-
-// Four segments must fit a phone: icons only from `sm` up.
-const compactSegments = "[&>button]:px-2.5 [&_svg]:hidden sm:[&>button]:px-3.5 sm:[&_svg]:block";
 
 const noteClass = "text-[13px] text-ink-2 [text-wrap:pretty]";
 
@@ -116,15 +114,15 @@ export default function PaymentSourceFields({
   const companyAmount = splitFits ? (companyCents / 100).toFixed(2) : "";
 
   return (
-    // A disabled fieldset disables every control inside, the segment buttons included.
-    <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-4 [&:disabled_[role=group]]:opacity-60">
+    <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-4">
       <SegmentedControl
         aria-label="Payment source"
         options={onPaymentsChange ? SOURCE_OPTIONS : SOURCE_OPTIONS.filter((o) => o.value !== "multiple")}
         value={paymentSource}
         onChange={handleSourceChange}
         fullWidth
-        className={compactSegments}
+        compact
+        disabled={disabled}
       />
 
       {paymentSource === "pocket" && (
@@ -136,7 +134,7 @@ export default function PaymentSourceFields({
 
       {isSplit && (
         <div className="flex flex-col gap-3">
-          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))]">
+          <FieldGrid>
             <Field
               label={
                 <span className="inline-flex items-center gap-1.5">
@@ -178,7 +176,7 @@ export default function PaymentSourceFields({
                 className={cn(inputClass, "num text-right read-only:bg-sunk")}
               />
             </Field>
-          </div>
+          </FieldGrid>
           {splitFits && (
             <>
               <SplitBar
@@ -290,6 +288,7 @@ function PayerRows({ payments, onChange, members, amount, currencySymbol, curren
                   options={ENTRY_SOURCE_OPTIONS}
                   value={entry.source}
                   onChange={(source) => update(entry.key, { source })}
+                  size="sm"
                 />
                 <IconButton
                   icon={XIcon}
