@@ -5,6 +5,7 @@ import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Department from "@/models/Department";
+import Currency from "@/models/Currency";
 
 vi.mock("@/lib/auth", () => ({ verifyAuth: vi.fn() }));
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
@@ -65,5 +66,30 @@ describe("GET /api/lookups members", () => {
 
     expect(User.find).not.toHaveBeenCalled();
     expect((await response.json()).members).toEqual([]);
+  });
+});
+
+describe("GET /api/lookups currencies", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined as never);
+  });
+
+  it("includes each active currency's rate so the expense form can preview the INR amount", async () => {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: "user-id",
+      email: "user@example.com",
+      name: "User",
+      role: "user",
+    });
+    const currencies = [{ _id: "c1", code: "USD", name: "US Dollar", symbol: "$", isBase: false, rateToBase: 83.5 }];
+    const query = chain(currencies);
+    vi.mocked(Currency.find).mockReturnValue(query as never);
+
+    const response = await get("?include=currencies");
+
+    expect(Currency.find).toHaveBeenCalledWith({ isActive: true });
+    expect(query.select).toHaveBeenCalledWith("code name symbol isBase rateToBase");
+    expect((await response.json()).currencies).toEqual(currencies);
   });
 });

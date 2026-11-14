@@ -7,6 +7,7 @@ import {
   getEffectiveAssetAllocation,
   moneyToCents,
   MAX_ASSETS_PER_PURCHASE,
+  roundMoney,
   normalizeAssetPurchases,
   normalizeDepreciationPolicy,
   resolveOptionalMoneyUpdate,
@@ -264,6 +265,20 @@ describe("getEffectiveAssetAllocation", () => {
 
   it("uses persisted assets to self-heal a stale legacy counter", () => {
     expect(getEffectiveAssetAllocation(1200.005, 1000)).toBe(1200.01);
+  });
+});
+
+describe("roundMoney", () => {
+  it("rounds to two decimals without float drift", () => {
+    expect(roundMoney(0.1 + 0.2)).toBe(0.3);
+    expect(roundMoney(1.005)).toBe(1.01);
+    expect(roundMoney(-2.345)).toBe(-2.34);
+  });
+
+  it("never returns negative zero", () => {
+    expect(Object.is(roundMoney(-0), 0)).toBe(true);
+    expect(Object.is(roundMoney(-0.001), 0)).toBe(true);
+    expect(Object.is(roundMoney(100.1 - 100.1), 0)).toBe(true);
   });
 });
 

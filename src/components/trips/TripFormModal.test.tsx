@@ -43,6 +43,15 @@ const existingTrip: TripListItem = {
   canManage: true,
 };
 
+/**
+ * Types `text` into `field` as one paste: typing it key by key re-renders the
+ * whole modal per character, which timed out under a loaded parallel run.
+ */
+async function fill(user: ReturnType<typeof userEvent.setup>, field: HTMLElement, text: string) {
+  await user.click(field);
+  await user.paste(text);
+}
+
 function renderModal(props: Partial<React.ComponentProps<typeof TripFormModal>> = {}) {
   const onSaved = vi.fn();
   const onClose = vi.fn();
@@ -75,16 +84,19 @@ describe("TripFormModal", () => {
     await waitFor(() => expect(api.get).toHaveBeenCalledWith("/api/lookups?include=members,departments"));
     expect(screen.getByText("(you)")).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText(/Trip name/), "Mumbai – Acme pitch");
-    await user.type(screen.getByLabelText("Destinations"), "Mumbai, Pune{Enter}");
+    await fill(user, screen.getByLabelText(/Trip name/), "Mumbai – Acme pitch");
+    // A comma commits a place, and so does Enter.
+    await fill(user, screen.getByLabelText("Destinations"), "Mumbai,");
+    await user.paste("Pune");
+    await user.keyboard("{Enter}");
     fireEvent.change(screen.getByLabelText(/Start date/), { target: { value: "2026-11-02" } });
     // End date follows the start date until changed.
     expect(screen.getByLabelText(/End date/)).toHaveValue("2026-11-02");
     fireEvent.change(screen.getByLabelText(/End date/), { target: { value: "2026-11-04" } });
-    await user.type(screen.getByLabelText("Purpose / client"), "Acme pitch");
-    await user.type(screen.getByLabelText("Budget (₹)"), "50000");
+    await fill(user, screen.getByLabelText("Purpose / client"), "Acme pitch");
+    await fill(user, screen.getByLabelText("Budget (₹)"), "50000");
 
-    await user.click(screen.getByRole("button", { name: "Travelers" }));
+    await user.click(screen.getByRole("combobox", { name: "Travelers" }));
     await user.click(await screen.findByRole("option", { name: "Priya" }));
 
     await user.click(screen.getByRole("button", { name: "Create trip" }));
@@ -104,18 +116,28 @@ describe("TripFormModal", () => {
     expect(onSaved).toHaveBeenCalledWith(savedTrip);
   });
 
+  it("says people are loading, not that there are none, while the lookups load", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: null, isAdmin: false } as any);
+    vi.mocked(api.get).mockReturnValue(new Promise(() => {}));
+    renderModal();
+
+    const travelers = screen.getByRole("combobox", { name: "Travelers" });
+    expect(travelers).toHaveTextContent("Loading people...");
+    expect(travelers).not.toHaveTextContent("None available");
+  });
+
   it("shows the validation message instead of posting", async () => {
     const user = userEvent.setup();
     renderModal();
 
     await user.click(screen.getByRole("button", { name: "Create trip" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Trip name is required");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Trip name is required"));
 
     await user.type(screen.getByLabelText(/Trip name/), "Pune");
     fireEvent.change(screen.getByLabelText(/Start date/), { target: { value: "2026-11-05" } });
     fireEvent.change(screen.getByLabelText(/End date/), { target: { value: "2026-11-01" } });
     await user.click(screen.getByRole("button", { name: "Create trip" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("End date cannot be before the start date");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("End date cannot be before the start date"));
 
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -129,7 +151,7 @@ describe("TripFormModal", () => {
     fireEvent.change(screen.getByLabelText(/Start date/), { target: { value: "2026-11-05" } });
     await user.click(screen.getByRole("button", { name: "Create trip" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("A traveler no longer exists");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("A traveler no longer exists"));
     expect(onSaved).not.toHaveBeenCalled();
   });
 
@@ -145,7 +167,7 @@ describe("TripFormModal", () => {
     await waitFor(() => expect(screen.getByLabelText("Department")).toHaveValue(DEPT));
 
     await user.clear(screen.getByLabelText(/Trip name/));
-    await user.type(screen.getByLabelText(/Trip name/), "Delhi offsite 2026");
+    await user.paste("Delhi offsite 2026");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));

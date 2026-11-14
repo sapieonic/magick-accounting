@@ -2,23 +2,18 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { IconButton } from "@/components/ui/Button";
 
 export default function ThemeToggle({ className }: { className?: string }) {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
 
   return (
-    <button
-      type="button"
+    <IconButton
+      icon={isDark ? Sun : Moon}
       onClick={toggleTheme}
-      className={
-        "cursor-pointer rounded-lg p-2 text-muted transition-colors hover:bg-subtle hover:text-foreground " +
-        (className ?? "")
-      }
+      className={className}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-    >
-      {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-    </button>
+    />
   );
 }

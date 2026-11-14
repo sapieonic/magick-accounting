@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import mongoose from "mongoose";
-import { Aggregator } from "mingo";
+import { Aggregator, Query } from "mingo";
 import "mingo/init/system";
 import type { AuthUser } from "@/lib/auth";
 
@@ -10,12 +10,17 @@ vi.mock("@/models/Expense", () => ({
 }));
 
 import {
+  afterCursorFilter,
   buildExpenseFilter,
+  decodeExpenseCursor,
+  encodeExpenseCursor,
+  expensePagination,
   getExpenseSummary,
   groupedExpensePagePipeline,
+  parseExpensePageParams,
   parsePaidByParam,
 } from "@/lib/expense-query";
-import { paidByFilter, payerSpendPipeline } from "@/lib/expense";
+import { MAX_EXPENSE_PAGE, paidByFilter, payerSpendPipeline } from "@/lib/expense";
 import Expense from "@/models/Expense";
 
 const USER_ID = "507f1f77bcf86cd799439011";
@@ -250,10 +255,10 @@ describe("getExpenseSummary", () => {
 
   it("returns totals from the aggregate result", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([
-      { _id: null, totalExpenses: 7, totalAmount: 1234.5 },
+      { _id: null, totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 },
     ] as never);
     const result = await getExpenseSummary({ foo: "bar" });
-    expect(result).toEqual({ totalExpenses: 7, totalAmount: 1234.5 });
+    expect(result).toEqual({ totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 });
   });
 
   it("passes the filter into the $match stage", async () => {
@@ -266,16 +271,35 @@ describe("getExpenseSummary", () => {
     expect(pipeline[0]).toEqual({ $match: filter });
   });
 
-  it("falls back to {0,0} when aggregate returns []", async () => {
+  it("falls back to zeros when aggregate returns []", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([] as never);
     const result = await getExpenseSummary({});
-    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0 });
+    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
   });
 
   it("falls back to 0 for missing fields in the summary doc", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([{ _id: null }] as never);
     const result = await getExpenseSummary({});
-    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0 });
+    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
+  });
+
+  it("splits the total into company and pocket, legacy documents included", async () => {
+    const docs = [
+      // Current documents carry the pocket share.
+      { amount: 1000, amountInBaseCurrency: 1000, paymentSource: "split", pocketAmountInBaseCurrency: 400 },
+      { amount: 10, amountInBaseCurrency: 900, paymentSource: "company", pocketAmountInBaseCurrency: 0 },
+      // Legacy documents without it: company counts as company, anything else as pocket.
+      { amount: 300, paymentSource: "company" },
+      { amount: 200, amountInBaseCurrency: 200, paymentSource: "pocket" },
+    ];
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
+    );
+
+    const result = await getExpenseSummary({});
+
+    expect(result).toEqual({ totalExpenses: 4, totalAmount: 2400, companyAmount: 1800, pocketAmount: 600 });
   });
 });
 
@@ -317,6 +341,8 @@ describe("getExpenseSummary — payer share", () => {
     expect(result).toEqual({
       totalExpenses: 3,
       totalAmount: 900,
+      companyAmount: 0,
+      pocketAmount: 0,
       payerSpend: { totalSpend: 250, pocketSpend: 200, companySpend: 50 },
     });
   });
@@ -385,7 +411,7 @@ describe("groupedExpensePagePipeline", () => {
   const ids = (item: { ids: unknown[] }) => item.ids.map(String).sort();
 
   it("collapses each trip's expenses into one item keyed by the trip id", () => {
-    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), docs);
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, null, 20), docs);
 
     expect(total).toEqual([{ count: 5 }]);
     const goaItem = items.find((item: { _id: unknown }) => String(item._id) === goa.toString());
@@ -398,7 +424,7 @@ describe("groupedExpensePagePipeline", () => {
   });
 
   it("orders items by their latest expense date, newest first", () => {
-    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), docs);
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, null, 20), docs);
 
     expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
       [legacy._id, goa, lunch._id, pune, taxi._id].map(String)
@@ -408,25 +434,50 @@ describe("groupedExpensePagePipeline", () => {
   it("breaks a date tie by the latest entry time", () => {
     const early = expense("2026-02-01", null, "2026-02-01");
     const late = expense("2026-02-01", oid(), "2026-02-03");
-    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, 1, 20), [early, late]);
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, null, 20), [early, late]);
 
     expect(items.map((item: { ids: unknown[] }) => String(item.ids[0]))).toEqual(
       [late._id, early._id].map(String)
     );
   });
 
-  it("paginates items, not expenses, and counts all items", () => {
-    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, 2, 2), docs);
+  it("fetches one item over the limit and counts all items", () => {
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, null, 2), docs);
 
     expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
-      [lunch._id, pune].map(String)
+      [legacy._id, goa, lunch._id].map(String)
     );
     expect(total).toEqual([{ count: 5 }]);
   });
 
+  it("continues strictly after the cursor item, without recounting all items", () => {
+    // After the second item (Goa, whose latest expense is the 5 Jan hotel).
+    const cursor = decodeExpenseCursor(encodeExpenseCursor({ ...goaHotel, _id: goa }))!;
+    const pipeline = groupedExpensePagePipeline({}, cursor, 2);
+    const [result] = runPipeline(pipeline, docs);
+
+    expect(result.items.map((item: { _id: unknown }) => String(item._id))).toEqual(
+      [lunch._id, pune, taxi._id].map(String)
+    );
+    // Only the first page reports a total, so later pages don't count.
+    const facet = pipeline.find((stage) => "$facet" in stage) as { $facet: Record<string, unknown> };
+    expect(Object.keys(facet.$facet)).toEqual(["items"]);
+    expect(result).not.toHaveProperty("total");
+  });
+
+  it("doesn't skip an item when the one before the cursor was deleted", () => {
+    const cursor = decodeExpenseCursor(encodeExpenseCursor({ ...goaHotel, _id: goa }))!;
+    const remaining = docs.filter((doc) => doc !== legacy && doc !== goaFlight && doc !== goaHotel);
+    const [{ items }] = runPipeline(groupedExpensePagePipeline({}, cursor, 20), remaining);
+
+    expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
+      [lunch._id, pune, taxi._id].map(String)
+    );
+  });
+
   it("applies the filter before grouping", () => {
     const filter = buildExpenseFilter(params("trip=none"), makeUser("admin"));
-    const [{ items, total }] = runPipeline(groupedExpensePagePipeline(filter, 1, 20), docs);
+    const [{ items, total }] = runPipeline(groupedExpensePagePipeline(filter, null, 20), docs);
 
     expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
       [legacy._id, lunch._id, taxi._id].map(String)
@@ -436,11 +487,123 @@ describe("groupedExpensePagePipeline", () => {
 
   it("returns one document with no items when nothing matches", () => {
     const filter = buildExpenseFilter(params(""), makeUser("user", OTHER_ID));
-    const result = runPipeline(groupedExpensePagePipeline(filter, 1, 20), docs);
+    const result = runPipeline(groupedExpensePagePipeline(filter, null, 20), docs);
 
     expect(result).toHaveLength(1);
     expect(result[0].items).toEqual([]);
     // MongoDB's $count emits nothing for no input (mingo emits 0); readers treat both as 0.
     expect(result[0].total[0]?.count ?? 0).toBe(0);
+  });
+});
+
+describe("expense cursors", () => {
+  const id = new mongoose.Types.ObjectId();
+  const date = new Date("2026-03-02T00:00:00.000Z");
+  const createdAt = new Date("2026-03-02T09:30:00.000Z");
+
+  it("round-trips the sort key of the last row as an opaque string", () => {
+    const encoded = encodeExpenseCursor({ date, createdAt, _id: id });
+    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeExpenseCursor(encoded)).toEqual({ date, createdAt, id });
+    expect(decodeExpenseCursor(encodeExpenseCursor({ date, _id: id }))).toEqual({ date, createdAt: null, id });
+  });
+
+  it("rejects anything this API didn't make", () => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    expect(decodeExpenseCursor("not a cursor")).toBeNull();
+    expect(decodeExpenseCursor(encode({ date }))).toBeNull();
+    expect(decodeExpenseCursor(encode(["yesterday", null, String(id)]))).toBeNull();
+    expect(decodeExpenseCursor(encode([date.toISOString(), 5, String(id)]))).toBeNull();
+    expect(decodeExpenseCursor(encode([date.toISOString(), null, "abc"]))).toBeNull();
+  });
+
+  it("matches what sorts after the cursor: older days, earlier entries, then lower ids", () => {
+    const cursor = { date, createdAt, id };
+    const doc = (day: string, entered: string | null, docId = new mongoose.Types.ObjectId()) => ({
+      _id: docId,
+      date: new Date(`${day}T00:00:00.000Z`),
+      ...(entered ? { createdAt: new Date(`${day}T${entered}:00.000Z`) } : {}),
+    });
+    const lowerId = new mongoose.Types.ObjectId("000000000000000000000001");
+    const higherId = new mongoose.Types.ObjectId("ffffffffffffffffffffffff");
+    const after = [doc("2026-03-01", "23:00"), doc("2026-03-02", "08:00"), doc("2026-03-02", null), doc("2026-03-02", "09:30", lowerId)];
+    const before = [doc("2026-03-03", "01:00"), doc("2026-03-02", "10:00"), doc("2026-03-02", "09:30", higherId)];
+
+    const matched = new Query(afterCursorFilter(cursor)).find([...after, ...before]).all();
+    expect(matched.map((d) => String(d._id))).toEqual(after.map((d) => String(d._id)));
+  });
+
+  it("puts only lower ids of the same day after a cursor without an entry time", () => {
+    const cursor = { date, createdAt: null, id };
+    const lowerId = new mongoose.Types.ObjectId("000000000000000000000001");
+    const docs = [
+      { _id: lowerId, date },
+      { _id: new mongoose.Types.ObjectId("ffffffffffffffffffffffff"), date },
+      { _id: new mongoose.Types.ObjectId(), date, createdAt: new Date("2026-03-02T01:00:00.000Z") },
+    ];
+
+    const matched = new Query(afterCursorFilter(cursor)).find(docs).all();
+    expect(matched.map((d) => String(d._id))).toEqual([String(lowerId)]);
+  });
+});
+
+describe("parseExpensePageParams", () => {
+  it("reads the limit and the cursor", () => {
+    const cursor = encodeExpenseCursor({ date: new Date("2026-03-02"), _id: new mongoose.Types.ObjectId() });
+    expect(parseExpensePageParams(params(`limit=25&cursor=${cursor}`))).toEqual({
+      limit: 25,
+      cursor: decodeExpenseCursor(cursor),
+    });
+  });
+
+  it("falls back to the first page of 20 for a missing or invalid limit", () => {
+    expect(parseExpensePageParams(params(""))).toEqual({ limit: 20, cursor: null });
+    expect(parseExpensePageParams(params("limit=-3&cursor="))).toEqual({ limit: 20, cursor: null });
+    expect(parseExpensePageParams(params("limit=2.5"))).toEqual({ limit: 20, cursor: null });
+  });
+
+  it("caps the limit at the largest page (the CSV export's)", () => {
+    expect(MAX_EXPENSE_PAGE).toBe(10000);
+    expect(parseExpensePageParams(params("limit=10000"))).toEqual({ limit: 10000, cursor: null });
+    expect(parseExpensePageParams(params("limit=10001"))).toEqual({ limit: 10000, cursor: null });
+    expect(parseExpensePageParams(params("limit=999999999"))).toEqual({ limit: 10000, cursor: null });
+  });
+
+  it("refuses a malformed cursor rather than starting over", () => {
+    expect(parseExpensePageParams(params("cursor=nope"))).toBeNull();
+  });
+});
+
+describe("expensePagination", () => {
+  const row = (day: number) => ({
+    _id: new mongoose.Types.ObjectId(),
+    date: new Date(Date.UTC(2026, 0, day)),
+    createdAt: new Date(Date.UTC(2026, 0, day, 9)),
+  });
+
+  it("drops the extra row and continues after the last row sent", () => {
+    const rows = [row(5), row(4), row(3), row(2)];
+    const { page, pagination } = expensePagination(rows, 3, 7);
+
+    expect(page).toEqual(rows.slice(0, 3));
+    expect(pagination).toEqual({ total: 7, hasMore: true, nextCursor: encodeExpenseCursor(rows[2]) });
+  });
+
+  it("has no next page when the rows fit the limit", () => {
+    const rows = [row(5), row(4)];
+    expect(expensePagination(rows, 3, 2)).toEqual({
+      page: rows,
+      pagination: { total: 2, hasMore: false, nextCursor: null },
+    });
+    expect(expensePagination([], 3, 0).pagination).toEqual({ total: 0, hasMore: false, nextCursor: null });
+  });
+
+  it("passes on a missing total (pages after a cursor aren't counted)", () => {
+    const rows = [row(5), row(4)];
+    expect(expensePagination(rows, 1, null).pagination).toEqual({
+      total: null,
+      hasMore: true,
+      nextCursor: encodeExpenseCursor(rows[0]),
+    });
   });
 });

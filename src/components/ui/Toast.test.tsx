@@ -96,4 +96,18 @@ describe("Toast", () => {
       expect(screen.queryByText("Boom")).not.toBeInTheDocument();
     });
   });
+
+  it("anchors toasts bottom-right, above the tab bar and the measured form footer", () => {
+    render(
+      <ToastProvider>
+        <p>page</p>
+      </ToastProvider>
+    );
+    const region = screen.getByTestId("toast-region");
+    // --tabbar-h is 0 from lg up; --form-footer-h is published by a mounted FormFooter.
+    expect(region).toHaveClass("bottom-[calc(var(--tabbar-h)+var(--form-footer-h,0px)+12px)]");
+    // One formula at every width: no desktop override.
+    expect(region.className).not.toMatch(/\blg:bottom-/);
+    expect(region.className).not.toMatch(/(^|\s|:)top-/);
+  });
 });

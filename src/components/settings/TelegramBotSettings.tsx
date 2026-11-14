@@ -2,11 +2,19 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Bot, ExternalLink, AlertTriangle, CircleCheck, Unplug } from "lucide-react";
+import { AlertTriangle, Bot, ExternalLink, RefreshCw, Unplug } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import Modal from "@/components/ui/Modal";
 import Spinner from "@/components/ui/Spinner";
+import Panel from "@/components/ui/Panel";
+import Button from "@/components/ui/Button";
+import { Dot } from "@/components/ui/Badge";
+import Field, { inputClass } from "@/components/ui/Field";
+import { FieldGrid } from "@/components/ui/FormSection";
+import { cn } from "@/components/ui/cn";
+import { ICON_STROKE, linkClass } from "@/components/ui/styles";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { settingsSectionClass } from "@/components/settings/SettingsNav";
 
 export interface TelegramSettingsView {
   configured: boolean;
@@ -48,7 +56,9 @@ function defaultAppUrl(): string {
   return typeof window === "undefined" ? "" : window.location.origin;
 }
 
-export default function TelegramBotSettings() {
+/** Connect, reconnect or disconnect the company's Telegram bot. The token is
+ * write-only: the form never echoes it and the server only returns a masked copy. */
+export default function TelegramBotSettings({ id = "telegram" }: { id?: string }) {
   const { toast } = useToast();
   const [view, setView] = useState<TelegramSettingsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -108,76 +118,75 @@ export default function TelegramBotSettings() {
   const webhookProblem = view?.configured ? describeWebhookProblem(view) : null;
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-between border-b border-line px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-sky-50 p-2 dark:bg-sky-500/10">
-            <Bot className="h-5 w-5 text-sky-600 dark:text-sky-400" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-foreground">Telegram Bot</h2>
-            <p className="text-xs text-muted-foreground">
-              Let people add expenses by sending receipts, invoices and messages to a Telegram bot.
-            </p>
-          </div>
-        </div>
-        {view?.configured && !editing && (
-          <div className="flex gap-2">
-            <button onClick={() => setEditing(true)} className="btn-secondary text-sm">
+    <Panel
+      id={id}
+      className={settingsSectionClass}
+      title="Telegram bot"
+      description="Let people add expenses by sending receipts, invoices and messages to a Telegram bot."
+      meta={
+        view && (
+          <span className="inline-flex items-center gap-1.5">
+            <Dot tone={!view.configured ? "neutral" : webhookProblem ? "amber" : "success"} />
+            {!view.configured ? "Not connected" : webhookProblem ? "Needs attention" : "Connected"}
+          </span>
+        )
+      }
+      actions={
+        view?.configured &&
+        !editing && (
+          <span className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" icon={RefreshCw} onClick={() => setEditing(true)}>
               Reconnect
-            </button>
-            <button onClick={() => setConfirmDisconnect(true)} className="btn-secondary text-sm">
-              <Unplug className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="danger" icon={Unplug} onClick={() => setConfirmDisconnect(true)}>
               Disconnect
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-5 px-6 py-5">
+            </Button>
+          </span>
+        )
+      }
+    >
+      <div className="flex flex-col gap-5">
         {!view && !loadError && (
           <div className="flex justify-center py-6">
             <Spinner />
           </div>
         )}
-        {loadError && !view && <p className="text-sm text-red-600 dark:text-red-400">{loadError}</p>}
+        {loadError && !view && <p className="text-sm text-danger">{loadError}</p>}
 
         {view?.configured && !editing && (
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <CircleCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <div className="text-sm">
-                <p className="font-medium text-foreground">
-                  Connected to{" "}
-                  <a
-                    href={`https://t.me/${view.botUsername}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-600 hover:underline dark:text-brand-400"
-                  >
-                    @{view.botUsername}
-                  </a>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {view.linkedUsers} {view.linkedUsers === 1 ? "person has" : "people have"} linked their Telegram
-                  {view.connectedAt && <> · connected {format(new Date(view.connectedAt), "d MMM yyyy")}</>}
-                  {view.connectedBy && <> by {view.connectedBy.name}</>}
-                </p>
-              </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-0.5 text-sm">
+              <p className="font-medium text-ink">
+                Connected to{" "}
+                <a
+                  href={`https://t.me/${view.botUsername}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={linkClass}
+                >
+                  @{view.botUsername}
+                </a>
+              </p>
+              <p className="text-[13px] text-ink-3">
+                <span className="num">{view.linkedUsers}</span>{" "}
+                {view.linkedUsers === 1 ? "person has" : "people have"} linked their Telegram
+                {view.connectedAt && <> · connected {format(new Date(view.connectedAt), "d MMM yyyy")}</>}
+                {view.connectedBy && <> by {view.connectedBy.name}</>}
+              </p>
             </div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-xs text-muted-foreground">Bot token</dt>
-                <dd className="font-mono text-foreground">{view.maskedToken}</dd>
+            <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-px overflow-hidden rounded-control border border-rule bg-rule text-sm">
+              <div className="flex min-w-0 flex-col gap-1 bg-surface px-3 py-2.5">
+                <dt className="cap text-ink-3">Bot token</dt>
+                <dd className="num break-all text-ink">{view.maskedToken}</dd>
               </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">Webhook</dt>
-                <dd className="break-all font-mono text-xs text-foreground">{view.webhookUrl}</dd>
+              <div className="flex min-w-0 flex-col gap-1 bg-surface px-3 py-2.5">
+                <dt className="cap text-ink-3">Webhook</dt>
+                <dd className="num break-all text-xs text-ink">{view.webhookUrl}</dd>
               </div>
             </dl>
             {webhookProblem && (
-              <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div role="status" className="flex items-start gap-2 rounded-control bg-amber-soft px-3 py-2.5 text-[13px] text-amber">
+                <AlertTriangle aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="mt-px shrink-0" />
                 <span>
                   {webhookProblem}
                   {view.webhook?.lastErrorDate && !view.webhookError && (
@@ -186,52 +195,51 @@ export default function TelegramBotSettings() {
                 </span>
               </div>
             )}
-            <p className="text-xs text-muted-foreground">
-              Everyone links their own Telegram account from their <span className="font-medium">Profile</span> page.
+            <p className="text-[13px] text-ink-3">
+              Everyone links their own Telegram account from their <span className="font-medium text-ink-2">Profile</span>{" "}
+              page.
             </p>
           </div>
         )}
 
         {showForm && (
-          <form onSubmit={handleConnect} className="space-y-4">
+          <form onSubmit={handleConnect} className="flex flex-col gap-4">
             {!view.configured && (
-              <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
+              <ol className="flex list-decimal flex-col gap-1 pl-5 text-sm text-ink-2 marker:text-ink-3">
                 <li>
                   In Telegram, open{" "}
                   <a
                     href="https://t.me/BotFather"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-400"
+                    className={cn(linkClass, "inline-flex items-center gap-1")}
                   >
-                    @BotFather <ExternalLink className="h-3 w-3" />
+                    @BotFather <ExternalLink aria-hidden="true" size={12} strokeWidth={ICON_STROKE} />
                   </a>{" "}
-                  and send <code className="rounded bg-subtle px-1">/newbot</code>.
+                  and send <code className="num rounded bg-sunk px-1">/newbot</code>.
                 </li>
                 <li>Pick a name and a username for the bot, e.g. &quot;Magick Expenses&quot;.</li>
                 <li>Paste the token BotFather gives you below and connect.</li>
               </ol>
             )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="telegram-bot-token" className="mb-1.5 block text-sm font-medium text-muted">
-                  Bot token
-                </label>
+            <FieldGrid min={260}>
+              <Field
+                label="Bot token"
+                hint={view.configured ? "Leave empty to keep the current token." : "Stored on the server; never shown again."}
+              >
                 <input
                   id="telegram-bot-token"
                   type="password"
                   autoComplete="off"
+                  spellCheck={false}
                   required={!view.configured}
                   value={botToken}
                   onChange={(e) => setBotToken(e.target.value)}
                   placeholder={view.configured ? `Keep ${view.maskedToken}` : "123456789:AA…"}
-                  className="input-field font-mono"
+                  className={cn(inputClass, "num")}
                 />
-              </div>
-              <div>
-                <label htmlFor="telegram-app-url" className="mb-1.5 block text-sm font-medium text-muted">
-                  App URL
-                </label>
+              </Field>
+              <Field label="App URL" hint="The public https address of this app. Telegram delivers messages to it.">
                 <input
                   id="telegram-app-url"
                   type="url"
@@ -239,41 +247,42 @@ export default function TelegramBotSettings() {
                   value={appUrl}
                   onChange={(e) => setAppUrl(e.target.value)}
                   placeholder="https://expenses.example.com"
-                  className="input-field"
+                  className={inputClass}
                 />
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  The public https address of this app. Telegram delivers messages to it.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
+              </Field>
+            </FieldGrid>
+            <div className="flex flex-wrap justify-end gap-2">
               {view.configured && (
-                <button type="button" onClick={() => { setEditing(false); apply(view); }} className="btn-secondary">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setEditing(false);
+                    apply(view);
+                  }}
+                >
                   Cancel
-                </button>
+                </Button>
               )}
-              <button type="submit" className="btn-primary" disabled={saving}>
-                {saving ? <Spinner size="sm" /> : view.configured ? "Reconnect" : "Connect bot"}
-              </button>
+              <Button type="submit" icon={Bot} loading={saving}>
+                {view.configured ? "Reconnect" : "Connect bot"}
+              </Button>
             </div>
           </form>
         )}
       </div>
 
-      <Modal isOpen={confirmDisconnect} onClose={() => setConfirmDisconnect(false)} title="Disconnect Telegram bot">
-        <p className="text-sm text-muted">
-          The bot will stop accepting expenses for everyone. People stay linked, so it works again as soon as you
-          reconnect a bot.
-        </p>
-        <div className="mt-6 flex justify-end gap-3">
-          <button onClick={() => setConfirmDisconnect(false)} className="btn-secondary" disabled={disconnecting}>
-            Cancel
-          </button>
-          <button onClick={handleDisconnect} className="btn-danger" disabled={disconnecting}>
-            {disconnecting ? "Disconnecting..." : "Disconnect"}
-          </button>
-        </div>
-      </Modal>
-    </div>
+      <ConfirmDialog
+        isOpen={confirmDisconnect}
+        onClose={() => setConfirmDisconnect(false)}
+        onConfirm={handleDisconnect}
+        title="Disconnect Telegram bot"
+        confirmLabel="Disconnect"
+        busyLabel="Disconnecting..."
+        busy={disconnecting}
+      >
+        The bot will stop accepting expenses for everyone. People stay linked, so it works again as soon as you
+        reconnect a bot.
+      </ConfirmDialog>
+    </Panel>
   );
 }

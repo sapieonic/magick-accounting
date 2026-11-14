@@ -11,7 +11,9 @@ import {
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
-import type { TravelType } from "@/lib/trip";
+import { cn } from "@/components/ui/cn";
+import { CATEGORY_STYLES, type CategoryTone } from "@/components/ui/CategoryGlyph";
+import { travelTypeLabel, type TravelType } from "@/lib/trip";
 
 const TRAVEL_TYPE_ICONS: Record<TravelType, LucideIcon> = {
   flight: Plane,
@@ -25,33 +27,24 @@ const TRAVEL_TYPE_ICONS: Record<TravelType, LucideIcon> = {
   other: Ellipsis,
 };
 
-/** Tinted chip classes per type (light + dark), matching the category badge style. */
-export const TRAVEL_TYPE_CHIP_CLASSES: Record<TravelType | "none", string> = {
-  flight: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
-  train: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
-  bus: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
-  cab: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
-  stay: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-  food: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
-  client_meeting: "bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300",
-  visa: "bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300",
-  other: "bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300",
-  none: "bg-subtle text-muted-foreground",
+/** Travel types borrow the muted category colours: transport blue, stay violet, food amber... */
+const TRAVEL_TYPE_TONES: Record<TravelType | "none", CategoryTone> = {
+  flight: "tr",
+  train: "tr",
+  bus: "tr",
+  cab: "co",
+  stay: "ed",
+  food: "me",
+  client_meeting: "mk",
+  visa: "of",
+  other: "neutral",
+  none: "neutral",
 };
 
-/** Solid fills for the stacked spend bar and breakdown bars. */
-export const TRAVEL_TYPE_BAR_CLASSES: Record<TravelType | "none", string> = {
-  flight: "bg-sky-500",
-  train: "bg-indigo-500",
-  bus: "bg-violet-500",
-  cab: "bg-yellow-500",
-  stay: "bg-emerald-500",
-  food: "bg-orange-500",
-  client_meeting: "bg-pink-500",
-  visa: "bg-teal-500",
-  other: "bg-slate-400",
-  none: "bg-slate-300 dark:bg-slate-600",
-};
+/** Soft chip classes (background + glyph colour) per type. */
+const TRAVEL_TYPE_CHIP_CLASSES = Object.fromEntries(
+  Object.entries(TRAVEL_TYPE_TONES).map(([type, tone]) => [type, `${CATEGORY_STYLES[tone].bg} ${CATEGORY_STYLES[tone].fg}`])
+) as Record<TravelType | "none", string>;
 
 export function TravelTypeIcon({
   type,
@@ -61,5 +54,31 @@ export function TravelTypeIcon({
   className?: string;
 }) {
   const Icon = type ? TRAVEL_TYPE_ICONS[type] : Receipt;
-  return <Icon className={className} aria-hidden="true" />;
+  return <Icon className={className} aria-hidden="true" strokeWidth={1.6} />;
+}
+
+const SIZES = {
+  sm: "h-[26px] w-[26px] rounded-[7px] [&_svg]:h-[15px] [&_svg]:w-[15px]",
+  md: "h-7 w-7 rounded-[7px] [&_svg]:h-4 [&_svg]:w-4",
+} as const;
+
+/** Travel type chip, the trip counterpart of `CategoryGlyph`. Decorative. */
+export function TravelGlyph({
+  type,
+  size = "md",
+  className,
+}: {
+  type: TravelType | null | undefined;
+  size?: keyof typeof SIZES;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      title={travelTypeLabel(type)}
+      className={cn("inline-flex shrink-0 items-center justify-center", SIZES[size], TRAVEL_TYPE_CHIP_CLASSES[type ?? "none"], className)}
+    >
+      <TravelTypeIcon type={type} />
+    </span>
+  );
 }

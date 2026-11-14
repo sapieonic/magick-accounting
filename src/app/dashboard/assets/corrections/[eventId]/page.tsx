@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { format } from "date-fns";
-import { ArrowLeft, History } from "lucide-react";
+import { CalendarClock, MessageSquareText, Package, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
+import Badge from "@/components/ui/Badge";
+import PageHeader from "@/components/ui/PageHeader";
+import Panel, { PanelGrid } from "@/components/ui/Panel";
 import { FormSkeleton } from "@/components/ui/Skeleton";
+import DetailList, { type DetailItem } from "@/components/ui/DetailList";
 
 interface Correction {
   assetTag: string;
@@ -20,7 +23,7 @@ interface Correction {
 }
 
 export default function AssetCorrectionPage() {
-  useTitle("Asset Correction");
+  useTitle("Asset correction");
   const params = useParams();
   const router = useRouter();
   const { isAdmin } = useAuth();
@@ -42,29 +45,42 @@ export default function AssetCorrectionPage() {
 
   if (!correction) return <FormSkeleton />;
 
+  const title = `Reversal ${correction.assetTag}`;
+  const snapshotAsset = correction.snapshot?.asset as { name?: unknown } | null | undefined;
+  const assetName = typeof snapshotAsset?.name === "string" ? snapshotAsset.name : null;
+  const details: DetailItem[] = [
+    ...(assetName ? [{ label: "Asset", icon: Package, value: assetName }] : []),
+    { label: "Reason", icon: MessageSquareText, value: correction.reason },
+    {
+      label: "Recorded",
+      icon: CalendarClock,
+      value: <span className="num">{format(new Date(correction.occurredAt), "d MMM yyyy, HH:mm")}</span>,
+    },
+    { label: "Recorded by", icon: UserRound, value: correction.actor?.name || "Administrator" },
+  ];
+
   return (
-    <div className="animate-fade-in space-y-6">
-      <div>
-        <Link href="/dashboard/assets" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to Assets
-        </Link>
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-red-100 p-3 text-red-600 dark:bg-red-500/15 dark:text-red-300"><History className="h-6 w-6" /></div>
-          <div><h1 className="text-2xl font-bold text-foreground">Reversal {correction.assetTag}</h1><p className="mt-1 text-sm text-muted-foreground">Permanent correction audit record</p></div>
-        </div>
-      </div>
-      <div className="card p-5">
-        <dl className="grid gap-4 text-sm sm:grid-cols-3">
-          <div><dt className="text-xs text-muted-foreground">Reason</dt><dd className="mt-1 font-medium text-foreground">{correction.reason}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Recorded</dt><dd className="mt-1 font-medium text-foreground">{format(new Date(correction.occurredAt), "dd MMM yyyy, HH:mm")}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Recorded by</dt><dd className="mt-1 font-medium text-foreground">{correction.actor?.name || "Administrator"}</dd></div>
-        </dl>
-      </div>
-      <div className="card p-5">
-        <h2 className="font-heading text-base font-bold text-foreground">Retained record snapshot</h2>
-        <p className="mt-1 text-xs text-muted-foreground">The asset, linked purchase and assignment history as they existed at reversal.</p>
-        <pre className="mt-4 max-h-[65vh] overflow-auto rounded-xl border border-line bg-subtle p-4 text-xs text-muted">{JSON.stringify(correction.snapshot || {}, null, 2)}</pre>
-      </div>
+    <div className="animate-fade-in flex flex-col gap-6">
+      <PageHeader
+        breadcrumb={[{ label: "Assets", href: "/dashboard/assets" }, { label: title }]}
+        title={title}
+        meta="Permanent correction audit record"
+        actions={<Badge tone="danger" dot>Reversed</Badge>}
+      />
+      <PanelGrid min={360}>
+        <Panel title="Correction" wash>
+          <DetailList layout="columns" items={details} />
+        </Panel>
+        <Panel
+          grow={2}
+          title="Retained record snapshot"
+          description="The asset, linked purchase and assignment history as they existed at reversal."
+        >
+          <pre className="max-h-[65vh] overflow-auto rounded-control border border-rule bg-sunk p-4 font-mono text-xs leading-relaxed text-ink-2">
+            {JSON.stringify(correction.snapshot || {}, null, 2)}
+          </pre>
+        </Panel>
+      </PanelGrid>
     </div>
   );
 }

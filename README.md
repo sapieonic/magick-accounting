@@ -13,8 +13,10 @@ Single-tenant by design — one organization per deployment.
 | Database       | MongoDB (Mongoose ODM)              |
 | Authentication | Firebase Auth (Google sign-in)      |
 | File Storage   | AWS S3 (presigned URLs)             |
-| Styling        | Tailwind CSS                        |
+| Styling        | Tailwind CSS, "Ledger" design system (`docs/design/ledger.md`) |
+| Fonts          | Geist, Geist Mono                   |
 | Icons          | Lucide React                        |
+| Testing        | Vitest, Testing Library             |
 
 ## Features
 
@@ -26,8 +28,8 @@ Single-tenant by design — one organization per deployment.
 - Responsive table view (desktop) and card view (mobile)
 
 ### Add Expenses from Telegram
-- An admin connects the organization's Telegram bot once in **Settings → Telegram Bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL). See [Set up the Telegram bot](#7-set-up-the-telegram-bot-optional)
-- Each person links their own Telegram account from **Profile** (avatar menu → Profile & Telegram): the one-time link expires after 15 minutes, and the bot asks them to confirm which account they're linking
+- An admin connects the organization's Telegram bot once in **Settings → Telegram bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL). See [Set up the Telegram bot](#7-set-up-the-telegram-bot-optional)
+- Each person links their own Telegram account from **Profile** (the user block at the foot of the sidebar rail; on phones, in the **More** drawer): the one-time link expires after 15 minutes, and the bot asks them to confirm which account they're linking
 - Send the bot a receipt photo, an invoice/receipt file (PDF, JPEG, PNG, WebP up to 10MB) or a forwarded message; AI reads it into a draft
 - The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save**, with the file attached as its receipt. Reply to the expense card with a number to correct the amount; other details can be edited in the app after saving
 - Expenses left unfinished for 7 days, or when someone unlinks, are discarded along with their uploaded receipt
@@ -37,7 +39,7 @@ Single-tenant by design — one organization per deployment.
 - Group a trip's flights, trains, stays, food and client meetings under one trip (name, destinations, dates, travelers, purpose, optional budget)
 - Tag each trip expense with a travel type; picking one pre-fills the category, and AI auto-fill suggests it
 - Add expenses from the trip page, pick a trip on the expense form (it suggests one from the date), or add existing unassigned expenses
-- The Expenses list shows each trip as one expandable row (total, travelers, spend by type, missing receipts) that opens into a day-by-day timeline; a toggle switches to the flat list
+- The Expenses list shows each trip as one expandable row (dates, expense count, travelers, status, receipts still missing, total and an *Open trip* link) that opens into its destinations, an *Add expense* button and a day-by-day timeline; the *Group trips* switch turns it into a flat list
 - Trip page with spend by type, who paid and what is owed to each traveler from their pocket, and the timeline
 - Bookings made before or after the trip dates are kept and shown before/after the trip
 - Admins see every trip; others see trips they travel on or created, and only their own expenses inside them. Deleting a trip keeps its expenses
@@ -93,9 +95,10 @@ Single-tenant by design — one organization per deployment.
 - Admins can add or remove allowed email domains from the Settings page
 
 ### Dashboard
-- Overview with total expenses, total amount, department count, and category count
-- Recent expenses at a glance
-- Quick navigation to all sections
+- Overview: total spend, month to date, pocket share and average expense in one totals band
+- Monthly spend bars, ranked categories and departments (each links to the filtered expense list)
+- Company vs pocket split and pocket spend by person (admins)
+- Your latest entries, with quick navigation to every section from the side rail (bottom tab bar on phones)
 
 ## Prerequisites
 
@@ -208,7 +211,7 @@ People can add expenses by sending receipts to a Telegram bot ([what it does](#a
 4. Optionally, give the bot a description (`/setdescription`) and a profile picture (`/setuserpic`). You don't need to set up commands, because the app registers `/help`, `/cancel` and `/unlink` itself.
 
 **2. Connect it in Magick Accounting** (admin)
-1. Go to **Settings → Telegram Bot**.
+1. Go to **Settings → Telegram bot**.
 2. Paste the token into **Bot token**.
 3. Check **App URL**. It defaults to the address you're browsing from, so change it if people reach the app at a different public address.
 4. Click **Connect bot**.
@@ -216,7 +219,7 @@ People can add expenses by sending receipts to a Telegram bot ([what it does](#a
 The app then checks the token with Telegram, registers the webhook under a fresh secret, and shows **Connected to @your_bot**. From then on, the section shows how many people have linked and warns you if Telegram can't deliver messages.
 
 **3. Each person links their Telegram account**
-1. Open **Profile & Telegram** from the avatar menu (or press ⌘K and type *Profile*).
+1. Open **Profile** from your name at the foot of the sidebar (on phones: **More**, then your name), or press ⌘K and type *Profile*.
 2. Click **Link Telegram**, then **Open Telegram**.
 3. Tap **Start** in the chat with the bot, then **✅ Yes, link it**. The bot names the app account being linked, so check that it's yours.
 4. The profile page switches to *Linked to @username*.
@@ -256,7 +259,7 @@ A bot can deliver to only one webhook at a time. Connecting a bot from a dev or 
 | Connecting fails with *Telegram requires an https:// App URL* or *Telegram can't reach localhost* | Telegram needs a public https address; use your deployed URL or a tunnel. |
 | Settings warns *Telegram is sending updates to a different URL* | The bot was connected from another environment, or its webhook was changed outside the app. Click **Reconnect**. |
 | Settings shows *Telegram couldn't deliver messages to this app* | The App URL isn't reachable from the internet, its TLS certificate isn't valid, or requests are timing out. The warning includes Telegram's own error message. |
-| The bot replies *link your account* | That Telegram account isn't linked yet. Link it from **Profile & Telegram**. |
+| The bot replies *link your account* | That Telegram account isn't linked yet. Link it from **Profile**. |
 | The bot says *Automatic reading isn't set up* | `DATABRICKS_TOKEN` is not set. The bot still works, but people type the details themselves. |
 | The bot doesn't reply at all | Check that the bot is connected in Settings, then check the server logs for `/api/telegram/webhook`. |
 
@@ -321,7 +324,7 @@ src/
 │       │   ├── settings/route.ts        # GET / PUT / DELETE (admin: bot connection)
 │       │   ├── link/route.ts            # GET / POST / DELETE (own Telegram link)
 │       │   └── webhook/route.ts         # POST (updates from Telegram, secret header)
-│       ├── upload/route.ts               # POST (presigned upload URL) / GET (download URL)
+│       ├── upload/route.ts               # POST (multipart upload, stored server-side) / GET (presigned download URL) / DELETE (unattached upload)
 │       └── seed/route.ts                # POST (seed defaults)
 ├── lib/
 │   ├── mongodb.ts                        # Mongoose connection (cached)
@@ -351,18 +354,21 @@ src/
 │   ├── TelegramDraft.ts                  # expense being added via Telegram, until saved
 │   └── TelegramUpdate.ts                 # processed webhook updates (dedupe)
 ├── components/
-│   ├── layout/
-│   │   ├── Sidebar.tsx                   # Desktop sidebar + mobile drawer
-│   │   └── Header.tsx                    # Top bar with user dropdown
-│   ├── profile/TelegramLinkCard.tsx      # Link / unlink Telegram
-│   ├── settings/TelegramBotSettings.tsx  # Admin: connect the Telegram bot
-│   └── ui/
-│       ├── Toast.tsx                     # Toast notification system (context-based)
-│       ├── Modal.tsx                     # Accessible modal dialog
-│       ├── Spinner.tsx                   # Loading spinner + full-page loader
-│       └── EmptyState.tsx                # Empty state placeholder
+│   ├── ui/                               # Ledger primitives: Button, PageHeader, Panel, StatBand, Field,
+│   │                                     #   Badge/Chip, Avatar, CategoryGlyph, SplitBar, RankedBar, Modal, Toast, ...
+│   ├── layout/                           # Side rail + drawer, top bar, mobile tab bar, nav config
+│   ├── dashboard/overview/               # Overview panels
+│   ├── expenses/                         # Ledger rows + detail panel, shared ExpenseForm, payment/trip fields
+│   ├── trips/                            # Trip clusters, timeline, trip form and pickers
+│   ├── assets/                           # Asset rows, history, purchase section
+│   ├── org/                              # Shared departments/categories list, user spend panels
+│   ├── settings/                         # Settings sections incl. TelegramBotSettings
+│   ├── profile/                          # TelegramLinkCard
+│   └── invoice/                          # PDF documents + invoice builder UI
+├── hooks/                                # useMediaQuery, useDialogLayer, useTitle
 └── contexts/
-    └── AuthContext.tsx                    # Auth state, sign-in/out, role helpers
+    ├── AuthContext.tsx                    # Auth state, sign-in/out, role helpers
+    └── ThemeContext.tsx                   # Light/dark theme
 ```
 
 ## API Reference
@@ -373,7 +379,7 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 |----------|---------------------------|--------------|------------------------------------|
 | `POST`   | `/api/auth/verify`        | Public       | Verify token, create user if new   |
 | `GET`    | `/api/auth/me`            | Authenticated| Get current user                   |
-| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `groupTrips=true` pages by trip) |
+| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `limit` (max 10000) + `cursor` keyset paging; `groupTrips=true` pages by trip) |
 | `POST`   | `/api/expenses`           | Authenticated| Create expense                     |
 | `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID                  |
 | `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense                     |
@@ -408,8 +414,9 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 | `GET`    | `/api/domains`            | Admin        | List allowed domains               |
 | `POST`   | `/api/domains`            | Admin        | Add allowed domain                 |
 | `DELETE` | `/api/domains/:id`        | Admin        | Remove allowed domain              |
-| `POST`   | `/api/upload`             | Authenticated| Get presigned upload URL           |
+| `POST`   | `/api/upload`             | Authenticated| Upload a receipt (multipart, stored in S3 server-side) |
 | `GET`    | `/api/upload?key=...`     | Authenticated| Get presigned download URL         |
+| `DELETE` | `/api/upload?key=...`     | Authenticated| Delete own upload not yet attached to an expense |
 | `POST`   | `/api/seed`               | Authenticated| Seed default data                  |
 | `GET`    | `/api/telegram/settings`  | Admin        | Bot connection and webhook status  |
 | `PUT`    | `/api/telegram/settings`  | Admin        | Connect/reconnect the bot (token, App URL) |
@@ -423,10 +430,11 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 
 ```bash
 npm run dev       # Start development server
-npm run build     # Production build
+npm run build     # Production build (also type-checks)
 npm run start     # Start production server
+npm test          # Vitest (backend + UI suites)
 npm run migrate:assets # Backfill asset allocation/index data before first asset-feature deploy
-npm run lint      # Run ESLint
+npm run lint      # next lint; no ESLint config is committed, so this opens setup
 ```
 
 ## Development

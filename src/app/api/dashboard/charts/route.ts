@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
+import { baseTotalExpr } from "@/lib/expense";
 import { buildExpenseFilter } from "@/lib/expense-query";
-import { companyBaseExpr, pocketBaseExpr } from "@/lib/expense";
 import Expense from "@/models/Expense";
 import "@/models/Category";
 import "@/models/Department";
@@ -53,23 +53,6 @@ function buildMonthBuckets(): { key: string; label: string; start: Date; end: Da
   return buckets;
 }
 
-interface PaymentSourceTotals {
-  pocketTotal?: number;
-  pocketCount?: number;
-  companyTotal?: number;
-  companyCount?: number;
-}
-
-function buildPaymentSourceRows(
-  totals: PaymentSourceTotals | undefined
-): { name: "pocket" | "company"; total: number; count: number }[] {
-  const rows = [
-    { name: "pocket" as const, total: totals?.pocketTotal ?? 0, count: totals?.pocketCount ?? 0 },
-    { name: "company" as const, total: totals?.companyTotal ?? 0, count: totals?.companyCount ?? 0 },
-  ];
-  return rows.filter((row) => row.count > 0).sort((a, b) => b.total - a.total);
-}
-
 export async function GET(req: NextRequest) {
   const authResult = await verifyAuth(req);
   if (authResult instanceof NextResponse) return authResult;
@@ -86,13 +69,13 @@ export async function GET(req: NextRequest) {
     date: buildTrendDateFilter(filter.date, trendStart, trendEnd),
   };
 
-  const [trendRows, categoryRows, paymentSourceRows, departmentSpendRows] = await Promise.all([
+  const [trendRows, categoryRows, departmentSpendRows] = await Promise.all([
     Expense.aggregate([
       { $match: trendFilter },
       {
         $group: {
           _id: { y: { $year: "$date" }, m: { $month: "$date" } },
-          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          total: { $sum: baseTotalExpr },
           count: { $sum: 1 },
         },
       },
@@ -102,7 +85,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: "$category",
-          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          total: { $sum: baseTotalExpr },
           count: { $sum: 1 },
         },
       },
@@ -126,64 +109,12 @@ export async function GET(req: NextRequest) {
         },
       },
     ]),
-    // A split expense contributes its share to both sides, so the per-side
-    // counts can add up to more than the number of expenses. Counts go by
-    // source rather than share, so zero-amount expenses are still counted;
-    // an expense paid by several people counts on each side it has a payment.
-    Expense.aggregate([
-      { $match: filter },
-      {
-        $project: {
-          paymentSource: 1,
-          pocket: pocketBaseExpr,
-          company: companyBaseExpr,
-          hasPocketEntry: { $in: ["pocket", { $ifNull: ["$payments.source", []] }] },
-          hasCompanyEntry: { $in: ["company", { $ifNull: ["$payments.source", []] }] },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          pocketTotal: { $sum: "$pocket" },
-          pocketCount: {
-            $sum: {
-              $cond: [
-                {
-                  $cond: [
-                    { $eq: ["$paymentSource", "multiple"] },
-                    "$hasPocketEntry",
-                    { $ne: ["$paymentSource", "company"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          companyTotal: { $sum: "$company" },
-          companyCount: {
-            $sum: {
-              $cond: [
-                {
-                  $or: [
-                    { $in: ["$paymentSource", ["company", "split"]] },
-                    { $and: [{ $eq: ["$paymentSource", "multiple"] }, "$hasCompanyEntry"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-        },
-      },
-    ]),
     Expense.aggregate([
       { $match: filter },
       {
         $group: {
           _id: "$department",
-          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          total: { $sum: baseTotalExpr },
           count: { $sum: 1 },
         },
       },
@@ -215,8 +146,6 @@ export async function GET(req: NextRequest) {
     trendMap.set(key, { total: row.total, count: row.count });
   }
 
-  const paymentSources = buildPaymentSourceRows(paymentSourceRows[0]);
-
   const monthlyTrend = buckets.map((b) => ({
     month: b.label,
     key: b.key,
@@ -227,7 +156,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     monthlyTrend,
     topCategories: categoryRows,
-    paymentSources,
     departmentSpend: departmentSpendRows,
   });
 }

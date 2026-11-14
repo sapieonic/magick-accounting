@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/components/ui/cn";
+import Checkbox from "@/components/ui/Checkbox";
+import { inputClass, linkClass, transition } from "@/components/ui/styles";
 
 interface Option {
   value: string;
@@ -15,9 +18,34 @@ interface MultiSelectProps {
   onChange: (values: string[]) => void;
   placeholder: string;
   icon?: ReactNode;
+  /** Names the trigger; leave it out when a Field label names it. */
   ariaLabel?: string;
+  /** Names the popup listbox, e.g. "Departments". Default `ariaLabel`, then `placeholder`. */
+  listLabel?: string;
+  /** Options are still loading: an empty list shows `placeholder` instead of "None available". */
+  loading?: boolean;
+  /** Id for the trigger button (lets a Field label point at it). */
+  id?: string;
+  "aria-describedby"?: string;
 }
 
+const VIEWPORT_PADDING = 12;
+/** The popover is at least this wide (16rem) so long labels stay readable next to a narrow trigger. */
+const MIN_MENU_WIDTH = 256;
+/** Side gutter the popover keeps from the viewport edges. */
+const SIDE_GUTTER = 16;
+
+/** `active` value for the "Clear selection" row, which sits above the options. */
+const CLEAR = -1;
+
+/** The keyboard's row: the same 2px accent ring a focused control gets. */
+const activeRowClass = "bg-hover shadow-[inset_0_0_0_2px_rgb(var(--accent))]";
+
+/**
+ * A select-only combobox: focus stays on the trigger, which points at the
+ * keyboard's row with aria-activedescendant. Arrows / Home / End move (opening
+ * the menu first), Enter / Space toggle, Escape and leaving the trigger close.
+ */
 export default function MultiSelect({
   options,
   selected,
@@ -25,8 +53,14 @@ export default function MultiSelect({
   placeholder,
   icon,
   ariaLabel,
+  listLabel,
+  loading = false,
+  id,
+  "aria-describedby": describedBy,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  // The keyboard's row: an option index, CLEAR, or null (opened by mouse, no key yet).
+  const [active, setActive] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState<{
     top: number;
     left: number;
@@ -34,67 +68,114 @@ export default function MultiSelect({
     maxHeight: number;
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listboxId = useId();
+  const empty = options.length === 0;
+  const hasClear = selected.length > 0;
+  const lastRow = options.length - 1;
+  // Options or the selection can change under the menu: a row that is gone isn't active.
+  const activeRow = active === CLEAR ? (hasClear ? CLEAR : null) : active !== null && active <= lastRow ? active : null;
   const updateMenuPosition = useCallback(() => {
     if (!containerRef.current || typeof window === "undefined") return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const viewportPadding = 12;
     const gap = 4;
     const maxMenuHeight = 256;
     const minUsefulSpace = 160;
-    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
-    const spaceAbove = rect.top - viewportPadding;
+    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PADDING;
+    const spaceAbove = rect.top - VIEWPORT_PADDING;
     const openAbove = spaceBelow < minUsefulSpace && spaceAbove > spaceBelow;
     const availableSpace = Math.max(0, openAbove ? spaceAbove : spaceBelow);
-    const viewportHeight = Math.max(24, window.innerHeight - viewportPadding * 2);
+    const viewportHeight = Math.max(24, window.innerHeight - VIEWPORT_PADDING * 2);
     const maxHeight = Math.min(
       maxMenuHeight,
       viewportHeight,
       Math.max(48, availableSpace - gap)
     );
     const desiredTop = openAbove ? rect.top - gap - maxHeight : rect.bottom + gap;
-    const maxTop = Math.max(viewportPadding, window.innerHeight - viewportPadding - maxHeight);
+    const maxTop = Math.max(VIEWPORT_PADDING, window.innerHeight - VIEWPORT_PADDING - maxHeight);
+    // min(max(trigger, 16rem), viewport - 32px), kept on screen.
+    const width = Math.min(Math.max(rect.width, MIN_MENU_WIDTH), window.innerWidth - SIDE_GUTTER * 2);
+    const left = Math.max(SIDE_GUTTER, Math.min(rect.left, window.innerWidth - SIDE_GUTTER - width));
 
     setMenuPosition({
-      top: Math.min(Math.max(viewportPadding, desiredTop), maxTop),
-      left: rect.left,
-      width: rect.width,
+      top: Math.min(Math.max(VIEWPORT_PADDING, desiredTop), maxTop),
+      left,
+      width,
       maxHeight,
     });
   }, []);
 
   useEffect(() => {
     if (!open) return;
-
-    const handlePointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const inTrigger = containerRef.current?.contains(target);
-      const inMenu = menuRef.current?.contains(target);
-      if (!inTrigger && !inMenu) {
-        setOpen(false);
-      }
-    };
-    // Captured and stopped so Escape closes only this menu, not a Modal around it.
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      setOpen(false);
-    };
-
     updateMenuPosition();
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape, true);
     window.addEventListener("resize", updateMenuPosition);
     window.addEventListener("scroll", updateMenuPosition, true);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape, true);
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
   }, [open, updateMenuPosition]);
+
+  // Options can disappear while open (lookups reload).
+  useEffect(() => {
+    if (empty) setOpen(false);
+  }, [empty]);
+
+  const openAt = (row: number | null) => {
+    setActive(row);
+    setOpen(true);
+  };
+
+  const handleTriggerClick = (e: MouseEvent<HTMLButtonElement>) => {
+    // Safari doesn't focus a clicked button; the keys and close-on-blur need it.
+    triggerRef.current?.focus();
+    if (open) setOpen(false);
+    // A click with no pointer (assistive tech) starts on the first option.
+    else openAt(e.detail === 0 ? 0 : null);
+  };
+
+  const handleTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const firstRow = hasClear ? CLEAR : 0;
+    // Closed, or opened by mouse: arrows start from the ends.
+    const fromEnd = !open || activeRow === null;
+    let next: number;
+    switch (e.key) {
+      case "ArrowDown":
+        next = fromEnd ? 0 : Math.min(activeRow + 1, lastRow);
+        break;
+      case "ArrowUp":
+        next = fromEnd ? lastRow : Math.max(activeRow - 1, firstRow);
+        break;
+      case "Home":
+        next = open ? firstRow : 0;
+        break;
+      case "End":
+        next = lastRow;
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (!open) openAt(0);
+        else if (activeRow === CLEAR) {
+          onChange([]);
+          setActive(0);
+        } else if (activeRow !== null) toggle(options[activeRow].value);
+        else setOpen(false);
+        return;
+      case "Escape":
+        // Handled here, so an enclosing dialog's Escape listener leaves it (useDialogLayer).
+        if (open) {
+          e.preventDefault();
+          setOpen(false);
+        }
+        return;
+      default:
+        return;
+    }
+    e.preventDefault();
+    openAt(next);
+  };
 
   const toggle = (value: string) => {
     if (selected.includes(value)) {
@@ -109,19 +190,28 @@ export default function MultiSelect({
     .map((o) => o.label);
 
   const summary =
-    selectedLabels.length === 0
-      ? placeholder
-      : selectedLabels.length === 1
-        ? selectedLabels[0]
-        : `${selectedLabels.length} selected`;
+    empty && !loading
+      ? "None available"
+      : selectedLabels.length === 0
+        ? placeholder
+        : selectedLabels.length === 1
+          ? selectedLabels[0]
+          : `${selectedLabels.length} selected`;
+
+  const menuShown = open && !!menuPosition;
+  const activeId =
+    !menuShown || activeRow === null ? undefined : activeRow === CLEAR ? `${listboxId}-clear` : `${listboxId}-${activeRow}`;
+
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: "nearest" });
+  }, [activeId]);
 
   const menu =
-    open && menuPosition && typeof document !== "undefined" ? (
+    menuShown && typeof document !== "undefined" ? (
+      // Rows never take focus: mousedown is kept from blurring the trigger (which closes the menu).
       <div
-        ref={menuRef}
-        role="listbox"
-        aria-label={ariaLabel || placeholder}
-        className="animate-slide-up fixed z-50 overflow-y-auto rounded-lg border border-line bg-surface-elevated p-1 shadow-lg dark:shadow-black/60"
+        onMouseDown={(e) => e.preventDefault()}
+        className="animate-slide-up fixed z-50 overflow-y-auto rounded-panel border border-rule bg-surface p-1 shadow-elevated"
         style={{
           top: menuPosition.top,
           left: menuPosition.left,
@@ -129,43 +219,50 @@ export default function MultiSelect({
           maxHeight: menuPosition.maxHeight,
         }}
       >
-        {selected.length > 0 && (
+        {hasClear && (
           <button
             type="button"
-            onClick={() => onChange([])}
-            className="mb-1 w-full rounded-md px-3 py-1.5 text-left text-xs font-medium text-brand-600 transition-colors hover:bg-subtle dark:text-brand-400"
+            id={`${listboxId}-clear`}
+            tabIndex={-1}
+            onClick={() => {
+              onChange([]);
+              setActive(null);
+            }}
+            className={cn(
+              linkClass,
+              "mb-1 min-h-9 w-full rounded-control px-3 text-left text-xs hover:bg-hover",
+              activeRow === CLEAR && activeRowClass
+            )}
           >
             Clear selection
           </button>
         )}
-        {options.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-muted-foreground">No options</p>
-        ) : (
-          options.map((opt) => {
+        <div id={listboxId} role="listbox" aria-multiselectable="true" aria-label={listLabel ?? ariaLabel ?? placeholder}>
+          {options.map((opt, i) => {
             const isSelected = selected.includes(opt.value);
             return (
-              <button
+              <div
                 key={opt.value}
-                type="button"
-                onClick={() => toggle(opt.value)}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-subtle"
+                id={`${listboxId}-${i}`}
+                onClick={() => {
+                  toggle(opt.value);
+                  setActive(i);
+                }}
+                className={cn(
+                  "flex min-h-10 cursor-pointer items-start gap-2.5 rounded-control px-3 py-2.5 text-sm hover:bg-hover",
+                  transition,
+                  activeRow === i && activeRowClass
+                )}
                 role="option"
                 aria-selected={isSelected}
               >
-                <span
-                  className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${
-                    isSelected
-                      ? "border-brand-500 bg-brand-500 text-white"
-                      : "border-line bg-surface"
-                  }`}
-                >
-                  {isSelected && <Check className="h-3 w-3" />}
-                </span>
-                <span className="truncate text-foreground">{opt.label}</span>
-              </button>
+                <Checkbox checked={isSelected} className="mt-0.5" />
+                {/* Wraps rather than truncates: "Software & Subscriptions" stays readable. */}
+                <span className="min-w-0 flex-1 break-words text-ink">{opt.label}</span>
+              </div>
             );
-          })
-        )}
+          })}
+        </div>
       </div>
     ) : null;
 
@@ -173,24 +270,47 @@ export default function MultiSelect({
     <div ref={containerRef} className="relative">
       {icon}
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="input-field flex w-full items-center justify-between pl-10 pr-9 text-left text-sm"
+        onClick={handleTriggerClick}
+        onKeyDown={handleTriggerKeyDown}
+        // Space's native click comes on keyup; keydown has already handled the key.
+        onKeyUp={(e) => e.key === " " && e.preventDefault()}
+        onBlur={() => setOpen(false)}
+        id={id}
+        role="combobox"
+        disabled={empty}
+        className={cn(
+          inputClass,
+          "flex items-center justify-between pr-9 text-left",
+          icon ? "pl-10" : "pl-3"
+        )}
+        aria-describedby={describedBy}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={activeId}
         aria-label={ariaLabel}
       >
-        <span className={`truncate ${selectedLabels.length === 0 ? "text-muted-foreground" : "text-foreground"}`}>
+        <span className={cn("truncate", selectedLabels.length === 0 ? "text-ink-3" : "text-ink")}>
           {summary}
         </span>
       </button>
       <ChevronDown
-        className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-transform ${
-          open ? "rotate-180" : ""
-        }`}
+        aria-hidden="true"
+        strokeWidth={1.75}
+        className={cn(
+          "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3 transition-transform duration-140",
+          open && "rotate-180"
+        )}
       />
 
-      {menu ? createPortal(menu, document.body) : null}
+      {/* Portal into the enclosing aria-modal dialog (its fixed, untransformed
+          overlay) so assistive tech doesn't treat the menu as inert content
+          outside the dialog; otherwise into body. */}
+      {menu
+        ? createPortal(menu, containerRef.current?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body)
+        : null}
     </div>
   );
 }

@@ -137,6 +137,21 @@ describe("TripsPage", () => {
     expect(api.get).toHaveBeenCalledWith("/api/trips");
   });
 
+  it("filters by status and remembers it in the URL", async () => {
+    const user = userEvent.setup();
+    render(<TripsPage />);
+    await screen.findByText("Delhi offsite");
+
+    const status = screen.getByRole("group", { name: "Trip status" });
+    expect(within(status).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(within(status).getByRole("button", { name: "Upcoming" }));
+
+    expect(screen.getByRole("region", { name: "Upcoming" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Ongoing" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Delhi offsite")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe("?status=upcoming"));
+  });
+
   it("shows budget usage to admins", async () => {
     vi.mocked(useAuth).mockReturnValue({ user: { ...person, role: "admin" }, isAdmin: true } as any);
     render(<TripsPage />);
@@ -158,7 +173,7 @@ describe("TripsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Plan your first trip/ }));
     expect(screen.getByRole("dialog", { name: "New trip" })).toBeInTheDocument();
     // Let the people lookup settle before the test ends.
-    expect(await screen.findByRole("button", { name: "Travelers" })).toHaveTextContent("Manas");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Travelers" })).toHaveTextContent("Manas"));
     await waitFor(() => expect(screen.getByLabelText("Department")).toHaveDisplayValue("No department"));
     await act(async () => {});
   });

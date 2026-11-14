@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       ? Category.find().select("name").sort({ isDefault: -1, name: 1 }).lean()
       : Promise.resolve([]),
     requested.has("currencies")
-      ? Currency.find({ isActive: true }).select("code name symbol isBase").sort({ isBase: -1, code: 1 }).lean()
+      ? Currency.find({ isActive: true }).select("code name symbol isBase rateToBase").sort({ isBase: -1, code: 1 }).lean()
       : Promise.resolve([]),
     requested.has("members")
       ? User.find().select("name email").sort({ name: 1 }).lean()

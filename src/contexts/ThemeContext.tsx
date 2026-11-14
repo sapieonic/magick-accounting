@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, ReactNode } from "react";
+import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 export type Theme = "light" | "dark";
 
@@ -12,11 +13,20 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export const THEME_STORAGE_KEY = "theme";
+function readStoredTheme(): Theme | null {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "dark" || stored === "light" ? stored : null;
+  } catch {
+    // localStorage can throw in private mode.
+    return null;
+  }
+}
 
+/** The saved theme, else whatever the boot script left on <html>, else light. */
 function readInitialTheme(): Theme {
   if (typeof document === "undefined") return "light";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  return readStoredTheme() ?? (document.documentElement.classList.contains("dark") ? "dark" : "light");
 }
 
 function applyTheme(theme: Theme) {
@@ -25,8 +35,27 @@ function applyTheme(theme: Theme) {
   root.style.colorScheme = theme;
 }
 
+/**
+ * Puts the saved theme (class + color-scheme) back on <html>. React 19 strips
+ * <html> attributes when global-error replaces the root layout and again when
+ * the layout comes back, so the boot script's work can't be relied on then.
+ */
+export function applyStoredTheme(): Theme {
+  const theme = readStoredTheme() ?? "light";
+  applyTheme(theme);
+  return theme;
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(readInitialTheme);
+
+  // (Re)apply on mount, before paint: after global-error's "Try again" the
+  // root layout remounts with a bare <html>, which would otherwise stay light.
+  useLayoutEffect(() => {
+    applyTheme(theme);
+    // Only on mount; later changes go through setTheme / the storage event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep in sync if another tab toggles the theme.
   useEffect(() => {

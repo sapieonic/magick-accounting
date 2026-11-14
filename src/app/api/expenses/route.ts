@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { buildExpenseFilter, getExpenseSummary, parsePaidByParam } from "@/lib/expense-query";
+import {
+  afterCursorFilter,
+  buildExpenseFilter,
+  EXPENSE_LIST_SORT,
+  expensePagination,
+  getExpenseSummary,
+  parseExpensePageParams,
+  parsePaidByParam,
+} from "@/lib/expense-query";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
 import { assertPayersExist } from "@/lib/expense-server";
 import { normalizeTravelType } from "@/lib/trip";
@@ -33,8 +41,9 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get("page") || "1");
-  const limit = parseInt(searchParams.get("limit") || "20");
+  const pageParams = parseExpensePageParams(searchParams);
+  if (!pageParams) return NextResponse.json({ error: "Page cursor is invalid" }, { status: 400 });
+  const { cursor, limit } = pageParams;
   const includeSummary = searchParams.get("includeSummary") === "true";
   const filter = buildExpenseFilter(searchParams, authResult);
   const summaryPromise = includeSummary
@@ -43,39 +52,33 @@ export async function GET(req: NextRequest) {
 
   if (searchParams.get("groupTrips") === "true") {
     // Each trip is one item (its expenses never split across pages), so
-    // page/limit count items rather than expenses.
-    const itemPage = Number.isFinite(page) && page > 0 ? page : 1;
-    const itemLimit = Number.isFinite(limit) && limit > 0 ? limit : 20;
+    // limit, total (first page only) and the cursor count items rather than expenses.
     const [grouped, summary] = await Promise.all([
-      getGroupedExpensePage(filter, itemPage, itemLimit, authResult),
+      getGroupedExpensePage(filter, pageParams, authResult),
       summaryPromise,
     ]);
     return NextResponse.json({
       expenses: grouped.expenses,
       trips: grouped.trips,
-      pagination: {
-        page: itemPage,
-        limit: itemLimit,
-        total: grouped.total,
-        pages: Math.ceil(grouped.total / itemLimit),
-      },
+      pagination: grouped.pagination,
       ...(summary ? { summary } : {}),
     });
   }
 
-  const [expenses, total, summary] = await Promise.all([
-    populateExpenseRefs(Expense.find(filter))
-      .sort({ date: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
+  const [rows, total, summary] = await Promise.all([
+    populateExpenseRefs(Expense.find(cursor ? { $and: [filter, afterCursorFilter(cursor)] } : filter))
+      .sort(EXPENSE_LIST_SORT)
+      .limit(limit + 1)
       .lean(),
-    Expense.countDocuments(filter),
+    // Only the first page reports a total; later pages skip the count.
+    cursor ? Promise.resolve(null) : Expense.countDocuments(filter),
     summaryPromise,
   ]);
+  const { page, pagination } = expensePagination(rows, limit, total);
 
   return NextResponse.json({
-    expenses: await withLinkedAssetCounts(expenses),
-    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    expenses: await withLinkedAssetCounts(page),
+    pagination,
     ...(summary ? { summary } : {}),
   });
 }

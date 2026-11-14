@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Plane, X as XIcon } from "lucide-react";
-import clsx from "clsx";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -16,7 +15,12 @@ import {
   type TravelType,
   type TripStatus,
 } from "@/lib/trip";
-import { TRAVEL_TYPE_CHIP_CLASSES, TravelTypeIcon } from "@/components/trips/TravelTypeIcon";
+import { TravelTypeIcon } from "@/components/trips/TravelTypeIcon";
+import Button, { IconButton } from "@/components/ui/Button";
+import Field, { selectClass } from "@/components/ui/Field";
+import { Chip } from "@/components/ui/Badge";
+import { cn } from "@/components/ui/cn";
+import { inlineLinkClass } from "@/components/ui/styles";
 import type { TripListItem } from "@/types/trip";
 
 /** The parts of a `GET /api/trips` item the expense form uses. */
@@ -79,7 +83,7 @@ const GROUP_LABELS: Record<TripStatus, string> = {
  * Trips grouped for the picker: ongoing first, then upcoming (soonest first),
  * then completed (most recent first).
  */
-export function groupTripsForPicker<T extends TripOption>(
+function groupTripsForPicker<T extends TripOption>(
   trips: T[],
   now: Date = new Date()
 ): { status: TripStatus; trips: T[] }[] {
@@ -148,7 +152,7 @@ export default function TripFields({
 }: TripFieldsProps) {
   const { user } = useAuth();
   const [dismissed, setDismissed] = useState<string[]>([]);
-  const chipRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const chipGroupRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => groupTripsForPicker(trips), [trips]);
   const selected = trips.find((t) => t._id === trip) ?? null;
@@ -189,66 +193,53 @@ export default function TripFields({
     if (next === null) return;
     e.preventDefault();
     onTravelTypeChange(TRAVEL_TYPES[next]);
-    chipRefs.current[next]?.focus();
+    chipGroupRef.current?.querySelectorAll<HTMLButtonElement>("[role=radio]")[next]?.focus();
   };
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-w-0 flex-col gap-3">
       {suggestion && (
         <div
           role="status"
-          className="animate-fade-in flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-500/30 dark:bg-sky-500/10"
+          className="animate-fade-in flex flex-wrap items-center gap-x-3 gap-y-2 rounded-control border border-accent-line bg-tint py-2 pl-3 pr-2"
         >
-          <Plane className="h-5 w-5 shrink-0 text-sky-600 dark:text-sky-300" aria-hidden="true" />
-          <p className="min-w-0 flex-1 text-sm text-muted">
-            Looks like this is part of <b className="font-semibold text-foreground">{suggestion.name}</b>{" "}
+          <Plane size={18} strokeWidth={1.75} className="shrink-0 text-accent" aria-hidden="true" />
+          <p className="min-w-0 flex-1 basis-[200px] text-sm text-ink-2">
+            Looks like this is part of <b className="font-semibold text-ink">{suggestion.name}</b>{" "}
             <span className="whitespace-nowrap">({formatTripDates(suggestion)})</span>. Add it?
           </p>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => changeTrip(suggestion._id)}
-              className="btn-secondary px-3 py-1.5 text-xs"
-            >
+            <Button variant="secondary" size="sm" onClick={() => changeTrip(suggestion._id)}>
               Add to trip
-            </button>
-            <button
-              type="button"
+            </Button>
+            <IconButton
+              icon={XIcon}
+              size="sm"
               onClick={() => setDismissed((prev) => [...prev, suggestion._id])}
               aria-label="Dismiss trip suggestion"
-              className="rounded p-1.5 text-muted-foreground hover:text-foreground"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
+            />
           </div>
         </div>
       )}
 
-      <div>
-        <div className="mb-1.5 flex items-baseline justify-between gap-3">
-          <label htmlFor="trip" className="block text-sm font-medium text-muted">
-            Business trip
-            <span className="ml-1 text-xs font-normal text-muted-foreground">— optional</span>
-          </label>
+      <Field
+        label="Business trip"
+        optional
+        hint={outsideHint}
+        aside={
           <Link
             href="/dashboard/trips"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+            className={cn(inlineLinkClass, "gap-1")}
           >
             {trips.length > 0 ? "Manage trips" : "New trip"}
-            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+            <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />
             <span className="sr-only">(opens in a new tab)</span>
           </Link>
-        </div>
-        <select
-          id="trip"
-          disabled={disabled}
-          value={trip}
-          onChange={(e) => changeTrip(e.target.value)}
-          aria-describedby={outsideHint ? "trip-hint" : undefined}
-          className="input-field"
-        >
+        }
+      >
+        <select id="trip" disabled={disabled} value={trip} onChange={(e) => changeTrip(e.target.value)} className={selectClass}>
           <option value="">Not part of a trip</option>
           {fallbackName && <option value={trip}>{fallbackName}</option>}
           {groups.map((group) => (
@@ -261,46 +252,30 @@ export default function TripFields({
             </optgroup>
           ))}
         </select>
-        {outsideHint && (
-          <p id="trip-hint" className="mt-1 text-xs text-muted-foreground">
-            {outsideHint}
-          </p>
-        )}
-      </div>
+      </Field>
 
       {trip && (
-        <div className="animate-fade-in">
-          <p id="travelType-label" className="mb-1.5 block text-sm font-medium text-muted">
-            Travel type
-            <span className="ml-1 text-xs font-normal text-muted-foreground">— optional</span>
+        <div className="animate-fade-in flex flex-col gap-1">
+          <p id="travelType-label" className="cap text-ink-3">
+            Travel type<span className="font-normal normal-case tracking-normal">, optional</span>
           </p>
-          <div role="radiogroup" aria-labelledby="travelType-label" className="flex flex-wrap gap-2">
+          <div ref={chipGroupRef} role="radiogroup" aria-labelledby="travelType-label" className="flex flex-wrap gap-2">
             {TRAVEL_TYPES.map((type, index) => {
               const checked = travelType === type;
               const tabbable = selectedIndex === -1 ? index === 0 : checked;
               return (
-                <button
+                <Chip
                   key={type}
-                  ref={(el) => {
-                    chipRefs.current[index] = el;
-                  }}
-                  type="button"
                   role="radio"
-                  aria-checked={checked}
+                  pressed={checked}
                   tabIndex={tabbable ? 0 : -1}
                   disabled={disabled}
                   onClick={() => onTravelTypeChange(checked ? null : type)}
                   onKeyDown={(e) => handleChipKeyDown(e, index)}
-                  className={clsx(
-                    "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50",
-                    checked
-                      ? clsx(TRAVEL_TYPE_CHIP_CLASSES[type], "border-transparent font-semibold shadow-sm")
-                      : "border-line-strong bg-surface text-muted hover:bg-subtle hover:text-foreground"
-                  )}
                 >
-                  <TravelTypeIcon type={type} className="h-3.5 w-3.5" />
+                  <TravelTypeIcon type={type} className={cn("h-[15px] w-[15px]", !checked && "text-ink-3")} />
                   {TRAVEL_TYPE_META[type].label}
-                </button>
+                </Chip>
               );
             })}
           </div>

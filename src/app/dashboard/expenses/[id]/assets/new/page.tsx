@@ -1,15 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, PackagePlus } from "lucide-react";
+import { PackageCheck, PackagePlus } from "lucide-react";
 import AssetPurchaseSection, {
   AssetDraft,
   createEmptyAsset,
 } from "@/components/assets/AssetPurchaseSection";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Panel from "@/components/ui/Panel";
+import PageHeader from "@/components/ui/PageHeader";
+import { panelClass } from "@/components/ui/styles";
+import { cn } from "@/components/ui/cn";
+import StatBand, { Stat } from "@/components/ui/StatBand";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import Spinner from "@/components/ui/Spinner";
+import FormSection, { FormFooter } from "@/components/ui/FormSection";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -29,7 +35,7 @@ interface ExpenseData {
 }
 
 export default function AddAssetsToExpensePage() {
-  useTitle("Create Assets from Expense");
+  useTitle("Create assets from expense");
   const params = useParams();
   const router = useRouter();
   const { user, isAdmin } = useAuth();
@@ -81,10 +87,12 @@ export default function AddAssetsToExpensePage() {
       gst: Math.max(0, moneyToCents(expense?.gstAmount) - allocatedGstCents) / 100,
     };
   }, [existingAssets, expense]);
+  // Every rupee is already on an asset: nothing is left to allocate to a new one.
+  const fullyAllocated = expense !== null && moneyToCents(remaining.amount) === 0;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!expense || assets.length === 0) return;
+    if (!expense || assets.length === 0 || fullyAllocated) return;
     const allocatedCents = assets.reduce(
       (total, asset) => total + moneyToCents(asset.allocatedAmount),
       0
@@ -118,30 +126,60 @@ export default function AddAssetsToExpensePage() {
   const currencyCode = expense.currency?.code || "INR";
 
   return (
-    <div className="animate-fade-in space-y-6">
-      <div>
-        <Link href={`/dashboard/expenses/${expense._id}/edit`} className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Back to Expense</Link>
-        <div className="flex items-start gap-3"><div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><PackagePlus className="h-6 w-6" /></div><div><h1 className="text-2xl font-bold text-foreground">Create assets from expense</h1><p className="mt-1 text-sm text-muted-foreground">{expense.title}</p></div></div>
-      </div>
+    <div className="animate-fade-in flex flex-col gap-6">
+      <PageHeader
+        breadcrumb={[
+          { label: "Expenses", href: "/dashboard/expenses" },
+          { label: expense.title, href: `/dashboard/expenses/${expense._id}/edit` },
+          { label: "Create assets" },
+        ]}
+        title="Create assets from expense"
+        meta={
+          existingAssets.length === 0
+            ? "No assets linked yet"
+            : `${existingAssets.length} ${existingAssets.length === 1 ? "asset" : "assets"} already linked`
+        }
+      />
 
-      <div className="card grid gap-4 p-5 sm:grid-cols-3">
-        <div><p className="text-xs uppercase tracking-wider text-muted-foreground">Expense total</p><p className="mt-1 font-semibold text-foreground">{formatCurrency(expense.amount, currencyCode)}</p></div>
-        <div><p className="text-xs uppercase tracking-wider text-muted-foreground">Remaining allocation</p><p className="mt-1 font-semibold text-foreground">{formatCurrency(remaining.amount, currencyCode)}</p></div>
-        <div><p className="text-xs uppercase tracking-wider text-muted-foreground">Remaining GST</p><p className="mt-1 font-semibold text-foreground">{formatCurrency(remaining.gst, currencyCode)}</p></div>
-      </div>
+      <StatBand aria-label="Allocation">
+        <Stat headline label="Expense total" value={formatCurrency(expense.amount, currencyCode)} />
+        <Stat label="Remaining allocation" value={formatCurrency(remaining.amount, currencyCode)} />
+        <Stat label="Remaining GST" value={formatCurrency(remaining.gst, currencyCode)} />
+      </StatBand>
 
-      <form onSubmit={submit} className="card p-5">
-        <AssetPurchaseSection
-          assets={assets}
-          onChange={setAssets}
-          purchaseDate={new Date(expense.date).toISOString().split("T")[0]}
-          currencySymbol={expense.currency?.symbol || "₹"}
-          users={users}
-          canAssignOthers={isAdmin}
-          currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
-        />
-        <div className="mt-6 flex justify-end border-t border-line pt-5"><button type="submit" className="btn-primary" disabled={saving || assets.length === 0}>{saving ? <><Spinner size="sm" /> Creating...</> : "Create linked assets"}</button></div>
-      </form>
+      {fullyAllocated ? (
+        <Panel>
+          <EmptyState
+            icon={<PackageCheck />}
+            title="Fully allocated"
+            description="This expense's whole amount is already allocated to its assets, so there is nothing left to create an asset from."
+            action={
+              <Button variant="secondary" href="/dashboard/assets">
+                View assets
+              </Button>
+            }
+          />
+        </Panel>
+      ) : (
+        <form onSubmit={submit} aria-label="Assets to create" className={cn(panelClass, "flex min-w-0 flex-col")}>
+          <FormSection>
+            <AssetPurchaseSection
+              assets={assets}
+              onChange={setAssets}
+              purchaseDate={new Date(expense.date).toISOString().split("T")[0]}
+              currencySymbol={expense.currency?.symbol || "₹"}
+              users={users}
+              canAssignOthers={isAdmin}
+              currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
+            />
+          </FormSection>
+          <FormFooter className="justify-end">
+            <Button type="submit" icon={PackagePlus} loading={saving} disabled={assets.length === 0}>
+              {saving ? "Creating…" : "Create linked assets"}
+            </Button>
+          </FormFooter>
+        </form>
+      )}
     </div>
   );
 }

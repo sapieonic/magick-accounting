@@ -1,0 +1,201 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Bot, Coins, FileText, Shield } from "lucide-react";
+import SettingsNav, { pickActiveSection, stripScrollLeftFor, type SettingsSection } from "./SettingsNav";
+
+const SECTIONS: SettingsSection[] = [
+  { id: "access", label: "Sign-in access", icon: Shield },
+  { id: "currencies", label: "Currencies", icon: Coins },
+  { id: "telegram", label: "Telegram bot", icon: Bot },
+  { id: "invoices", label: "Invoice defaults", icon: FileText },
+];
+const IDS = SECTIONS.map((s) => s.id);
+
+/** Lays the sections out at the given viewport tops, each `height` px tall. */
+function layout(tops: Record<string, number>, height = 300) {
+  for (const [id, top] of Object.entries(tops)) {
+    const el = document.getElementById(id)!;
+    el.getBoundingClientRect = () => ({ top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+  }
+}
+
+function Page() {
+  return (
+    <main style={{ overflowY: "auto" }} data-testid="scroller">
+      <SettingsNav sections={SECTIONS} />
+      {SECTIONS.map((s) => (
+        <section key={s.id} id={s.id}>
+          {s.label}
+        </section>
+      ))}
+    </main>
+  );
+}
+
+const current = () => screen.getByRole("link", { current: "location" });
+
+function rect(left: number, width: number) {
+  return () => ({ left, right: left + width, width, top: 0, bottom: 44, height: 44, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+}
+
+/** Makes `el` a horizontal scroller `clientWidth` wide over `scrollWidth` of content. */
+function sideScroller(el: HTMLElement, clientWidth: number, scrollWidth: number) {
+  Object.defineProperty(el, "clientWidth", { configurable: true, value: clientWidth });
+  Object.defineProperty(el, "scrollWidth", { configurable: true, value: scrollWidth });
+  el.getBoundingClientRect = rect(0, clientWidth);
+}
+
+describe("pickActiveSection", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  function mount() {
+    document.body.innerHTML = IDS.map((id) => `<section id="${id}"></section>`).join("");
+  }
+
+  it("picks the last section whose top passed the reading line, even if the one above still shows", () => {
+    mount();
+    // Currencies' bottom is still on screen, but Telegram is the one being read.
+    layout({ access: -900, currencies: -250, telegram: 88, invoices: 420 });
+    expect(pickActiveSection(IDS, { line: 200, viewportHeight: 800, atBottom: false, clicked: null })).toBe("telegram");
+  });
+
+  it("falls back to the first section before any reaches the line", () => {
+    mount();
+    layout({ access: 260, currencies: 600, telegram: 900, invoices: 1200 });
+    expect(pickActiveSection(IDS, { line: 200, viewportHeight: 800, atBottom: false, clicked: null })).toBe("access");
+  });
+
+  it("highlights the last section at the bottom of the page", () => {
+    mount();
+    layout({ access: -900, currencies: -500, telegram: 120, invoices: 500 });
+    expect(pickActiveSection(IDS, { line: 100, viewportHeight: 800, atBottom: true, clicked: null })).toBe("invoices");
+  });
+
+  it("keeps a clicked section that can't reach the line while it is on screen", () => {
+    mount();
+    layout({ access: -900, currencies: -500, telegram: 120, invoices: 500 });
+    expect(pickActiveSection(IDS, { line: 100, viewportHeight: 800, atBottom: true, clicked: "telegram" })).toBe(
+      "telegram"
+    );
+  });
+});
+
+describe("stripScrollLeftFor", () => {
+  it("scrolls just far enough to show a link past either edge, and leaves a visible one alone", () => {
+    const strip = document.createElement("ul");
+    const link = document.createElement("li");
+    sideScroller(strip, 300, 800);
+
+    link.getBoundingClientRect = rect(350, 120); // off the right edge
+    expect(stripScrollLeftFor(strip, link)).toBe(350 + 120 + 16 - 300);
+
+    strip.scrollLeft = 400;
+    link.getBoundingClientRect = rect(-150, 120); // off the left edge (content x 250)
+    expect(stripScrollLeftFor(strip, link)).toBe(250 - 16);
+
+    link.getBoundingClientRect = rect(100, 120);
+    expect(stripScrollLeftFor(strip, link)).toBeNull();
+  });
+
+  it("does nothing when the strip doesn't scroll (the xl vertical list)", () => {
+    const strip = document.createElement("ul");
+    const link = document.createElement("li");
+    sideScroller(strip, 300, 300);
+    link.getBoundingClientRect = rect(350, 120);
+    expect(stripScrollLeftFor(strip, link)).toBeNull();
+  });
+});
+
+describe("SettingsNav", () => {
+  it("starts on the first section and follows scrolling", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0; // already ran: nothing pending
+
+    });
+    render(<Page />);
+    expect(current()).toHaveAttribute("href", "#access");
+
+    layout({ access: -900, currencies: -250, telegram: 88, invoices: 420 });
+    act(() => {
+      fireEvent.scroll(screen.getByTestId("scroller"));
+    });
+    expect(current()).toHaveAttribute("href", "#telegram");
+    vi.restoreAllMocks();
+  });
+
+  it("highlights a clicked section until the person scrolls by hand", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0; // already ran: nothing pending
+
+    });
+    render(<Page />);
+    layout({ access: -900, currencies: -500, telegram: 120, invoices: 380 });
+
+    fireEvent.click(screen.getByRole("link", { name: "Telegram bot" }));
+    act(() => {
+      fireEvent.scroll(screen.getByTestId("scroller"));
+    });
+    expect(current()).toHaveAttribute("href", "#telegram");
+
+    fireEvent.wheel(window);
+    layout({ access: -900, currencies: -500, telegram: -200, invoices: 60 });
+    act(() => {
+      fireEvent.scroll(screen.getByTestId("scroller"));
+    });
+    expect(current()).toHaveAttribute("href", "#invoices");
+    vi.restoreAllMocks();
+  });
+
+  it("scrolls the phone strip to the newly active link", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    render(<Page />);
+    const strip = screen.getByRole("list");
+    sideScroller(strip, 300, 700);
+    const items = screen.getAllByRole("listitem");
+    items.forEach((li, i) => {
+      li.getBoundingClientRect = () => rect(i * 160 - strip.scrollLeft, 150)();
+    });
+    expect(strip.scrollLeft).toBe(0);
+
+    layout({ access: -900, currencies: -500, telegram: -200, invoices: 60 });
+    act(() => {
+      fireEvent.scroll(screen.getByTestId("scroller"));
+    });
+    expect(current()).toHaveAttribute("href", "#invoices");
+    // Invoices spans 480–630 in the strip's content: scrolled to show it whole.
+    expect(strip.scrollLeft).toBe(630 + 16 - 300);
+    vi.restoreAllMocks();
+  });
+
+  it("releases a clicked section when the scroller's scrollbar is dragged, not on a press inside the page", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    render(<Page />);
+    layout({ access: -900, currencies: -500, telegram: 120, invoices: 380 });
+    fireEvent.click(screen.getByRole("link", { name: "Telegram bot" }));
+
+    const scroller = screen.getByTestId("scroller");
+    fireEvent.pointerDown(screen.getByText("Currencies", { selector: "section" }));
+    layout({ access: -900, currencies: -500, telegram: -200, invoices: 60 });
+    act(() => {
+      fireEvent.scroll(scroller);
+    });
+    expect(current()).toHaveAttribute("href", "#telegram");
+
+    fireEvent.pointerDown(scroller);
+    act(() => {
+      fireEvent.scroll(scroller);
+    });
+    expect(current()).toHaveAttribute("href", "#invoices");
+    vi.restoreAllMocks();
+  });
+});

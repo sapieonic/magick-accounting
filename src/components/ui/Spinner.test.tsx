@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import Spinner, { InlineLoader, PageLoader } from "@/components/ui/Spinner";
+import Spinner, { InlineLoader } from "@/components/ui/Spinner";
 
 describe("Spinner", () => {
   it("renders with a status role and Loading aria-label", () => {
@@ -40,9 +40,15 @@ describe("InlineLoader", () => {
     expect(screen.getByText("Fetching data")).toBeInTheDocument();
   });
 
-  it("contains a Spinner (status role) with the sm size", () => {
-    render(<InlineLoader />);
-    expect(screen.getByRole("status")).toHaveClass("h-4", "w-4");
+  it("is one status named by its visible label, with a decorative sm spinner", () => {
+    const { container } = render(<InlineLoader label="Refreshing..." />);
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toHaveTextContent("Refreshing...");
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    const ring = container.querySelector(".animate-spin");
+    expect(ring).toHaveAttribute("aria-hidden", "true");
+    expect(ring).toHaveClass("h-4", "w-4");
   });
 
   it("applies a custom className to the wrapper", () => {
@@ -51,17 +57,21 @@ describe("InlineLoader", () => {
   });
 });
 
-describe("PageLoader", () => {
-  it("renders its loading copy", () => {
-    render(<PageLoader />);
-    expect(screen.getByText("Loading data...")).toBeInTheDocument();
-    expect(
-      screen.getByText("Serverless APIs can take a few seconds to warm up.")
-    ).toBeInTheDocument();
+describe("Spinner tone", () => {
+  it("defaults to the indigo ring", () => {
+    render(<Spinner />);
+    expect(screen.getByRole("status")).toHaveClass("border-accent/20", "border-t-accent");
   });
 
-  it("renders a large Spinner", () => {
-    render(<PageLoader />);
-    expect(screen.getByRole("status")).toHaveClass("h-12", "w-12");
+  it("follows the text colour with tone=current", () => {
+    render(<Spinner tone="current" />);
+    const ring = screen.getByRole("status");
+    expect(ring).toHaveClass("border-current", "border-r-transparent");
+    expect(ring).not.toHaveClass("border-t-accent");
+  });
+
+  it("is a span, valid inside a button", () => {
+    render(<Spinner />);
+    expect(screen.getByRole("status").tagName).toBe("SPAN");
   });
 });

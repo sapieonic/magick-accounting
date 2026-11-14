@@ -8,6 +8,8 @@ export interface ExpenseListItem {
   title: string;
   amount: number;
   amountInBaseCurrency?: number;
+  /** The rate `amount` was converted at on entry; missing on older documents. */
+  exchangeRateToBase?: number | null;
   gstAmount?: number | null;
   currency?: { _id: string; code: string; name: string; symbol: string; isBase: boolean };
   date: string;

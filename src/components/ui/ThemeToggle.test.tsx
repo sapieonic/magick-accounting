@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ThemeToggle from "@/components/ui/ThemeToggle";
-import { ThemeProvider, THEME_STORAGE_KEY } from "@/contexts/ThemeContext";
+import { ThemeProvider, applyStoredTheme } from "@/contexts/ThemeContext";
+import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 function renderToggle() {
   return render(
@@ -57,5 +58,36 @@ describe("ThemeToggle", () => {
     document.documentElement.classList.add("dark");
     renderToggle();
     expect(screen.getByRole("button", { name: /switch to light mode/i })).toBeInTheDocument();
+  });
+
+  it("applies the saved theme on mount when <html> lost its class (after global-error's reset)", () => {
+    localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    renderToggle();
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    expect(screen.getByRole("button", { name: /switch to light mode/i })).toBeInTheDocument();
+  });
+});
+
+describe("applyStoredTheme", () => {
+  afterEach(() => {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.style.colorScheme = "";
+    localStorage.clear();
+  });
+
+  it("restores the dark class and color-scheme from storage", () => {
+    localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    expect(applyStoredTheme()).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+  });
+
+  it("falls back to light with nothing saved", () => {
+    document.documentElement.classList.add("dark");
+    expect(applyStoredTheme()).toBe("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("light");
   });
 });

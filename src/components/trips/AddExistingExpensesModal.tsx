@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { format, parseISO } from "date-fns";
-import { Check, Inbox, Search } from "lucide-react";
-import clsx from "clsx";
+import { Inbox } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
-import { dayKey } from "@/lib/trip";
 import type { ExpenseListItem } from "@/types/expense";
 import Modal from "@/components/ui/Modal";
 import Skeleton from "@/components/ui/Skeleton";
 import Spinner from "@/components/ui/Spinner";
+import EmptyState from "@/components/ui/EmptyState";
+import Field from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
+import CategoryGlyph from "@/components/ui/CategoryGlyph";
+import Checkbox from "@/components/ui/Checkbox";
+import { cn } from "@/components/ui/cn";
+import { focusRing, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
+import { DialogActions } from "@/components/ui/ConfirmDialog";
+import { baseAmount, expenseDate, isForeign } from "@/components/expenses/ledger/format";
 
 interface AddExistingExpensesModalProps {
   tripId: string;
@@ -18,20 +24,6 @@ interface AddExistingExpensesModalProps {
   onClose: () => void;
   /** Called after the expenses were moved into the trip, with how many. */
   onAdded: (count: number) => void;
-}
-
-function Checkbox({ checked, partial = false }: { checked: boolean; partial?: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={clsx(
-        "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition-colors",
-        checked || partial ? "border-brand-500 bg-brand-500 text-white" : "border-line-strong bg-surface"
-      )}
-    >
-      {checked ? <Check className="h-3 w-3" /> : partial ? <span className="h-0.5 w-2 rounded bg-white" /> : null}
-    </span>
-  );
 }
 
 export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAdded }: AddExistingExpensesModalProps) {
@@ -114,7 +106,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
     });
   };
 
-  const selectedTotal = [...selected.values()].reduce((sum, e) => sum + (e.amountInBaseCurrency ?? e.amount ?? 0), 0);
+  const selectedTotal = [...selected.values()].reduce((sum, e) => sum + baseAmount(e), 0);
 
   const handleAdd = async () => {
     const ids = [...selected.keys()];
@@ -133,132 +125,117 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add existing expenses" maxWidth="max-w-2xl">
-      <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-        Expenses not in any trip, dated from two months before to two weeks after this trip.
-      </p>
-      <label className="relative mb-3 block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          aria-label="Search expenses"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search title or description"
-          className="input-field pl-9"
-        />
-      </label>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-ink-3">
+          Expenses not in any trip, dated from two months before to two weeks after this trip.
+        </p>
+        <Field label="Search expenses">
+          <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Title or description" />
+        </Field>
 
-      {!ready || (loading && candidates.length === 0) ? (
-        <div className="space-y-2" role="status" aria-label="Loading expenses">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : candidates.length === 0 ? (
-        <div className="flex flex-col items-center py-10 text-center">
-          <div className="mb-3 rounded-full bg-subtle p-3 text-muted-foreground">
-            <Inbox className="h-6 w-6" />
+        {!ready || (loading && candidates.length === 0) ? (
+          <div className="flex flex-col gap-2" role="status" aria-label="Loading expenses">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))}
           </div>
-          <p className="font-medium text-foreground">No unassigned expenses around these dates</p>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            {search ? "Try a different search." : "Anything already in a trip, or far from these dates, isn't listed."}
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-line">
-          <button
-            type="button"
-            onClick={toggleAll}
-            className="flex w-full items-center gap-3 border-b border-line bg-subtle/50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-subtle"
-            aria-pressed={allSelected}
-          >
-            <Checkbox checked={allSelected} partial={visibleSelected > 0 && !allSelected} />
-            {truncated ? "Select all shown" : "Select all"} ({candidates.length})
-            {loading && <Spinner size="sm" className="ml-auto" />}
-          </button>
-          <ul className="max-h-[min(50vh,24rem)] divide-y divide-line overflow-y-auto">
-            {candidates.map((expense) => {
-              const isSelected = selected.has(expense._id);
-              const code = expense.currency?.code || "INR";
-              const foreign = Boolean(expense.currency && !expense.currency.isBase);
-              return (
-                <li key={expense._id}>
-                  <label
-                    className={clsx(
-                      "flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-subtle/50 has-[:focus-visible]:bg-subtle has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-brand-500",
-                      isSelected && "bg-brand-50/60 dark:bg-brand-500/10"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={isSelected}
-                      onChange={() => toggle(expense)}
-                      aria-label={expense.title}
-                    />
-                    <Checkbox checked={isSelected} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{expense.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {format(parseISO(dayKey(expense.date)), "d MMM yyyy")}
-                        {expense.createdBy?.name ? ` · ${expense.createdBy.name}` : ""}
-                        {expense.category?.name ? ` · ${expense.category.name}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex-shrink-0 text-right">
-                      <p className="text-sm font-semibold tabular-nums text-foreground">
-                        {formatCurrency(expense.amount, code)}
-                      </p>
-                      {foreign && expense.amountInBaseCurrency != null && (
-                        <p className="text-[11px] tabular-nums text-muted-foreground">
-                          {formatBaseCurrency(expense.amountInBaseCurrency)}
-                        </p>
+        ) : candidates.length === 0 ? (
+          <EmptyState
+            icon={<Inbox />}
+            title="No unassigned expenses around these dates"
+            description={search ? "Try a different search." : "Anything already in a trip, or far from these dates, isn't listed."}
+          />
+        ) : (
+          <div className="overflow-hidden rounded-panel border border-rule">
+            <button
+              type="button"
+              onClick={toggleAll}
+              className={cn(
+                "cap flex min-h-11 w-full cursor-pointer items-center gap-3 bg-sunk px-4 text-left text-ink-3 hover:bg-tint-2",
+                transition,
+                focusRing
+              )}
+              aria-pressed={allSelected}
+            >
+              <Checkbox checked={allSelected} partial={visibleSelected > 0 && !allSelected} />
+              {truncated ? "Select all shown" : "Select all"} ({candidates.length})
+              {loading && <Spinner size="sm" className="ml-auto" />}
+            </button>
+            <ul className="max-h-[min(50vh,24rem)] overflow-y-auto">
+              {candidates.map((expense) => {
+                const isSelected = selected.has(expense._id);
+                const code = expense.currency?.code || "INR";
+                const foreign = isForeign(expense);
+                return (
+                  <li key={expense._id}>
+                    <label
+                      className={cn(
+                        "flex min-h-[58px] cursor-pointer items-center gap-3 px-4 py-2",
+                        rowClass,
+                        "has-[:focus-visible]:shadow-[inset_0_0_0_2px_rgb(var(--accent))]",
+                        isSelected && rowSelectedClass
                       )}
-                    </div>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-          {truncated && (
-            <p className="border-t border-line bg-subtle/30 px-4 py-2 text-xs text-muted-foreground">
-              Showing the {candidates.length} most recent — search to narrow it down.
-            </p>
-          )}
-        </div>
-      )}
-
-      {error && (
-        <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
-
-      <div className="-mx-6 mt-4 flex flex-col-reverse gap-2 border-t border-line px-6 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-center text-xs text-muted-foreground sm:text-left">
-          {selected.size > 0 ? (
-            <>
-              {selected.size} selected · <span className="tabular-nums">{formatBaseCurrency(selectedTotal)}</span>
-            </>
-          ) : (
-            "Pick the expenses that belong to this trip"
-          )}
-        </p>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row">
-          <button type="button" onClick={onClose} className="btn-secondary" disabled={saving}>
-            Cancel
-          </button>
-          <button type="button" onClick={handleAdd} className="btn-primary" disabled={selected.size === 0 || saving}>
-            {saving ? (
-              <>
-                <Spinner size="sm" /> Adding...
-              </>
-            ) : selected.size > 0 ? (
-              `Add ${selected.size} to trip`
-            ) : (
-              "Add to trip"
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={isSelected}
+                        onChange={() => toggle(expense)}
+                        aria-label={expense.title}
+                      />
+                      <Checkbox checked={isSelected} />
+                      <CategoryGlyph name={expense.category?.name} />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="ell font-medium text-ink">{expense.title}</span>
+                        <span className="ell text-xs text-ink-3">
+                          {expenseDate(expense, "d MMM yyyy")}
+                          {expense.createdBy?.name ? ` · ${expense.createdBy.name}` : ""}
+                          {expense.category?.name ? ` · ${expense.category.name}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end">
+                        <span className="num font-medium text-ink">{formatCurrency(expense.amount, code)}</span>
+                        {foreign && (
+                          <span className="num text-xs text-ink-3">{formatBaseCurrency(expense.amountInBaseCurrency!)}</span>
+                        )}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            {truncated && (
+              <p className="border-t border-rule bg-sunk px-4 py-2 text-xs text-ink-3">
+                Showing the {candidates.length} most recent — search to narrow it down.
+              </p>
             )}
-          </button>
-        </div>
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
+
+        <DialogActions
+          onCancel={onClose}
+          onConfirm={handleAdd}
+          disabled={selected.size === 0}
+          confirmLabel={selected.size > 0 ? `Add ${selected.size} to trip` : "Add to trip"}
+          busyLabel="Adding..."
+          busy={saving}
+        >
+          <p className="text-center text-xs text-ink-3 sm:mr-auto sm:text-left">
+            {selected.size > 0 ? (
+              <>
+                {selected.size} selected · <span className="num">{formatBaseCurrency(selectedTotal)}</span>
+              </>
+            ) : (
+              "Pick the expenses that belong to this trip"
+            )}
+          </p>
+        </DialogActions>
       </div>
     </Modal>
   );

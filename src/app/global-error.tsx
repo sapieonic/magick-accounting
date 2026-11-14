@@ -1,7 +1,16 @@
 "use client";
 
+import "./globals.css";
+import { useLayoutEffect } from "react";
+import { RotateCcw } from "lucide-react";
+import Button from "@/components/ui/Button";
+import { buttonClass } from "@/components/ui/styles";
+import { applyStoredTheme } from "@/contexts/ThemeContext";
+import StatusPage from "@/components/layout/StatusPage";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
+
 // global-error replaces the root layout when an unrecoverable error is thrown,
-// so it must render its own <html> and <body>.
+// so it must render its own <html> and <body> (and load the styles itself).
 export default function GlobalError({
   error,
   reset,
@@ -9,23 +18,39 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // When this takes over on the client, React strips the root layout's <html>
+  // class and color-scheme; restore the saved theme before paint (no light
+  // flash). When it is server-rendered, the boot script in <head> does it.
+  useLayoutEffect(() => {
+    applyStoredTheme();
+  }, []);
+
   return (
-    <html lang="en">
+    // The boot script sets the class and color-scheme before hydration.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-dvh font-sans antialiased">
-        <div className="flex min-h-dvh flex-col items-center justify-center px-6 text-center">
-          <p className="text-sm font-semibold tracking-wide text-red-500">Error</p>
-          <h1 className="mt-2 text-2xl font-bold text-foreground">Something went wrong</h1>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            An unexpected error occurred. Please try again — if the problem persists, contact your
-            administrator.
+        <StatusPage eyebrow="Error" tone="danger" title="Something went wrong">
+          <p className="text-sm text-ink-3">
+            An unexpected error occurred. Please try again — if the problem persists, contact your administrator.
           </p>
           {error?.digest && (
-            <p className="mt-2 text-xs text-muted-foreground">Reference: {error.digest}</p>
+            <p className="text-xs text-ink-3">
+              Reference: <span className="num">{error.digest}</span>
+            </p>
           )}
-          <button onClick={() => reset()} className="btn-primary mt-6">
-            Try again
-          </button>
-        </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button icon={RotateCcw} onClick={() => reset()}>
+              Try again
+            </Button>
+            {/* A plain link: the app's router may be what failed. */}
+            <a href="/dashboard" className={buttonClass({ variant: "ghost" })}>
+              Go to dashboard
+            </a>
+          </div>
+        </StatusPage>
       </body>
     </html>
   );

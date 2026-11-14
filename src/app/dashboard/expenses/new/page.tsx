@@ -1,51 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Sparkles, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { moneyToCents } from "@/lib/asset";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import Spinner from "@/components/ui/Spinner";
-import Modal from "@/components/ui/Modal";
-import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
-import AssetPurchaseSection, {
-  AssetDraft,
-} from "@/components/assets/AssetPurchaseSection";
-import PaymentSourceFields, {
-  newPaymentDraft,
-  paymentDraftsToPayload,
-  type PayerOption,
-  type PaymentDraft,
-} from "@/components/expenses/PaymentSourceFields";
-import TripFields, {
-  categoryForTravelType,
-  useTripOptions,
-} from "@/components/expenses/TripFields";
-import { getPaymentEntriesError, getPaymentSplitError } from "@/lib/expense";
+import AssetPurchaseSection, { AssetDraft } from "@/components/assets/AssetPurchaseSection";
+import { categoryForTravelType, useTripOptions } from "@/components/expenses/TripFields";
+import ExpenseForm from "@/components/expenses/form/ExpenseForm";
+import ReceiptPanel, { ReceiptReadStatus } from "@/components/expenses/form/ReceiptPanel";
+import ReceiptUploadModal, { shouldOfferUploadModal } from "@/components/expenses/form/ReceiptUploadModal";
+import {
+  LOOKUPS_URL,
+  MAX_RECEIPT_SIZE,
+  RECEIPT_TOO_LARGE,
+  discardUploadedReceipt,
+  getSubmitError,
+  toExpensePayload,
+  useReceiptUpload,
+  useUnsavedChangesWarning,
+} from "@/components/expenses/form/expense-form";
+import {
+  EMPTY_LOOKUPS,
+  emptyExpenseValues,
+  type AiField,
+  type CurrencyOption,
+  type Department,
+  type ExpenseFormValues,
+  type ExpenseLookups,
+} from "@/components/expenses/form/types";
 import { dayKey, isWithinTrip, type TravelType } from "@/lib/trip";
-import { ArrowLeft, Upload, X as XIcon, Sparkles } from "lucide-react";
-
-interface Department {
-  _id: string;
-  name: string;
-  isDefault?: boolean;
-}
-
-interface Category {
-  _id: string;
-  name: string;
-}
-
-interface CurrencyOption {
-  _id: string;
-  code: string;
-  name: string;
-  symbol: string;
-  isBase: boolean;
-}
 
 interface UserOption {
   _id: string;
@@ -55,28 +43,40 @@ interface UserOption {
 
 // File types the AI auto-fill can read (images + PDF).
 const EXTRACTABLE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-const SKIP_UPLOAD_MODAL_KEY = "expense-upload-modal-skip";
+
+/** Form fields an extraction result fills, in the order they're checked. */
+function filledFields(data: Record<string, unknown>): Set<AiField> {
+  const fields = new Set<AiField>();
+  if (data.title) fields.add("title");
+  if (data.amount != null) fields.add("amount");
+  if (data.gstAmount != null) fields.add("gstAmount");
+  if (data.date) fields.add("date");
+  if (data.description) fields.add("description");
+  if (data.category) fields.add("category");
+  if (data.currency) fields.add("currency");
+  return fields;
+}
 
 export default function NewExpensePage() {
-  useTitle("New Expense");
+  useTitle("New expense");
   const router = useRouter();
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
+  const [lookups, setLookups] = useState<ExpenseLookups>(EMPTY_LOOKUPS);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [members, setMembers] = useState<PayerOption[]>([]);
   const [assets, setAssets] = useState<AssetDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const { upload, uploading: uploadingReceipt } = useReceiptUpload();
 
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [extracting, setExtracting] = useState(false);
-  const [autoFilled, setAutoFilled] = useState(false);
+  // Fields the last receipt read filled in and the user hasn't edited since
+  // (null: no read yet / receipt removed).
+  const [aiFilled, setAiFilled] = useState<Set<AiField> | null>(null);
+  // How many fields that read filled in; unlike the marks, edits don't change it.
+  const [readCount, setReadCount] = useState<number | null>(null);
+  const [extractFailed, setExtractFailed] = useState(false);
 
   const { trips, loaded: tripsLoaded } = useTripOptions();
   // `?trip=<id>`: the trip page's "Add expense" opens the form inside that trip
@@ -100,36 +100,22 @@ export default function NewExpensePage() {
 
   // Open the AI-upload modal on arrival unless the user opted out earlier.
   useEffect(() => {
-    if (localStorage.getItem(SKIP_UPLOAD_MODAL_KEY) !== "true") {
-      setShowUploadModal(true);
-    }
+    if (shouldOfferUploadModal()) setShowUploadModal(true);
   }, []);
 
-  const [form, setForm] = useState({
-    title: "",
-    amount: "",
-    gstAmount: "",
-    currency: "",
-    category: "",
-    department: "",
-    date: new Date().toISOString().split("T")[0],
-    description: "",
-    paymentSource: "pocket",
-    pocketAmount: "",
-    payments: [] as PaymentDraft[],
-    trip: "",
-    travelType: null as TravelType | null,
-  });
+  const [form, setForm] = useState<ExpenseFormValues>(() =>
+    emptyExpenseValues(new Date().toISOString().split("T")[0])
+  );
 
-  const [receipt, setReceipt] = useState<{
-    file: File;
-    key?: string;
-    filename: string;
-  } | null>(null);
+  const [receipt, setReceipt] = useState<{ file: File; filename: string } | null>(null);
 
   // Warn before discarding typed-in or extracted data on a full page unload.
   const isDirty = Boolean(
-    form.title || form.amount || form.description || form.category !== "" || form.pocketAmount ||
+    form.title ||
+      form.amount ||
+      form.description ||
+      form.category !== "" ||
+      form.pocketAmount ||
       form.payments.some(
         (entry) =>
           entry.amount !== "" || entry.source !== "pocket" || (entry.paidBy && entry.paidBy !== user?._id)
@@ -139,15 +125,7 @@ export default function NewExpensePage() {
       form.trip !== openedFromTrip ||
       form.travelType !== null
   );
-
-  useEffect(() => {
-    if (!isDirty || submitting) return;
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isDirty, submitting]);
+  useUnsavedChangesWarning(isDirty && !submitting);
 
   const backHref = openedFromTrip ? `/dashboard/trips/${openedFromTrip}` : "/dashboard/expenses";
 
@@ -158,9 +136,21 @@ export default function NewExpensePage() {
     router.push(backHref);
   };
 
+  /** A direct edit drops the field's "from receipt" mark and pins category/department. */
+  const handleEdit = (field: keyof ExpenseFormValues) => {
+    if (field === "category") setCategoryPinned(true);
+    if (field === "department") setDepartmentPinned(true);
+    setAiFilled((prev) => {
+      if (!prev?.has(field as AiField)) return prev;
+      const next = new Set(prev);
+      next.delete(field as AiField);
+      return next;
+    });
+  };
+
   /** Form changes for a travel type: the type plus, unless pinned, its category. */
   const travelTypeFields = (travelType: TravelType | null) => {
-    const category = categoryPinned ? null : categoryForTravelType(travelType, categories);
+    const category = categoryPinned ? null : categoryForTravelType(travelType, lookups.categories);
     return category ? { travelType, category: category._id } : { travelType };
   };
 
@@ -172,7 +162,7 @@ export default function NewExpensePage() {
   const handleTripChange = (tripId: string) => {
     const trip = trips.find((t) => t._id === tripId);
     const tripDepartment =
-      trip?.department && departments.some((d) => d._id === trip.department?._id)
+      trip?.department && lookups.departments.some((d) => d._id === trip.department?._id)
         ? trip.department._id
         : null;
     setForm((prev) => {
@@ -191,20 +181,20 @@ export default function NewExpensePage() {
     const previousDate = form.date;
     setForm((current) => ({ ...current, date }));
     setAssets((current) =>
-      current.map((asset) =>
-        asset.putToUseDate === previousDate ? { ...asset, putToUseDate: date } : asset
-      )
+      current.map((asset) => (asset.putToUseDate === previousDate ? { ...asset, putToUseDate: date } : asset))
     );
   };
 
   useEffect(() => {
     async function loadOptions() {
       try {
-        const data = await api.get("/api/lookups?include=departments,categories,currencies,members");
-        setDepartments(data.departments);
-        setCategories(data.categories);
-        setCurrencies(data.currencies);
-        setMembers(data.members || []);
+        const data = await api.get(LOOKUPS_URL);
+        setLookups({
+          departments: data.departments,
+          categories: data.categories,
+          currencies: data.currencies,
+          members: data.members || [],
+        });
 
         const defaultDept = data.departments.find((d: Department) => d.isDefault);
         const baseCurrency = data.currencies.find((c: CurrencyOption) => c.isBase);
@@ -238,103 +228,86 @@ export default function NewExpensePage() {
       department:
         (!prev.department || !departmentPinned) &&
         trip.department &&
-        departments.some((d) => d._id === trip.department?._id)
+        lookups.departments.some((d) => d._id === trip.department?._id)
           ? trip.department._id
           : prev.department,
       date: isWithinTrip(prev.date, trip) ? prev.date : dayKey(trip.startDate),
     }));
-  }, [prefillTripId, prefillDone, loading, tripsLoaded, trips, departments, departmentPinned, toast]);
+  }, [prefillTripId, prefillDone, loading, tripsLoaded, trips, lookups.departments, departmentPinned, toast]);
 
   useEffect(() => {
     if (!isAdmin) return;
-    api.get("/api/users")
+    api
+      .get("/api/users")
       .then((data) => setUsers(data.users || []))
       .catch(() => toast("Users could not be loaded; assets can still be left unassigned", "info"));
   }, [isAdmin, toast]);
 
-  // Attaches a receipt file and, for images, asks the AI to pre-fill the form.
-  const processReceiptFile = async (file: File) => {
-    if (file.size > MAX_SIZE) {
-      toast("File too large. Maximum size is 10MB.", "error");
-      return;
-    }
+  // Attaches a receipt file and, for images and PDFs, asks the AI to pre-fill the form.
+  const processReceiptFile = useCallback(
+    async (file: File) => {
+      if (file.size > MAX_RECEIPT_SIZE) {
+        toast(RECEIPT_TOO_LARGE, "error");
+        return;
+      }
 
-    setReceipt({ file, filename: file.name });
+      setReceipt({ file, filename: file.name });
+      setAiFilled(null);
+      setReadCount(null);
+      setExtractFailed(false);
 
-    if (!EXTRACTABLE_TYPES.includes(file.type)) {
-      setShowUploadModal(false);
-      toast("Receipt attached. AI auto-fill supports image and PDF receipts.", "info");
-      return;
-    }
+      if (!EXTRACTABLE_TYPES.includes(file.type)) {
+        setShowUploadModal(false);
+        toast("Receipt attached. AI auto-fill supports image and PDF receipts.", "info");
+        return;
+      }
 
-    setExtracting(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+      setExtracting(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
 
-      const data = await api.postFormData("/api/expenses/extract", formData);
-      if (data.category) setCategoryPinned(true);
-      const extractedType: TravelType | null = data.travelType || null;
+        const data = await api.postFormData("/api/expenses/extract", formData);
+        if (data.category) setCategoryPinned(true);
+        const extractedType: TravelType | null = data.travelType || null;
 
-      setForm((prev) => ({
-        ...prev,
-        // A receipt's travel type applies inside a trip; otherwise it waits
-        // until one is picked.
-        ...(extractedType && prev.trip ? { travelType: extractedType } : {}),
-        title: data.title || prev.title,
-        amount: data.amount != null ? String(data.amount) : prev.amount,
-        gstAmount: data.gstAmount != null ? String(data.gstAmount) : prev.gstAmount,
-        date: data.date || prev.date,
-        description: data.description || prev.description,
-        category: data.category || prev.category,
-        currency: data.currency || prev.currency,
-      }));
+        setForm((prev) => ({
+          ...prev,
+          // A receipt's travel type applies inside a trip; otherwise it waits
+          // until one is picked.
+          ...(extractedType && prev.trip ? { travelType: extractedType } : {}),
+          title: data.title || prev.title,
+          amount: data.amount != null ? String(data.amount) : prev.amount,
+          gstAmount: data.gstAmount != null ? String(data.gstAmount) : prev.gstAmount,
+          date: data.date || prev.date,
+          description: data.description || prev.description,
+          category: data.category || prev.category,
+          currency: data.currency || prev.currency,
+        }));
 
-      setPendingTravelType(extractedType);
-      setAutoFilled(true);
-      setShowUploadModal(false);
-      toast("Details filled from your receipt — please review before creating.", "success");
-    } catch (err) {
-      setShowUploadModal(false);
-      toast(
-        err instanceof Error ? err.message : "Couldn't read the receipt. Please fill the form manually.",
-        "error"
-      );
-    } finally {
-      setExtracting(false);
-    }
+        setPendingTravelType(extractedType);
+        const filled = filledFields(data);
+        setAiFilled(filled);
+        setReadCount(filled.size);
+        setShowUploadModal(false);
+        toast("Details filled from your receipt — please review before creating.", "success");
+      } catch (err) {
+        setShowUploadModal(false);
+        setExtractFailed(true);
+        toast(err instanceof Error ? err.message : "Couldn't read the receipt. Please fill the form manually.", "error");
+      } finally {
+        setExtracting(false);
+      }
+    },
+    [toast]
+  );
+
+  const removeReceipt = () => {
+    setReceipt(null);
+    setAiFilled(null);
+    setReadCount(null);
+    setExtractFailed(false);
   };
-
-  const uploadReceipt = async (): Promise<{ key: string; filename: string }> => {
-    if (!receipt?.file) throw new Error("No receipt selected");
-
-    setUploadingReceipt(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", receipt.file);
-
-      const result = await api.postFormData("/api/upload", formData);
-      return { key: result.key, filename: result.filename };
-    } finally {
-      setUploadingReceipt(false);
-    }
-  };
-
-  const splitError =
-    form.paymentSource === "split" ? getPaymentSplitError(form.amount, form.pocketAmount) : null;
-  // The browser's `required` check covers an empty pocket field; a filled-in
-  // one errors as soon as it (or the amount, once entered) stops fitting.
-  const visibleSplitError = form.pocketAmount !== "" && form.amount !== "" ? splitError : null;
-  const paymentsError =
-    form.paymentSource === "multiple"
-      ? getPaymentEntriesError(form.amount, paymentDraftsToPayload("multiple", form.payments))
-      : null;
-  // As above: blank payer rows are left to `required`; once every row is
-  // filled in, a mismatch with the total shows inline.
-  const visiblePaymentsError =
-    form.amount !== "" && form.payments.every((entry) => entry.paidBy && entry.amount !== "")
-      ? paymentsError
-      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -342,27 +315,15 @@ export default function NewExpensePage() {
       toast("Please fill in all required fields", "error");
       return;
     }
+    const formError = getSubmitError(form);
+    if (formError) {
+      toast(formError, "error");
+      return;
+    }
 
-    const gstAmount = form.gstAmount ? parseFloat(form.gstAmount) : null;
     const expenseAmountCents = moneyToCents(form.amount);
-    const gstAmountCents = moneyToCents(gstAmount);
-    if (gstAmount != null && gstAmountCents > expenseAmountCents) {
-      toast("GST amount cannot exceed the total amount", "error");
-      return;
-    }
-    if (splitError) {
-      toast(splitError, "error");
-      return;
-    }
-    if (paymentsError) {
-      toast(paymentsError, "error");
-      return;
-    }
-
-    const totalAllocatedCents = assets.reduce(
-      (total, asset) => total + moneyToCents(asset.allocatedAmount),
-      0
-    );
+    const gstAmountCents = moneyToCents(form.gstAmount || null);
+    const totalAllocatedCents = assets.reduce((total, asset) => total + moneyToCents(asset.allocatedAmount), 0);
     const totalGstAllocatedCents = assets.reduce(
       (total, asset) => total + moneyToCents(asset.allocatedGstAmount),
       0
@@ -381,20 +342,14 @@ export default function NewExpensePage() {
     try {
       let receiptData: { receiptKey?: string; receiptFilename?: string } = {};
       if (receipt?.file) {
-        const uploaded = await uploadReceipt();
+        const uploaded = await upload(receipt.file);
         uploadedReceiptKey = uploaded.key;
         receiptData = { receiptKey: uploaded.key, receiptFilename: uploaded.filename };
       }
 
       await api.post("/api/expenses", {
-        ...form,
-        amount: parseFloat(form.amount),
-        gstAmount,
-        pocketAmount: form.paymentSource === "split" ? parseFloat(form.pocketAmount) : null,
-        payments: paymentDraftsToPayload(form.paymentSource, form.payments),
+        ...toExpensePayload(form),
         assets: assets.map(({ id: _id, ...asset }) => asset),
-        trip: form.trip || null,
-        travelType: form.trip ? form.travelType : null,
         ...receiptData,
       });
 
@@ -402,16 +357,10 @@ export default function NewExpensePage() {
       // Land on the trip the expense went into, else the one the form was opened from.
       const tripId = form.trip || openedFromTrip;
       router.push(
-        tripId
-          ? `/dashboard/trips/${tripId}`
-          : assets.length > 0
-            ? "/dashboard/assets"
-            : "/dashboard/expenses"
+        tripId ? `/dashboard/trips/${tripId}` : assets.length > 0 ? "/dashboard/assets" : "/dashboard/expenses"
       );
     } catch (err) {
-      if (uploadedReceiptKey) {
-        await api.delete(`/api/upload?key=${encodeURIComponent(uploadedReceiptKey)}`).catch(() => undefined);
-      }
+      await discardUploadedReceipt(uploadedReceiptKey);
       toast(err instanceof Error ? err.message : "Failed to create expense", "error");
     } finally {
       setSubmitting(false);
@@ -421,308 +370,79 @@ export default function NewExpensePage() {
   // Hold the form back until `?trip=` is applied, so it doesn't flash empty.
   if (loading || !urlRead || (prefillTripId && !prefillDone)) return <FormSkeleton />;
 
+  const canReadReceipt = Boolean(receipt && EXTRACTABLE_TYPES.includes(receipt.file.type));
+  const readState = extracting ? "reading" : extractFailed ? "failed" : readCount !== null ? "done" : null;
+  const currencySymbol = lookups.currencies.find((c) => c._id === form.currency)?.symbol || "₹";
+
   return (
-    <div className="animate-fade-in">
-      <Modal
+    <>
+      <ReceiptUploadModal
         isOpen={showUploadModal}
-        onClose={() => !extracting && setShowUploadModal(false)}
-        title="Upload a receipt"
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 rounded-lg bg-brand-50 px-4 py-3 dark:bg-brand-500/10">
-            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" />
-            <p className="text-sm text-muted">
-              Just upload your receipt — we&apos;ll read it with AI and fill in the title, amount,
-              category, date and more for you. You can review and edit everything before creating
-              the expense.
-            </p>
-          </div>
+        extracting={extracting}
+        onFile={processReceiptFile}
+        onClose={() => setShowUploadModal(false)}
+      />
 
-          {extracting ? (
-            <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-brand-200 bg-brand-50/30 px-4 py-10 dark:border-brand-500/30 dark:bg-brand-500/10">
-              <Spinner size="md" />
-              <span className="text-sm font-medium text-muted">Reading your receipt…</span>
-              <span className="text-xs text-muted-foreground">This usually takes a few seconds</span>
-            </div>
-          ) : (
-            <ReceiptDropzone onFile={processReceiptFile} className="py-10" />
-          )}
-
-          {!extracting && (
-            <div className="flex items-center justify-between gap-3">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={dontShowAgain}
-                  onChange={(e) => setDontShowAgain(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-line-strong accent-brand-600"
-                />
-                Don&apos;t show this automatically again
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (dontShowAgain) {
-                    localStorage.setItem(SKIP_UPLOAD_MODAL_KEY, "true");
-                  }
-                  setShowUploadModal(false);
-                }}
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Skip — I&apos;ll fill it in manually
-              </button>
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={handleCancel}
-          className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {openedFromTrip ? "Back to Trip" : "Back to Expenses"}
-        </button>
-        <h1 className="text-2xl font-bold text-foreground">New Expense</h1>
-      </div>
-
-      <form onSubmit={handleSubmit} className="card mx-auto max-w-4xl p-6">
-        {autoFilled && (
-          <div className="mb-5 flex items-start gap-3 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 dark:border-brand-500/30 dark:bg-brand-500/10">
-            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" />
-            <p className="text-sm text-muted">
-              These details were auto-filled from your receipt. Please review them and adjust
-              anything that looks off before creating the expense.
-            </p>
-          </div>
-        )}
-        <div className="space-y-5">
-          <div>
-            <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-muted">
-              Title <span className="text-red-500 dark:text-red-400">*</span>
-            </label>
-            <input
-              id="title"
-              type="text"
-              required
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="e.g. Office supplies from Amazon"
-              className="input-field"
-            />
-          </div>
-
-          <div className="grid gap-5 sm:grid-cols-3">
-            <div>
-              <label htmlFor="currency" className="mb-1.5 block text-sm font-medium text-muted">
-                Currency <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <select
-                id="currency"
-                required
-                value={form.currency}
-                onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                className="input-field"
-              >
-                <option value="">Select</option>
-                {currencies.map((c) => (
-                  <option key={c._id} value={c._id}>{c.symbol} {c.code}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="amount" className="mb-1.5 block text-sm font-medium text-muted">
-                Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"}) <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <input
-                id="amount"
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                placeholder="0.00"
-                className="input-field tabular-nums"
-              />
-            </div>
-            <div>
-              <label htmlFor="date" className="mb-1.5 block text-sm font-medium text-muted">
-                Date <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <input
-                id="date"
-                type="date"
-                required
-                value={form.date}
-                onChange={(e) => handlePurchaseDateChange(e.target.value)}
-                className="input-field"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="gstAmount" className="mb-1.5 block text-sm font-medium text-muted">
-              GST Amount ({currencies.find((c) => c._id === form.currency)?.symbol || "?"})
-              <span className="ml-1 text-xs font-normal text-muted-foreground">— optional</span>
-            </label>
-            <input
-              id="gstAmount"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.gstAmount}
-              onChange={(e) => setForm({ ...form, gstAmount: e.target.value })}
-              placeholder="0.00"
-              className="input-field tabular-nums"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tax portion already included in the amount above. Leave blank if not applicable.
-            </p>
-          </div>
-
-          <TripFields
-            trips={trips}
-            trip={form.trip}
-            travelType={form.travelType}
-            onTripChange={handleTripChange}
-            onTravelTypeChange={handleTravelTypeChange}
-            date={form.date}
-          />
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <label htmlFor="category" className="mb-1.5 block text-sm font-medium text-muted">
-                Category <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <select
-                id="category"
-                required
-                value={form.category}
-                onChange={(e) => {
-                  setCategoryPinned(true);
-                  setForm({ ...form, category: e.target.value });
-                }}
-                className="input-field"
-              >
-                <option value="">Select a category</option>
-                {categories.map((c) => (
-                  <option key={c._id} value={c._id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="department" className="mb-1.5 block text-sm font-medium text-muted">
-                Department <span className="text-red-500 dark:text-red-400">*</span>
-              </label>
-              <select
-                id="department"
-                required
-                value={form.department}
-                onChange={(e) => {
-                  setDepartmentPinned(true);
-                  setForm({ ...form, department: e.target.value });
-                }}
-                className="input-field"
-              >
-                <option value="">Select a department</option>
-                {departments.map((d) => (
-                  <option key={d._id} value={d._id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <PaymentSourceFields
-            paymentSource={form.paymentSource}
-            pocketAmount={form.pocketAmount}
-            amount={form.amount}
-            currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "?"}
-            onPaymentSourceChange={(paymentSource) => setForm((prev) => ({ ...prev, paymentSource }))}
-            onPocketAmountChange={(pocketAmount) => setForm((prev) => ({ ...prev, pocketAmount }))}
-            error={visibleSplitError}
-            payments={form.payments}
-            onPaymentsChange={(payments) => setForm((prev) => ({ ...prev, payments }))}
-            members={members}
-            defaultPayerId={user?._id}
-            paymentsError={visiblePaymentsError}
-          />
-
-          <div>
-            <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-muted">
-              Description
-            </label>
-            <textarea
-              id="description"
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="Additional details about this expense..."
-              className="input-field resize-none"
-            />
-          </div>
-
-          <AssetPurchaseSection
-            assets={assets}
-            onChange={setAssets}
-            purchaseDate={form.date}
-            currencySymbol={currencies.find((c) => c._id === form.currency)?.symbol || "₹"}
-            users={users}
-            canAssignOthers={isAdmin}
-            currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
-          />
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-muted">Receipt</label>
-            {receipt ? (
-              <div className="flex items-center gap-3 rounded-lg border border-line bg-subtle px-4 py-3">
-                <Upload className="h-5 w-5 text-muted-foreground" />
-                <span className="flex-1 truncate text-sm text-muted">{receipt.filename}</span>
-                {extracting && <Spinner size="sm" />}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReceipt(null);
-                    setAutoFilled(false);
-                  }}
-                  className="cursor-pointer rounded p-1 text-muted-foreground hover:text-muted"
-                  aria-label="Remove receipt"
-                >
-                  <XIcon className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <ReceiptDropzone onFile={processReceiptFile} acceptPaste>
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <Sparkles className="h-4 w-4 text-brand-400" />
+      <ExpenseForm
+        heading="New expense"
+        backLabel={openedFromTrip ? "Back to Trip" : "Back to Expenses"}
+        onCancel={handleCancel}
+        values={form}
+        onValuesChange={setForm}
+        onEdit={handleEdit}
+        onDateChange={handlePurchaseDateChange}
+        onTripChange={handleTripChange}
+        onTravelTypeChange={handleTravelTypeChange}
+        lookups={lookups}
+        trips={trips}
+        defaultPayerId={user?._id}
+        aiFilled={aiFilled}
+        receipt={
+          <ReceiptPanel
+            file={receipt?.file}
+            filename={receipt?.filename ?? null}
+            onFile={processReceiptFile}
+            onRemove={removeReceipt}
+            disabled={extracting}
+            emptyPrompt={
+              <>
+                <Upload aria-hidden="true" size={24} strokeWidth={1.5} className="mb-1 text-accent" />
+                <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                  <Sparkles aria-hidden="true" size={15} strokeWidth={1.75} className="text-accent" />
                   Upload a receipt to auto-fill the form
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  Click, drag &amp; drop, or paste &middot; JPEG, PNG, WebP, or PDF up to 10MB
+                <span className="text-xs text-ink-3">
+                  Click, drag &amp; drop, or paste · JPEG, PNG, WebP, or PDF up to 10MB
                 </span>
-              </ReceiptDropzone>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-8 flex justify-end gap-3 border-t border-line pt-6">
-          <button type="button" onClick={handleCancel} className="btn-secondary">
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary" disabled={submitting || uploadingReceipt || extracting}>
-            {submitting || uploadingReceipt ? (
-              <>
-                <Spinner size="sm" /> {uploadingReceipt ? "Uploading..." : "Saving..."}
               </>
-            ) : (
-              assets.length > 0 ? "Create Expense & Assets" : "Create Expense"
-            )}
-          </button>
-        </div>
-      </form>
-    </div>
+            }
+            status={
+              readState && (
+                <ReceiptReadStatus
+                  state={readState}
+                  count={readCount ?? 0}
+                  onRetry={canReadReceipt && receipt ? () => processReceiptFile(receipt.file) : undefined}
+                />
+              )
+            }
+          />
+        }
+        onSubmit={handleSubmit}
+        submitLabel={assets.length > 0 ? "Save expense & assets" : "Save expense"}
+        busyLabel={uploadingReceipt ? "Uploading…" : "Saving…"}
+        busy={submitting || uploadingReceipt}
+        submitDisabled={extracting}
+      >
+        <AssetPurchaseSection
+          assets={assets}
+          onChange={setAssets}
+          purchaseDate={form.date}
+          currencySymbol={currencySymbol}
+          users={users}
+          canAssignOthers={isAdmin}
+          currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
+        />
+      </ExpenseForm>
+    </>
   );
 }

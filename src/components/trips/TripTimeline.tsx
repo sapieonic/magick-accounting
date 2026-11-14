@@ -2,40 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatBaseCurrency } from "@/lib/currency";
-import { groupByTripDay, type TripDates, type TripDaySection } from "@/lib/trip";
-import ExpenseCard from "@/components/expenses/ExpenseCard";
+import { groupByTripDay, type TripDates } from "@/lib/trip";
+import { cn } from "@/components/ui/cn";
+import { ledgerPad } from "@/components/ui/styles";
+import ExpenseRow, { LEDGER_CONTAINER } from "@/components/expenses/ledger/ExpenseRow";
+import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
+import { expenseEditHref } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 
-export interface TripTimelineProps {
+interface TripTimelineProps extends ExpenseActions {
   trip: TripDates;
   /** The trip's expenses to show, any order; grouped into days here. */
   expenses: ExpenseListItem[];
-  /** Deletes an expense (with the caller's undo flow); omitted hides Delete. */
-  onDelete?: (expense: ExpenseListItem) => void;
-  /** Takes an expense out of the trip; omitted hides the action. */
-  onRemoveFromTrip?: (expense: ExpenseListItem) => void;
-  /** Expense to open initially (deep links). */
+  /** Expense to open initially (deep links). Uncontrolled use only. */
   initialExpandedId?: string | null;
   /** Where an expense's Edit form returns to (e.g. this trip's page). */
   returnTo?: string;
-}
-
-function SectionMarker({ kind }: { kind: TripDaySection<unknown>["kind"] }) {
-  if (kind === "day") {
-    return (
-      <span className="absolute -left-[22px] top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-surface ring-2 ring-brand-500 dark:ring-brand-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-brand-500 dark:bg-brand-400" />
-      </span>
-    );
-  }
-  return (
-    <span className="absolute -left-[22px] top-1 h-3.5 w-3.5 rounded-full border-2 border-dashed border-line-strong bg-surface" />
-  );
+  /** Controlled selection (e.g. the expenses page's side panel); omit to manage it here. */
+  selectedId?: string | null;
+  onSelect?: (expense: ExpenseListItem | null) => void;
+  /** Show the open expense's detail under its row (default), or leave it to the caller. */
+  inlineDetail?: boolean;
+  /** Id of the caller's detail panel, for aria-controls when not inline. */
+  detailId?: string;
+  /** Rows sit inside a trip band on the expenses list. */
+  nested?: boolean;
 }
 
 /**
- * A trip's expenses laid out day by day, with "Before the trip" and "After
- * the trip" sections for bookings and stragglers. One expense opens at a time.
+ * A trip's expenses day by day, with "Before the trip" and "After the trip"
+ * sections for bookings and stragglers, each with its total. One expense
+ * is open at a time.
  */
 export default function TripTimeline({
   trip,
@@ -44,69 +41,90 @@ export default function TripTimeline({
   onRemoveFromTrip,
   initialExpandedId = null,
   returnTo,
+  selectedId,
+  onSelect,
+  inlineDetail = true,
+  detailId,
+  nested = false,
 }: TripTimelineProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId);
+  const [ownSelectedId, setOwnSelectedId] = useState<string | null>(initialExpandedId);
+  const controlled = onSelect !== undefined;
+  const openId = controlled ? selectedId ?? null : ownSelectedId;
 
   // A deep link can arrive after the first render (data loads later).
   useEffect(() => {
-    if (initialExpandedId) setExpandedId(initialExpandedId);
+    if (initialExpandedId) setOwnSelectedId(initialExpandedId);
   }, [initialExpandedId]);
 
   const sections = useMemo(() => groupByTripDay(expenses, trip), [expenses, trip]);
 
+  const toggle = (expense: ExpenseListItem) => {
+    const next = openId === expense._id ? null : expense;
+    if (controlled) onSelect(next);
+    else setOwnSelectedId(next?._id ?? null);
+  };
+
   if (sections.length === 0) {
     return (
-      <div data-testid="trip-timeline" className="rounded-xl border border-dashed border-line-strong px-4 py-8 text-center text-sm text-muted-foreground">
+      <p data-testid="trip-timeline" className={cn("py-8 text-center text-sm text-ink-3", ledgerPad())}>
         No expenses to show for this trip yet.
-      </div>
+      </p>
     );
   }
 
   return (
-    <div className="relative">
-      {/* The rail the day markers sit on; outside the <ol>, which takes only <li>s */}
-      <span aria-hidden="true" className="absolute bottom-3 left-[12.5px] top-2 w-px bg-line-strong/70" />
-      <ol data-testid="trip-timeline" className="relative space-y-5 pl-7" aria-label="Trip timeline">
-        {sections.map((section) => {
-          const [primary, secondary] = section.label.split(" · ");
-          return (
-            <li key={section.key} className="relative" aria-label={section.label}>
-              <SectionMarker kind={section.kind} />
-              <div className="mb-2 flex items-baseline justify-between gap-3">
-                <h4 className="flex min-w-0 items-baseline gap-2 text-sm">
-                  <span
-                    className={`font-semibold ${section.kind === "day" ? "text-foreground" : "italic text-muted"}`}
-                  >
-                    {primary}
+    <ol data-testid="trip-timeline" aria-label="Trip timeline" className={LEDGER_CONTAINER}>
+      {sections.map((section) => {
+        const [primary, secondary] = section.label.split(" · ");
+        const count = section.items.length;
+        return (
+          <li key={section.key} aria-label={section.label}>
+            <div
+              className={cn(
+                "flex items-center justify-between gap-3 border-t border-rule bg-sunk py-2",
+                ledgerPad(nested)
+              )}
+            >
+              <h3 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-ink">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full shadow-[0_0_0_3px_var(--tint-2)]",
+                    section.kind === "day" ? "bg-accent" : "bg-bar"
+                  )}
+                />
+                <span className="ell">
+                  {primary}
+                  <span className="font-normal text-ink-3">
+                    {secondary ? ` · ${secondary}` : ""} · {count} expense{count !== 1 ? "s" : ""}
                   </span>
-                  {secondary && <span className="truncate text-xs font-medium text-muted-foreground">{secondary}</span>}
-                  <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:inline">
-                    &middot; {section.items.length} expense{section.items.length !== 1 ? "s" : ""}
-                  </span>
-                </h4>
-                <span className="flex-shrink-0 text-xs font-semibold tabular-nums text-muted" title="Section total">
-                  {formatBaseCurrency(section.total)}
                 </span>
-              </div>
-              <div className="space-y-2">
-                {section.items.map((expense) => (
-                  <ExpenseCard
-                    key={expense._id}
-                    expense={expense}
-                    variant="nested"
-                    showDate={section.kind !== "day"}
-                    expanded={expandedId === expense._id}
-                    onToggle={() => setExpandedId((prev) => (prev === expense._id ? null : expense._id))}
-                    onDelete={onDelete}
-                    onRemoveFromTrip={onRemoveFromTrip}
-                    returnTo={returnTo}
-                  />
-                ))}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+              </h3>
+              <span className="num shrink-0 text-[13px] text-ink-2" title="Section total">
+                {formatBaseCurrency(section.total)}
+              </span>
+            </div>
+            <div>
+              {section.items.map((expense) => (
+                <ExpenseRow
+                  key={expense._id}
+                  expense={expense}
+                  variant="trip"
+                  nested={nested}
+                  showDate={section.kind !== "day"}
+                  selected={openId === expense._id}
+                  onSelect={() => toggle(expense)}
+                  inlineDetail={inlineDetail}
+                  detailId={detailId}
+                  editHref={expenseEditHref(expense._id, returnTo)}
+                  onDelete={onDelete}
+                  onRemoveFromTrip={onRemoveFromTrip}
+                />
+              ))}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

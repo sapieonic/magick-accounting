@@ -12,19 +12,29 @@ describe("BrandLogo", () => {
     expect(screen.getByText("Accounting portal").className).not.toMatch(/truncate/);
   });
 
-  it("does not paint an opaque background behind the transparent mark", () => {
+  it("does not paint an opaque background behind the transparent mark in light mode", () => {
     const { container } = render(<BrandLogo />);
     const mark = container.querySelector('img[src="/logo.png"]')?.parentElement;
 
     expect(mark).toBeTruthy();
-    expect(mark?.className).not.toMatch(/bg-/);
+    expect(mark?.className).not.toMatch(/(^|\s)bg-/);
   });
 
-  it("can ellipsize the wordmark when the parent is narrow", () => {
-    render(<BrandLogo truncate />);
+  it.each([{ compact: false }, { compact: true }])(
+    "puts the mark on the rail's white tile in dark mode (%o)",
+    ({ compact }) => {
+      const { container } = render(<BrandLogo compact={compact} size="sm" />);
+      const mark = container.querySelector('img[src="/logo.png"]')?.parentElement;
 
-    expect(screen.getByText("MagickVoice").className).toMatch(/truncate/);
-    expect(screen.getByText("Accounting portal").className).toMatch(/truncate/);
+      expect(mark).toHaveClass("dark:bg-white", "dark:p-[3px]", "dark:rounded-md");
+    }
+  );
+
+  it("always tiles the mark on dark surfaces", () => {
+    const { container } = render(<BrandLogo variant="onDark" compact />);
+    const mark = container.querySelector('img[src="/logo.png"]')?.parentElement;
+
+    expect(mark).toHaveClass("bg-white", "p-[3px]", "rounded-md");
   });
 
   it("hides the wordmark in compact mode", () => {

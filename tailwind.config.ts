@@ -1,5 +1,8 @@
 import type { Config } from "tailwindcss";
 
+/** `rgb(var(--x) / <alpha-value>)` so every token supports `/alpha` modifiers. */
+const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
   darkMode: "class",
   content: [
@@ -10,65 +13,95 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "rgb(var(--background) / <alpha-value>)",
-        surface: "rgb(var(--surface) / <alpha-value>)",
-        "surface-elevated": "rgb(var(--surface-elevated) / <alpha-value>)",
-        "surface-muted": "rgb(var(--surface-muted) / <alpha-value>)",
-        foreground: "rgb(var(--foreground) / <alpha-value>)",
-        muted: {
-          DEFAULT: "rgb(var(--muted) / <alpha-value>)",
-          foreground: "rgb(var(--muted-foreground) / <alpha-value>)",
+        // Ledger tokens (see globals.css and docs/design/ledger.md).
+        background: v("bg"),
+        surface: v("surface"),
+        sunk: v("sunk"),
+        ink: {
+          DEFAULT: v("ink"),
+          2: v("ink-2"),
+          3: v("ink-3"),
         },
-        subtle: "rgb(var(--subtle) / <alpha-value>)",
-        "subtle-hover": "rgb(var(--subtle-hover) / <alpha-value>)",
-        line: "rgb(var(--line) / <alpha-value>)",
-        "line-strong": "rgb(var(--line-strong) / <alpha-value>)",
-        brand: {
-          50: "#f8f9ff",
-          100: "#eff1fe",
-          200: "#e0e4fd",
-          300: "#c1c9fb",
-          400: "#9ba5f8",
-          500: "#7b83f5",
-          600: "#5c5fed",
-          700: "#4b49d1",
-          800: "#3e3ba8",
-          900: "#35328b",
-          950: "#1f1d53",
+        rule: {
+          DEFAULT: v("rule"),
+          2: v("rule-2"),
+        },
+        // Boundary of form controls (inputs, selects, chips): >= 3:1 against the surface.
+        "control-line": v("control-line"),
+        overlay: v("overlay"),
+        hover: v("hover"),
+        bar: v("bar"),
+        rail: {
+          DEFAULT: v("rail"),
+          hover: "#29276A",
+          active: "#34327F",
+          line: "#3A3888",
+          ink: "#D6D8F5",
+          muted: "#A9ACE0",
+          icon: "#C5CBFF",
+          mark: "#9BA5F8",
+        },
+        pocket: v("pocket"),
+        // `amber` keeps Tailwind's default 50–950 scale (deep-merged);
+        // DEFAULT and `soft` are the Ledger pocket/owed tokens.
+        amber: {
+          DEFAULT: v("amber"),
+          soft: v("amber-soft"),
+        },
+        success: {
+          DEFAULT: v("success"),
+          soft: v("success-soft"),
+        },
+        danger: {
+          DEFAULT: v("danger"),
+          soft: v("danger-soft"),
         },
         accent: {
-          50: "#f0fdfa",
-          100: "#ccfbf1",
-          200: "#99f6e4",
-          300: "#5eead4",
-          400: "#2dd4bf",
-          500: "#14b8a6",
-          600: "#0d9488",
-          700: "#0f766e",
-          800: "#115e59",
-          900: "#134e4a",
+          DEFAULT: v("accent"),
+          ink: v("accent-ink"),
+          hover: v("accent-hover"),
+          2: v("accent-2"),
+          soft: v("accent-soft"),
+          line: v("accent-line"),
+        },
+        tint: {
+          DEFAULT: "var(--tint)",
+          2: "var(--tint-2)",
+        },
+        cat: {
+          sw: v("c-sw"),
+          "sw-soft": v("c-sw-s"),
+          co: v("c-co"),
+          "co-soft": v("c-co-s"),
+          tr: v("c-tr"),
+          "tr-soft": v("c-tr-s"),
+          ed: v("c-ed"),
+          "ed-soft": v("c-ed-s"),
+          me: v("c-me"),
+          "me-soft": v("c-me-s"),
+          of: v("c-of"),
+          "of-soft": v("c-of-s"),
+          mk: v("c-mk"),
+          "mk-soft": v("c-mk-s"),
         },
       },
       fontFamily: {
-        sans: [
-          "Hanken Grotesk",
-          "system-ui",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "sans-serif",
-        ],
-        heading: [
-          "Plus Jakarta Sans",
-          "Inter",
-          "sans-serif",
-        ],
-        display: ["Fraunces", "Georgia", "serif"],
-        mono: ["Spline Sans Mono", "ui-monospace", "SFMono-Regular", "monospace"],
+        sans: ["Geist", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        mono: ["Geist Mono", "ui-monospace", "Menlo", "Consolas", "monospace"],
+      },
+      borderRadius: {
+        // Ledger: 6px controls, 8px panels.
+        control: "6px",
+        panel: "8px",
+      },
+      transitionDuration: {
+        140: "140ms",
       },
       boxShadow: {
-        soft: "0 2px 4px rgba(0,0,0,0.02), 0 10px 20px rgba(0,0,0,0.03)",
-        elevated: "0 20px 40px rgba(0,0,0,0.04), 0 5px 10px rgba(0,0,0,0.02)",
+        // Rules, not shadows: only floating layers (menus, dialogs) and the
+        // mobile Add button get one.
+        elevated: "0 12px 32px -12px rgb(19 19 31 / 0.25)",
+        fab: "0 6px 14px -6px rgb(var(--accent))",
       },
     },
   },

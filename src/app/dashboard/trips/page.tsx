@@ -4,8 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { differenceInCalendarDays, parseISO } from "date-fns";
-import { CalendarDays, MapPin, Plane, Plus, Receipt, Search, X } from "lucide-react";
-import clsx from "clsx";
+import { CalendarDays, Luggage, MapPin, Plus, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatBaseCurrency } from "@/lib/currency";
@@ -15,9 +14,18 @@ import { useToast } from "@/components/ui/Toast";
 import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
 import { InlineLoader } from "@/components/ui/Spinner";
+import PageHeader from "@/components/ui/PageHeader";
+import Button from "@/components/ui/Button";
+import Field from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
+import SegmentedControl from "@/components/ui/SegmentedControl";
+import { cn } from "@/components/ui/cn";
+import { focusRing, panelClass, transition } from "@/components/ui/styles";
 import TripFormModal from "@/components/trips/TripFormModal";
-import { budgetUsage, TravelerAvatars, TripStatusPill } from "@/components/trips/TripBadges";
+import { BudgetMeter, TravelerAvatars, TripStatusBadge } from "@/components/trips/TripMeta";
 import type { TripListItem } from "@/types/trip";
+
+type StatusFilter = "all" | TripStatus;
 
 const SECTIONS: { status: TripStatus; title: string; hint: string }[] = [
   { status: "ongoing", title: "Ongoing", hint: "On the road right now" },
@@ -25,11 +33,14 @@ const SECTIONS: { status: TripStatus; title: string; hint: string }[] = [
   { status: "completed", title: "Past", hint: "Most recent first" },
 ];
 
-const STATUS_ICON: Record<TripStatus, string> = {
-  ongoing: "bg-gradient-to-br from-emerald-500 to-teal-500 text-white",
-  upcoming: "bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
-  completed: "bg-subtle text-muted-foreground",
-};
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  ...SECTIONS.map((s) => ({ value: s.status, label: s.title })),
+];
+
+function isStatusFilter(value: string | null): value is StatusFilter {
+  return STATUS_OPTIONS.some((o) => o.value === value);
+}
 
 /** "Starts tomorrow", "Day 2 of 4", "Ended 3 days ago". */
 function statusHint(trip: TripListItem, today: string): string {
@@ -51,103 +62,63 @@ function statusHint(trip: TripListItem, today: string): string {
   return `${days} day${days !== 1 ? "s" : ""}`;
 }
 
-function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
-  const { percent, over, width, barClass, textClass } = budgetUsage(spent, budget);
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-[11px]">
-        <span className="text-muted-foreground">
-          Budget <span className="tabular-nums">{formatBaseCurrency(budget)}</span>
-        </span>
-        <span className={clsx("font-semibold tabular-nums", textClass)}>
-          {over ? `${percent}% · over` : `${percent}%`}
-        </span>
-      </div>
-      <div
-        className="h-1.5 overflow-hidden rounded-full bg-subtle"
-        role="progressbar"
-        aria-label="Budget used"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.min(percent, 100)}
-      >
-        <div className={clsx("h-full rounded-full transition-all", barClass)} style={{ width }} />
-      </div>
-    </div>
-  );
-}
-
 function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: string; showBudget: boolean }) {
   const days = tripDayCount(trip);
   return (
     <Link
       href={`/dashboard/trips/${trip._id}`}
       data-testid="trip-card"
-      className={clsx(
-        "card card-hover group flex flex-col gap-4 p-5 focus:outline-none focus:ring-2 focus:ring-brand-500",
-        trip.status === "ongoing" &&
-          "border-emerald-200 bg-gradient-to-br from-emerald-50/70 via-surface to-surface dark:border-emerald-500/30 dark:from-emerald-500/10"
-      )}
+      className={cn(panelClass, "group flex min-w-0 flex-col gap-3 p-5 hover:border-accent-line hover:bg-hover", transition, focusRing)}
     >
-      <div className="flex items-start gap-3">
-        <div className={clsx("flex-shrink-0 rounded-xl p-2.5", STATUS_ICON[trip.status])}>
-          <Plane className="h-5 w-5" aria-hidden="true" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate font-heading text-base font-bold text-foreground group-hover:text-brand-600 dark:group-hover:text-brand-400">
-            {trip.name}
-          </h3>
-          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-            <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{formatTripDates(trip)}</span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {days} day{days !== 1 ? "s" : ""}
-            </span>
-          </p>
-        </div>
-        <TripStatusPill status={trip.status} className="hidden sm:inline-flex">
-          {statusHint(trip, today)}
-        </TripStatusPill>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="min-w-0 text-[15px] font-semibold tracking-[-0.01em] text-ink [overflow-wrap:anywhere] group-hover:text-accent">
+          {trip.name}
+        </h3>
+        <TripStatusBadge status={trip.status}>{statusHint(trip, today)}</TripStatusBadge>
       </div>
 
-      {trip.destinations.length > 0 && (
-        <p className="flex items-start gap-1.5 text-sm text-muted">
-          <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
-          <span className="line-clamp-2">{trip.destinations.join(" → ")}</span>
-        </p>
-      )}
-
-      <TripStatusPill status={trip.status} className="self-start sm:hidden">
-        {statusHint(trip, today)}
-      </TripStatusPill>
+      <div className="flex flex-col gap-1 text-[13px] text-ink-2">
+        <span className="flex items-center gap-1.5">
+          <CalendarDays aria-hidden="true" size={14} strokeWidth={1.6} className="shrink-0 text-ink-3" />
+          <span className="num">
+            {formatTripDates(trip)} · {days} day{days !== 1 ? "s" : ""}
+          </span>
+        </span>
+        {trip.destinations.length > 0 && (
+          <span className="flex items-start gap-1.5">
+            <MapPin aria-hidden="true" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0 text-ink-3" />
+            <span className="line-clamp-2">{trip.destinations.join(" → ")}</span>
+          </span>
+        )}
+      </div>
 
       {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
-      {showBudget && trip.budget != null && <BudgetBar spent={trip.totalAmount} budget={trip.budget} />}
+      {showBudget && trip.budget != null && <BudgetMeter spent={trip.totalAmount} budget={trip.budget} />}
 
-      <div className="mt-auto flex items-end justify-between gap-3 border-t border-line pt-3">
+      <div className="mt-auto flex items-end justify-between gap-3 border-t border-rule-2 pt-3">
         <TravelerAvatars travelers={trip.travelers} />
-        <div className="text-right">
-          <p className="text-base font-bold tabular-nums text-foreground">{formatBaseCurrency(trip.totalAmount)}</p>
-          <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <Receipt className="h-3 w-3" aria-hidden="true" />
+        <div className="flex flex-col items-end">
+          <span className="num whitespace-nowrap font-medium text-ink">{formatBaseCurrency(trip.totalAmount)}</span>
+          <span className="text-xs text-ink-3">
             {trip.expenseCount} expense{trip.expenseCount !== 1 ? "s" : ""}
-          </p>
+          </span>
         </div>
       </div>
     </Link>
   );
 }
 
+const GRID = "grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))]";
+
 function TripsSkeleton() {
   return (
-    <div className="space-y-8" role="status" aria-label="Loading trips">
+    <div className="flex flex-col gap-8" role="status" aria-label="Loading trips">
       {[3, 2].map((count, s) => (
-        <div key={s} className="space-y-3">
+        <div key={s} className="flex flex-col gap-3">
           <Skeleton className="h-5 w-28" />
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className={GRID}>
             {Array.from({ length: count }).map((_, i) => (
-              <Skeleton key={i} className="h-[196px] rounded-2xl" />
+              <Skeleton key={i} className="h-[188px] rounded-panel" />
             ))}
           </div>
         </div>
@@ -166,16 +137,20 @@ export default function TripsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [urlSynced, setUrlSynced] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const hasLoaded = useRef(false);
   const today = todayKey();
 
-  // Read ?q= once so a search survives refresh / back navigation.
+  // Read ?q= and ?status= once so the view survives refresh / back navigation.
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q") ?? "";
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q") ?? "";
+    const initialStatus = params.get("status");
     setSearchInput(q);
     setSearch(q.trim());
+    if (isStatusFilter(initialStatus)) setStatus(initialStatus);
     setUrlSynced(true);
   }, []);
 
@@ -189,9 +164,11 @@ export default function TripsPage() {
     const params = new URLSearchParams(window.location.search);
     if (search) params.set("q", search);
     else params.delete("q");
+    if (status !== "all") params.set("status", status);
+    else params.delete("status");
     const query = params.toString();
     window.history.replaceState(null, "", query ? `${window.location.pathname}?${query}` : window.location.pathname);
-  }, [urlSynced, search]);
+  }, [urlSynced, search, status]);
 
   useEffect(() => {
     if (!urlSynced) return;
@@ -219,13 +196,15 @@ export default function TripsPage() {
 
   const sections = useMemo(
     () =>
-      SECTIONS.map((section) => {
-        const items = trips.filter((t) => t.status === section.status);
-        // The API sorts newest start first; upcoming reads better soonest first.
-        if (section.status === "upcoming") items.reverse();
-        return { ...section, items };
-      }).filter((section) => section.items.length > 0),
-    [trips]
+      SECTIONS.filter((section) => status === "all" || section.status === status)
+        .map((section) => {
+          const items = trips.filter((t) => t.status === section.status);
+          // The API sorts newest start first; upcoming reads better soonest first.
+          if (section.status === "upcoming") items.reverse();
+          return { ...section, items };
+        })
+        .filter((section) => section.items.length > 0),
+    [trips, status]
   );
 
   const handleSaved = (trip: TripListItem) => {
@@ -234,87 +213,86 @@ export default function TripsPage() {
     router.push(`/dashboard/trips/${trip._id}`);
   };
 
-  return (
-    <div className="animate-fade-in space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Trips</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Flights, stays and meals for each business trip, grouped in one place.
-          </p>
-          {!isAdmin && (
-            <p className="mt-1 text-xs text-muted-foreground">Totals and expense counts include only your own expenses.</p>
-          )}
-        </div>
-        <button type="button" onClick={() => setModalOpen(true)} className="btn-primary">
-          <Plus className="h-4 w-4" /> New trip
-        </button>
-      </div>
+  const statusTitle = SECTIONS.find((s) => s.status === status)?.title.toLowerCase();
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label className="relative w-full sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            aria-label="Search trips"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search by trip name or destination"
-            className="input-field pl-9 pr-9"
-          />
-          {searchInput && (
-            <button
-              type="button"
-              onClick={() => setSearchInput("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-subtle hover:text-foreground"
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </label>
-        {refreshing && <InlineLoader label="Searching..." />}
+  return (
+    <div className="animate-fade-in flex flex-col gap-6">
+      <PageHeader
+        title="Trips"
+        meta={
+          <>
+            Flights, stays and meals for each business trip, grouped in one place.
+            {!isAdmin && <span className="block text-xs">Totals and expense counts include only your own expenses.</span>}
+          </>
+        }
+        actions={
+          <Button icon={Plus} onClick={() => setModalOpen(true)}>
+            New trip
+          </Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Search trips" className="flex-[1_1_280px] sm:max-w-md">
+          <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Trip name or destination" />
+        </Field>
+        <SegmentedControl options={STATUS_OPTIONS} value={status} onChange={setStatus} aria-label="Trip status" />
+        {refreshing && <InlineLoader label="Searching..." className="min-h-11" />}
       </div>
 
       {loading ? (
         <TripsSkeleton />
       ) : trips.length === 0 ? (
-        search ? (
+        <div className={panelClass}>
+          {search ? (
+            <EmptyState
+              icon={<Search />}
+              title="No trips match your search"
+              description={`Nothing found for "${search}". Try a trip name or a city.`}
+              action={
+                <Button variant="secondary" onClick={() => setSearchInput("")}>
+                  Clear search
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<Luggage />}
+              title="No trips yet"
+              description="Create a trip to keep its flights, hotels, cabs and meals together, and see who's owed what when you're back."
+              action={
+                <Button icon={Plus} onClick={() => setModalOpen(true)}>
+                  Plan your first trip
+                </Button>
+              }
+            />
+          )}
+        </div>
+      ) : sections.length === 0 ? (
+        <div className={panelClass}>
           <EmptyState
-            icon={<Search className="h-7 w-7" />}
-            title="No trips match your search"
-            description={`Nothing found for "${search}". Try a trip name or a city.`}
+            icon={<Luggage />}
+            title={`No ${statusTitle} trips`}
+            description="Pick another status to see the rest of your trips."
             action={
-              <button type="button" onClick={() => setSearchInput("")} className="btn-secondary">
-                Clear search
-              </button>
+              <Button variant="secondary" onClick={() => setStatus("all")}>
+                Show all trips
+              </Button>
             }
           />
-        ) : (
-          <EmptyState
-            icon={<Plane className="h-7 w-7" />}
-            title="No trips yet"
-            description="Create a trip to keep its flights, hotels, cabs and meals together, and see who's owed what when you're back."
-            action={
-              <button type="button" onClick={() => setModalOpen(true)} className="btn-primary">
-                <Plus className="h-4 w-4" /> Plan your first trip
-              </button>
-            }
-          />
-        )
+        </div>
       ) : (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
           {sections.map((section) => (
-            <section key={section.status} aria-labelledby={`trips-${section.status}`} className="space-y-3">
+            <section key={section.status} aria-labelledby={`trips-${section.status}`} className="flex flex-col gap-3">
               <div className="flex items-baseline gap-2">
-                <h2 id={`trips-${section.status}`} className="text-lg font-bold text-foreground">
+                <h2 id={`trips-${section.status}`} className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
                   {section.title}
                 </h2>
-                <span className="rounded-full bg-subtle px-2 py-0.5 text-xs font-semibold text-muted">
-                  {section.items.length}
-                </span>
-                <span className="hidden text-xs text-muted-foreground sm:inline">{section.hint}</span>
+                <span className="num text-xs text-ink-3">{section.items.length}</span>
+                <span className="hidden text-xs text-ink-3 sm:inline">· {section.hint}</span>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className={GRID}>
                 {section.items.map((trip) => (
                   <TripCard key={trip._id} trip={trip} today={today} showBudget={isAdmin} />
                 ))}

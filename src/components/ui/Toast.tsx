@@ -2,7 +2,9 @@
 
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
 import { X, CheckCircle2, AlertCircle, Info } from "lucide-react";
-import clsx from "clsx";
+import { IconButton } from "@/components/ui/Button";
+import { linkClass } from "@/components/ui/styles";
+import { cn } from "@/components/ui/cn";
 
 type ToastType = "success" | "error" | "info";
 
@@ -49,45 +51,47 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 
   const icons = {
-    success: <CheckCircle2 className="h-5 w-5 text-emerald-500" />,
-    error: <AlertCircle className="h-5 w-5 text-red-500" />,
-    info: <Info className="h-5 w-5 text-blue-500" />,
+    success: <CheckCircle2 aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-success" />,
+    error: <AlertCircle aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-danger" />,
+    info: <Info aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-accent" />,
   };
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2" aria-live="polite">
+      {/* Bottom-right, 12px above the mobile tab bar (--tabbar-h) and a mounted
+          FormFooter (its measured --form-footer-h, which grows when it wraps),
+          so a toast never covers Save or the total. Pages without a FormFooter
+          end --toast-room above the tab bar (dashboard layout), so it doesn't
+          cover their last control either. */}
+      <div
+        className="fixed inset-x-4 bottom-[calc(var(--tabbar-h)+var(--form-footer-h,0px)+12px)] z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-5"
+        aria-live="polite"
+        data-testid="toast-region"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={clsx(
-              "animate-slide-up flex items-center gap-3 rounded-lg border bg-surface-elevated px-4 py-3 shadow-lg dark:shadow-black/40",
-              t.type === "success" && "border-emerald-200 dark:border-emerald-500/30",
-              t.type === "error" && "border-red-200 dark:border-red-500/30",
-              t.type === "info" && "border-blue-200 dark:border-blue-500/30"
+            className={cn(
+              "animate-slide-up flex w-full max-w-sm items-center gap-3 rounded-panel border border-rule bg-surface py-1.5 pl-4 pr-1.5 shadow-elevated",
+              "border-l-[3px]",
+              { success: "border-l-success", error: "border-l-danger", info: "border-l-accent" }[t.type]
             )}
           >
             {icons[t.type]}
-            <p className="text-sm text-foreground">{t.message}</p>
+            <p className="flex-1 py-1.5 text-sm text-ink">{t.message}</p>
             {t.action && (
               <button
                 onClick={() => {
                   t.action?.onClick();
                   removeToast(t.id);
                 }}
-                className="ml-1 cursor-pointer rounded-md px-2 py-1 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10"
+                className={cn(linkClass, "min-h-10 cursor-pointer px-2 text-sm")}
               >
                 {t.action.label}
               </button>
             )}
-            <button
-              onClick={() => removeToast(t.id)}
-              className="ml-2 rounded p-1 text-muted-foreground transition-colors hover:bg-subtle hover:text-muted"
-              aria-label="Dismiss notification"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <IconButton icon={X} size="sm" onClick={() => removeToast(t.id)} aria-label="Dismiss notification" />
           </div>
         ))}
       </div>

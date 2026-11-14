@@ -71,8 +71,10 @@ export interface NormalizedAssetPurchaseInput
   putToUseDate: Date;
 }
 
+/** Rounds to paise. Never returns -0 (so a sum that cancels out can't show as "-₹0.00"). */
 export function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  // `+ 0` turns -0 into 0 and leaves every other value as it is.
+  return Math.round((value + Number.EPSILON) * 100) / 100 + 0;
 }
 
 export function moneyToCents(value: number | string | null | undefined): number {

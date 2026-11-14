@@ -1,13 +1,38 @@
 "use client";
 
-import clsx from "clsx";
+import { cn } from "@/components/ui/cn";
 
 export default function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded-control bg-sunk", className)} aria-hidden="true" />;
+}
+
+function HeaderSkeleton() {
   return (
-    <div
-      className={clsx("animate-pulse rounded-lg bg-subtle dark:bg-subtle-hover/50", className)}
-      aria-hidden="true"
-    />
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-40" />
+        <Skeleton className="h-4 w-64 max-w-full" />
+      </div>
+      <Skeleton className="h-11 w-36" />
+    </div>
+  );
+}
+
+/** Rows of a ruled ledger panel. */
+function RowsSkeleton({ rows, rowClass }: { rows: number; rowClass: string }) {
+  return (
+    <div className="overflow-hidden rounded-panel border border-rule bg-surface">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className={cn("flex items-center gap-3 border-t border-rule-2 px-4 first:border-t-0", rowClass)}>
+          <Skeleton className="h-7 w-7 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-2/5" />
+            <Skeleton className="h-3 w-1/4" />
+          </div>
+          <Skeleton className="h-4 w-20" />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -15,94 +40,70 @@ export default function Skeleton({ className }: { className?: string }) {
 export function ListPageSkeleton({ rows = 6 }: { rows?: number }) {
   return (
     <div className="animate-fade-in space-y-6" role="status" aria-label="Loading content">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-40" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <Skeleton className="h-10 w-36" />
-      </div>
-      <Skeleton className="h-14 w-full max-w-sm" />
-      <div className="space-y-2.5">
-        {Array.from({ length: rows }).map((_, i) => (
-          <Skeleton key={i} className="h-[72px] w-full rounded-xl" />
-        ))}
-      </div>
+      <HeaderSkeleton />
+      <Skeleton className="h-11 w-full max-w-sm" />
+      <RowsSkeleton rows={rows} rowClass="h-[72px]" />
     </div>
   );
 }
 
-/** Placeholder mirroring the expenses page: summary bar, filter card, expense rows. */
+/** Placeholder mirroring the expenses page: header, filters, totals, ledger rows. */
 export function ExpenseListSkeleton({ rows = 6 }: { rows?: number }) {
   return (
-    <div className="animate-fade-in space-y-6" role="status" aria-label="Loading expenses">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-32" />
-          <Skeleton className="h-4 w-56" />
-        </div>
-        <Skeleton className="h-10 w-36" />
-      </div>
-      <Skeleton className="h-[68px] w-full max-w-md rounded-xl" />
-      <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-        <div className="space-y-3">
-          <Skeleton className="h-10 w-full" />
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <Skeleton className="h-10" />
-            <Skeleton className="h-10" />
-            <Skeleton className="h-10" />
-            <Skeleton className="h-10" />
-          </div>
-        </div>
-      </div>
-      <div className="space-y-2.5">
-        {Array.from({ length: rows }).map((_, i) => (
-          <Skeleton key={i} className="h-[76px] w-full rounded-xl" />
+    <div className="animate-fade-in space-y-5" role="status" aria-label="Loading expenses">
+      <HeaderSkeleton />
+      <div className="flex flex-wrap gap-3">
+        <Skeleton className="h-11 flex-[3_1_240px]" />
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-11 flex-[1_1_140px]" />
         ))}
       </div>
+      <RowsSkeleton rows={rows} rowClass="h-[58px]" />
     </div>
   );
 }
 
-/** Placeholder mirroring the dashboard: hero, stat cards, charts, recent list. */
+/** Placeholder mirroring the overview: totals band, then a ruled sheet of panels. */
 export function DashboardSkeleton() {
   return (
     <div className="animate-fade-in space-y-6" role="status" aria-label="Loading dashboard">
-      <Skeleton className="h-[120px] w-full rounded-2xl" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[84px] rounded-xl" />
+      <HeaderSkeleton />
+      <div className="flex flex-wrap gap-px overflow-hidden rounded-panel border border-rule bg-rule">
+        <div className="flex-[2_1_380px] space-y-3 bg-surface p-6">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-12 w-3/4" />
+        </div>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex-[1_1_220px] space-y-3 bg-surface p-5">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-6 w-32" />
+          </div>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-5">
-        <Skeleton className="h-[340px] rounded-xl lg:col-span-3" />
-        <Skeleton className="h-[340px] rounded-xl lg:col-span-2" />
+      <div className="flex flex-wrap gap-px overflow-hidden rounded-panel border border-rule bg-rule">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="flex-[1_1_min(440px,100%)] space-y-4 bg-surface p-6">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-56 w-full" />
+          </div>
+        ))}
       </div>
-      <Skeleton className="h-[280px] w-full rounded-xl" />
     </div>
   );
 }
 
-/** Placeholder for the expense create/edit form card. */
+/** Placeholder for the expense create/edit form. */
 export function FormSkeleton() {
   return (
-    <div className="animate-fade-in" role="status" aria-label="Loading form">
-      <div className="mb-6 space-y-3">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-7 w-44" />
-      </div>
-      <div className="card mx-auto max-w-2xl space-y-5 p-6">
-        <Skeleton className="h-10 w-full" />
-        <div className="grid gap-5 sm:grid-cols-3">
-          <Skeleton className="h-10" />
-          <Skeleton className="h-10" />
-          <Skeleton className="h-10" />
+    <div className="animate-fade-in space-y-6" role="status" aria-label="Loading form">
+      <HeaderSkeleton />
+      <div className="space-y-5 rounded-panel border border-rule bg-surface p-6">
+        <Skeleton className="h-11 w-full" />
+        <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))]">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-11" />
+          ))}
         </div>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Skeleton className="h-10" />
-          <Skeleton className="h-10" />
-        </div>
-        <Skeleton className="h-20 w-full" />
         <Skeleton className="h-24 w-full" />
       </div>
     </div>

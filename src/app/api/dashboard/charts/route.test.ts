@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Aggregator } from "mingo";
-import "mingo/init/system";
 import { NextRequest, NextResponse } from "next/server";
 import { GET } from "./route";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
-import { companyBaseExpr, pocketBaseExpr } from "@/lib/expense";
+import { baseTotalExpr } from "@/lib/expense";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -54,16 +52,13 @@ describe("GET /api/dashboard/charts", () => {
     expect(result).toBe(errorResponse);
   });
 
-  it("should aggregate and return all chart data including new paymentSources and departmentSpend", async () => {
+  it("should aggregate and return the trend, categories and departments", async () => {
     vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "user-123", role: "admin" } as any);
-    
-    // Mock the 4 aggregation results in order: trendRows, categoryRows, paymentSourceRows, departmentSpendRows
+
+    // Mock the 3 aggregation results in order: trendRows, categoryRows, departmentSpendRows
     vi.mocked(Expense.aggregate)
       .mockResolvedValueOnce([{ _id: { y: 2026, m: 6 }, total: 1000, count: 5 }]) // trend
       .mockResolvedValueOnce([{ _id: "cat1", name: "Software", total: 800, count: 3 }]) // categories
-      .mockResolvedValueOnce([ // payment sources
-        { _id: null, pocketTotal: 400, pocketCount: 3, companyTotal: 600, companyCount: 2 },
-      ])
       .mockResolvedValueOnce([ // departments
         { _id: "dep1", name: "Engineering", total: 1000, count: 5 }
       ]);
@@ -71,104 +66,22 @@ describe("GET /api/dashboard/charts", () => {
     const result = await GET(mockReq);
 
     expect(connectDB).toHaveBeenCalled();
-    expect(Expense.aggregate).toHaveBeenCalledTimes(4);
+    expect(Expense.aggregate).toHaveBeenCalledTimes(3);
 
     expect(NextResponse.json).toHaveBeenCalled();
     const responseData = (result as any).data;
-    
+
     expect(responseData.monthlyTrend).toBeDefined();
     expect(responseData.topCategories).toEqual([{ _id: "cat1", name: "Software", total: 800, count: 3 }]);
-    expect(responseData.paymentSources).toEqual([
-      { name: "company", total: 600, count: 2 },
-      { name: "pocket", total: 400, count: 3 },
-    ]);
     expect(responseData.departmentSpend).toEqual([
       { _id: "dep1", name: "Engineering", total: 1000, count: 5 }
     ]);
-  });
-
-  async function getPaymentSources(row?: Record<string, unknown>) {
-    vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "user-123", role: "admin" } as any);
-    vi.mocked(Expense.aggregate)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(row ? [row] : [])
-      .mockResolvedValueOnce([]);
-
-    const result = await GET(mockReq);
-    return (result as any).data.paymentSources;
-  }
-
-  it("sums pocket and company shares so a split expense counts on both sides", async () => {
-    // Two expenses: one split (60 pocket / 40 company), one wholly pocket (50).
-    const paymentSources = await getPaymentSources({
-      _id: null,
-      pocketTotal: 110,
-      pocketCount: 2,
-      companyTotal: 40,
-      companyCount: 1,
-    });
-
-    expect(paymentSources).toEqual([
-      { name: "pocket", total: 110, count: 2 },
-      { name: "company", total: 40, count: 1 },
-    ]);
-    const paymentSourcePipeline = vi.mocked(Expense.aggregate).mock.calls[2][0] as any[];
-    expect(paymentSourcePipeline[1]).toEqual({
-      $project: {
-        paymentSource: 1,
-        pocket: pocketBaseExpr,
-        company: companyBaseExpr,
-        hasPocketEntry: { $in: ["pocket", { $ifNull: ["$payments.source", []] }] },
-        hasCompanyEntry: { $in: ["company", { $ifNull: ["$payments.source", []] }] },
-      },
-    });
-  });
-
-  it("counts a shared expense on each side it has a payment", async () => {
-    await getPaymentSources();
-    const [, ...pipeline] = vi.mocked(Expense.aggregate).mock.calls[2][0] as any[];
-    const shared = (sources: string[]) => ({
-      amount: 100,
-      amountInBaseCurrency: 100,
-      paymentSource: "multiple",
-      pocketAmountInBaseCurrency: (100 * sources.filter((source) => source === "pocket").length) / sources.length,
-      payments: sources.map((source) => ({ source, amountInBaseCurrency: 100 / sources.length })),
-    });
-
-    const [totals] = new Aggregator(pipeline).run([
-      { amount: 100, amountInBaseCurrency: 100, paymentSource: "pocket", pocketAmountInBaseCurrency: 100 },
-      // Legacy company doc without pocket fields or payments.
-      { amount: 40, paymentSource: "company" },
-      { amount: 100, amountInBaseCurrency: 100, paymentSource: "split", pocketAmountInBaseCurrency: 30 },
-      shared(["company", "company"]),
-      shared(["pocket", "company"]),
-    ]) as any[];
-
-    expect(totals).toEqual(
-      expect.objectContaining({
-        pocketTotal: 180,
-        pocketCount: 3,
-        companyTotal: 260,
-        companyCount: 4,
-      })
-    );
-  });
-
-  it("omits a payment side with no expenses", async () => {
-    const paymentSources = await getPaymentSources({
-      _id: null,
-      pocketTotal: 0,
-      pocketCount: 0,
-      companyTotal: 250,
-      companyCount: 3,
-    });
-
-    expect(paymentSources).toEqual([{ name: "company", total: 250, count: 3 }]);
-  });
-
-  it("returns no payment sources when nothing matches the filter", async () => {
-    expect(await getPaymentSources()).toEqual([]);
+    // The company/pocket split comes from /api/dashboard/stats (the expense summary).
+    expect(responseData).not.toHaveProperty("paymentSources");
+    // Every chart sums the shared base-currency total (legacy docs fall back to `amount`).
+    for (const [pipeline] of vi.mocked(Expense.aggregate).mock.calls as any[]) {
+      expect(pipeline[1].$group.total).toEqual({ $sum: baseTotalExpr });
+    }
   });
 
   it("intersects monthly trend aggregation with active date filters", async () => {
@@ -176,7 +89,6 @@ describe("GET /api/dashboard/charts", () => {
     vi.setSystemTime(new Date("2026-07-04T12:00:00.000Z"));
     vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "user-123", role: "admin" } as any);
     vi.mocked(Expense.aggregate)
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);

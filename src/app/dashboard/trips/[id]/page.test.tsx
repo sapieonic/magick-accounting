@@ -210,7 +210,7 @@ describe("TripDetailPage", () => {
     const types = screen.getAllByTestId("type-row");
     expect(types).toHaveLength(2);
     expect(types[0]).toHaveTextContent("Flight");
-    expect(types[0]).toHaveTextContent("56%");
+    expect(types[0]).toHaveTextContent("56.0%");
     expect(types[1]).toHaveTextContent("Stay");
 
     const payers = screen.getAllByTestId("payer-row");
@@ -353,6 +353,47 @@ describe("TripDetailPage", () => {
     expect(within(dialog).getByRole("button", { name: "Add 2 to trip" })).toBeEnabled();
   });
 
+  it("suggests unlinked expenses from the trip's days and adds one", async () => {
+    const user = userEvent.setup();
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    const panel = await screen.findByRole("region", { name: "Might belong here" });
+    await within(panel).findByText("Airport cab");
+    await user.click(within(panel).getByRole("button", { name: "Add Airport cab to this trip" }));
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith(`/api/trips/${TRIP_ID}/expenses`, { add: ["7".repeat(24)] })
+    );
+    expect(toastMock).toHaveBeenCalledWith('Added "Airport cab" to this trip');
+    await waitFor(() =>
+      expect(vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`)).toHaveLength(2)
+    );
+  });
+
+  it("keeps a suggestion's amount out of the clipped sub-line", async () => {
+    render(<TripDetailPage />);
+
+    const panel = await screen.findByRole("region", { name: "Might belong here" });
+    await within(panel).findByText("Airport cab");
+    const [amount] = within(panel).getAllByText(formatBaseCurrency(100));
+    expect(amount).toHaveClass("whitespace-nowrap");
+    expect(amount.closest(".ell")).toBeNull();
+  });
+
+  it("says so instead of loading forever when suggestions fail", async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url.startsWith(`/api/trips/${TRIP_ID}/candidates`) ? Promise.reject(new Error("offline")) : defaultGet(url)
+    );
+    render(<TripDetailPage />);
+
+    const panel = await screen.findByRole("region", { name: "Might belong here" });
+    expect(await within(panel).findByText(/suggestions couldn't be loaded/i)).toBeInTheDocument();
+    expect(panel.querySelector(".animate-pulse")).toBeNull();
+    expect(within(panel).getByRole("button", { name: /browse all unlinked/i })).toBeInTheDocument();
+  });
+
   it("removes an expense from the trip and refreshes", async () => {
     const user = userEvent.setup();
     render(<TripDetailPage />);
@@ -425,6 +466,145 @@ describe("TripDetailPage", () => {
       expect(vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`)).toHaveLength(2)
     );
     expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
+  });
+
+  it("takes a shared bill's delete off each payer's own row", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    // Manas paid 600 from pocket and Priya 400 on the company card.
+    const dinner = makeExpense({
+      _id: "3".repeat(24),
+      title: "Team dinner",
+      amount: 1000,
+      amountInBaseCurrency: 1000,
+      paymentSource: "multiple",
+      pocketAmount: 600,
+      pocketAmountInBaseCurrency: 600,
+      travelType: "food",
+      payments: [
+        { paidBy: me, amount: 600, amountInBaseCurrency: 600, source: "pocket" },
+        { paidBy: priya, amount: 400, amountInBaseCurrency: 400, source: "company" },
+      ],
+    });
+    const base = detail();
+    response = detail({
+      expenses: [flight, hotel, dinner],
+      summary: {
+        ...base.summary,
+        totalAmount: 13500,
+        expenseCount: 3,
+        pocketAmount: 7600,
+        companyAmount: 5900,
+        byType: [...base.summary.byType, { travelType: "food", total: 1000, count: 1 }],
+        byPayer: [
+          { user: me, totalSpend: 7600, pocketSpend: 7600, companySpend: 0 },
+          { user: priya, totalSpend: 5900, pocketSpend: 0, companySpend: 5900 },
+        ],
+      },
+    });
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+    const payerTexts = () => screen.getAllByTestId("payer-row").map((row) => row.textContent);
+    expect(payerTexts()[0]).toContain(`${formatBaseCurrency(7600)} total`);
+
+    await user.click(screen.getByRole("button", { name: "Delete Team dinner" }));
+
+    const [manas, priyaRow] = payerTexts();
+    expect(manas).toContain(`${formatBaseCurrency(7000)} total · ${formatBaseCurrency(0)} company`);
+    expect(manas).toContain(formatBaseCurrency(7000));
+    expect(priyaRow).toContain(`${formatBaseCurrency(5500)} total · ${formatBaseCurrency(5500)} company`);
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the suggestions once per reload, not on every change to the loaded trip", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const candidateCalls = () =>
+      vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}/candidates`).length;
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+    await waitFor(() => expect(candidateCalls()).toBe(1));
+
+    // Hold the reload after the delete so the optimistic update renders first.
+    let release!: () => void;
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url === `/api/trips/${TRIP_ID}`
+        ? new Promise((resolve) => {
+            release = () => resolve(response);
+          })
+        : defaultGet(url)
+    );
+    await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith(`/api/expenses/${flight._id}`));
+    await waitFor(() =>
+      expect(vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`)).toHaveLength(2)
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(candidateCalls()).toBe(1);
+
+    await act(async () => release());
+    await waitFor(() => expect(candidateCalls()).toBe(2));
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(candidateCalls()).toBe(2);
+  });
+
+  it("sends a delete once, and keeps it hidden, when Undo or leaving the page comes while it is in flight", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    let finishDelete!: () => void;
+    vi.mocked(api.delete).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDelete = () => resolve({ message: "ok" });
+        })
+    );
+    const { unmount } = render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(api.delete).toHaveBeenCalledTimes(1);
+
+    // Undo once the request is out: it can't stop the delete, so the expense stays hidden.
+    const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "IndiGo BOM"')?.[2];
+    act(() => options.action.onClick());
+    expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
+    expect(screen.queryByText(formatBaseCurrency(12500))).not.toBeInTheDocument();
+
+    // Leaving the page doesn't send it again.
+    unmount();
+    await act(async () => finishDelete());
+    expect(api.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits a delete still in its undo window when leaving the page", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { unmount } = render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+    expect(api.delete).not.toHaveBeenCalled();
+    unmount();
+    expect(api.delete).toHaveBeenCalledWith(`/api/expenses/${flight._id}`);
+    await act(async () => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(api.delete).toHaveBeenCalledTimes(1);
   });
 
   it("restores an expense when the delete is undone", async () => {

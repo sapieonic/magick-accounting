@@ -94,9 +94,11 @@ const ExpenseSchema = new Schema<IExpense>(
   { timestamps: true }
 );
 
-ExpenseSchema.index({ date: -1 });
+// The expense list's sort (`EXPENSE_LIST_SORT`), for everyone and for one
+// submitter (role `user`, or `createdBy`); they also serve plain date queries.
+ExpenseSchema.index({ date: -1, createdAt: -1, _id: -1 });
+ExpenseSchema.index({ createdBy: 1, date: -1, createdAt: -1, _id: -1 });
 ExpenseSchema.index({ department: 1, date: -1 });
-ExpenseSchema.index({ createdBy: 1, date: -1 });
 ExpenseSchema.index({ category: 1, date: -1 });
 ExpenseSchema.index({ currency: 1 });
 ExpenseSchema.index({ trip: 1, date: 1 });

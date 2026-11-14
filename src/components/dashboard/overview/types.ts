@@ -1,0 +1,58 @@
+/** Response shapes of /api/dashboard/stats, /api/dashboard/charts and (admins) /api/users. */
+
+export interface RecentExpense {
+  _id: string;
+  title: string;
+  amount: number;
+  amountInBaseCurrency?: number;
+  currency?: { code: string; symbol: string; isBase: boolean };
+  date: string;
+  category?: { name: string } | null;
+  department?: { name: string } | null;
+}
+
+export interface OverviewStats {
+  totalExpenses: number;
+  totalAmount: number;
+  /** Company vs pocket spend (base currency), the same split as the Expenses page's band. */
+  companyAmount: number;
+  pocketAmount: number;
+  departmentCount: number;
+  categoryCount: number;
+  /** The caller's own five latest expenses. */
+  recentExpenses: RecentExpense[];
+}
+
+export interface MonthPoint {
+  /** Short month label, e.g. "Oct". */
+  month: string;
+  /** "YYYY-MM", also the Expenses page `month` filter value. */
+  key: string;
+  total: number;
+  count: number;
+}
+
+interface SpendRow {
+  _id?: string | null;
+  name: string;
+  total: number;
+  count: number;
+}
+
+export interface OverviewCharts {
+  /** Last six months, oldest first; the last one is the current (partial) month. */
+  monthlyTrend: MonthPoint[];
+  topCategories: SpendRow[];
+  departmentSpend: SpendRow[];
+}
+
+/** A person with their all-time spend, as `GET /api/users` lists them (base currency). */
+export interface PersonSpend {
+  _id: string;
+  name: string;
+  email: string;
+  photoURL?: string | null;
+  totalSpend: number;
+  pocketSpend: number;
+  companySpend: number;
+}

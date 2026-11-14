@@ -1,28 +1,49 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import {
+  Building2,
+  Calendar,
+  ChevronDown,
+  Download,
+  Luggage,
+  MousePointerClick,
+  Plus,
+  Receipt,
+  Tag,
+  User as UserIcon,
+  Wallet,
+} from "lucide-react";
+import { format, endOfMonth } from "date-fns";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
+import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
+import { roundMoney } from "@/lib/asset";
+import { formatBaseCurrency } from "@/lib/currency";
+import { buildCsv, downloadCsv } from "@/lib/csv";
+import { MAX_EXPENSE_PAGE, getPaymentBreakdown, payerShare } from "@/lib/expense";
+import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
-import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { ExpenseListSkeleton } from "@/components/ui/Skeleton";
-import {
-  Plus, Receipt, Download, Plane,
-  Search, Filter, ChevronDown,
-  Calendar, TrendingUp, User as UserIcon, Tag, Wallet, X as XIcon,
-} from "lucide-react";
-import { format, endOfMonth } from "date-fns";
-import { formatBaseCurrency } from "@/lib/currency";
-import { buildCsv, downloadCsv } from "@/lib/csv";
-import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
-import { ExpenseAnalytics } from "@/components/dashboard/ExpenseAnalytics";
-import ExpenseCard from "@/components/expenses/ExpenseCard";
-import TripCluster, { buildExpenseListItems, tripItemKey } from "@/components/trips/TripCluster";
+import PageHeader from "@/components/ui/PageHeader";
+import Button from "@/components/ui/Button";
+import Field, { inputClass, selectClass } from "@/components/ui/Field";
+import SearchInput from "@/components/ui/SearchInput";
+import { RemovableChip } from "@/components/ui/Badge";
+import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
+import SplitBar from "@/components/ui/SplitBar";
+import { cn } from "@/components/ui/cn";
+import { focusRing, panelClass, panelPadX, transition } from "@/components/ui/styles";
+import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
+import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
+import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
+import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import TripCluster, { buildExpenseListItems, pageItemKey, tripItemKey } from "@/components/trips/TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
 
@@ -34,27 +55,38 @@ interface UserOption { _id: string; name: string; email: string }
 interface ExpenseSummary {
   totalAmount: number;
   totalExpenses: number;
+  /** Company vs pocket spend of the filtered expenses (base currency); absent until loaded. */
+  companyAmount?: number;
+  pocketAmount?: number;
   /** The "Paid by" person's own share of the listed expenses. */
   payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
 }
 
 const CUSTOM_DATE_PRESET = "custom";
 const PAGE_SIZE = 25;
-const EXPORT_LIMIT = 10000;
-const UNDO_WINDOW_MS = 5000;
+/** Export requests at most, a guard against a server that never says it's done. */
+const MAX_EXPORT_PAGES = 50;
+/** Wide enough for the ledger plus the detail side panel. */
+const SIDE_PANEL_QUERY = "(min-width: 1280px)";
+const DETAIL_PANEL_ID = "expense-detail-panel";
 
-function getDatePresetOptions(): { value: string; label: string }[] {
-  const options = [{ value: "", label: "All Time" }];
+/**
+ * All time, the last 12 months (newest first) and Custom range. `selected`, a
+ * month outside those 12 (e.g. a bookmarked `?month=`), is listed in order too.
+ */
+function getDatePresetOptions(selected = ""): { value: string; label: string }[] {
   const now = new Date();
+  const months = new Set<string>();
   for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    options.push({
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-      label: format(d, "MMMM yyyy"),
-    });
+    months.add(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   }
-  options.push({ value: CUSTOM_DATE_PRESET, label: "Custom Range" });
-  return options;
+  if (MONTH_KEY.test(selected)) months.add(selected);
+  return [
+    { value: "", label: "All time" },
+    // "YYYY-MM" keys sort chronologically as strings.
+    ...[...months].sort().reverse().map((key) => ({ value: key, label: format(monthFromKey(key), "MMMM yyyy") })),
+    { value: CUSTOM_DATE_PRESET, label: "Custom range" },
+  ];
 }
 
 // Resolves the active date preset / custom range into { from, to } yyyy-MM-dd
@@ -68,8 +100,7 @@ function resolveDateRange(
     return { from: customFrom, to: customTo };
   }
   if (preset) {
-    const [year, month] = preset.split("-").map(Number);
-    const monthStart = new Date(year, month - 1, 1);
+    const monthStart = monthFromKey(preset);
     return {
       from: format(monthStart, "yyyy-MM-dd"),
       to: format(endOfMonth(monthStart), "yyyy-MM-dd"),
@@ -78,16 +109,49 @@ function resolveDateRange(
   return { from: "", to: "" };
 }
 
-interface PendingDelete {
-  expense: Expense;
-  index: number;
-  timer: ReturnType<typeof setTimeout>;
+const deleteExpense = (id: string) => api.delete(`/api/expenses/${id}`);
+
+/** On/off switch for the "Group trips" view. */
+function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      title={checked ? "Each trip is one expandable row. Switch off for a flat list." : "Show each trip's expenses as one expandable row"}
+      className={cn(
+        "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-control px-1 text-sm text-ink",
+        focusRing
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full",
+          transition,
+          // Off, the track needs the control boundary's 3:1 contrast too.
+          checked ? "bg-accent" : "bg-control-line"
+        )}
+      >
+        <span
+          className={cn(
+            "inline-block h-4 w-4 rounded-full bg-surface transition-transform duration-140",
+            checked ? "translate-x-[18px]" : "translate-x-0.5"
+          )}
+        />
+      </span>
+      <Luggage aria-hidden="true" size={16} strokeWidth={1.6} className="text-cat-tr" />
+      Group trips
+    </button>
+  );
 }
 
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
   const { isAdmin } = useAuth();
+  const sidePanel = useMediaQuery(SIDE_PANEL_QUERY);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   /** Trips on the loaded pages, keyed by id (grouped view only). */
   const [trips, setTrips] = useState<Record<string, TripSummary>>({});
@@ -95,10 +159,10 @@ export default function ExpensesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
 
-  /** The open row: an expense id, or `tripItemKey(tripId)` for a trip cluster. */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  /** Expense to open inside the expanded trip cluster (deep links). */
-  const [clusterExpenseId, setClusterExpenseId] = useState<string | null>(null);
+  /** The open expense: its detail shows in the side panel, or under its row. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** The expanded trip cluster, as `tripItemKey(tripId)`. */
+  const [openTripKey, setOpenTripKey] = useState<string | null>(null);
   /** Show each trip's expenses as one expandable row (`?view=flat` turns it off). */
   const [groupTrips, setGroupTrips] = useState(true);
 
@@ -113,22 +177,29 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
-  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
+  /** Items in the whole list, as the server first counted them, less deletes since. */
   const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(1);
+  /** The server has items after the loaded ones. */
+  const [hasMore, setHasMore] = useState(false);
   const [loadingLookups, setLoadingLookups] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
-  const [view, setView] = useState<"list" | "insights">("list");
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
-  const pendingDeletes = useRef(new Map<string, PendingDelete>());
+  const { schedule: scheduleDelete, undo: undoDelete, flush: flushPendingDeletes } = usePendingDeletes(deleteExpense);
+  /** The server's cursor for the page after the loaded ones. */
+  const nextCursor = useRef<string | null>(null);
+  /**
+   * Bumped when a reload starts and when it lands: a Load more begun under an
+   * earlier generation belongs to another query (or cursor) and is dropped.
+   */
+  const listGeneration = useRef(0);
   const expensesRef = useRef<Expense[]>([]);
   expensesRef.current = expenses;
 
-  const datePresetOptions = useMemo(() => getDatePresetOptions(), []);
+  const datePresetOptions = useMemo(() => getDatePresetOptions(datePreset), [datePreset]);
 
   const hasDateFilter =
     datePreset === CUSTOM_DATE_PRESET ? Boolean(customFrom || customTo) : Boolean(datePreset);
@@ -161,7 +232,8 @@ export default function ExpensesPage() {
       setDatePreset(CUSTOM_DATE_PRESET);
       setCustomFrom(from);
       setCustomTo(to);
-    } else if (month) {
+    } else if (MONTH_KEY.test(month)) {
+      // Anything else isn't a month (it would break the date range): show all time.
       setDatePreset(month);
     }
 
@@ -273,9 +345,9 @@ export default function ExpensesPage() {
   }, [filterDepts, filterCats, filterUser, filterPayer, search, datePreset, customFrom, customTo]);
 
   const buildQueryParams = useCallback(
-    (pageNum: number, limit: number, includeSummary: boolean) => {
+    (cursor: string | null, limit: number, includeSummary: boolean) => {
       const params = buildFilterParams();
-      params.set("page", String(pageNum));
+      if (cursor) params.set("cursor", cursor);
       params.set("limit", String(limit));
       if (includeSummary) params.set("includeSummary", "true");
       return params;
@@ -283,30 +355,13 @@ export default function ExpensesPage() {
     [buildFilterParams]
   );
 
-  // The same filter fields buildQueryParams uses, MINUS page/limit/summary, so the
-  // analytics rail reflects the active filters without refetching on "Load more".
-  const filterQuery = useMemo(() => buildFilterParams().toString(), [buildFilterParams]);
-
-  // Commit any deletes still inside their undo window. Called before reloading
-  // the list (so the server result matches the UI) and on unmount.
-  const flushPendingDeletes = useCallback(async () => {
-    const entries = Array.from(pendingDeletes.current.values());
-    pendingDeletes.current.clear();
-    entries.forEach((entry) => clearTimeout(entry.timer));
-    await Promise.allSettled(entries.map((entry) => api.delete(`/api/expenses/${entry.expense._id}`)));
-  }, []);
-
-  useEffect(() => {
-    const flush = flushPendingDeletes;
-    return () => {
-      void flush();
-    };
-  }, [flushPendingDeletes]);
-
   useEffect(() => {
     if (!urlSynced) return;
     let active = true;
     const initialLoad = !hasLoadedExpenses.current;
+    // A Load more still in flight is for the previous list.
+    listGeneration.current += 1;
+    setLoadingMore(false);
 
     async function loadExpenses() {
       if (initialLoad) {
@@ -316,8 +371,9 @@ export default function ExpensesPage() {
       }
 
       try {
+        // Commit deletes still in their undo window first, so the server result matches the UI.
         await flushPendingDeletes();
-        const params = buildQueryParams(1, PAGE_SIZE, true);
+        const params = buildQueryParams(null, PAGE_SIZE, true);
         if (groupTrips) params.set("groupTrips", "true");
         const data = await api.get(`/api/expenses?${params.toString()}`);
         if (!active) return;
@@ -326,19 +382,18 @@ export default function ExpensesPage() {
         const loadedTrips: Record<string, TripSummary> = groupTrips ? data.trips ?? {} : {};
         setExpenses(loaded);
         setTrips(loadedTrips);
-        setPage(1);
         setTotalCount(data.pagination?.total ?? loaded.length);
+        setHasMore(Boolean(data.pagination?.hasMore));
+        nextCursor.current = data.pagination?.nextCursor ?? null;
         setSummary(data.summary || { totalAmount: 0, totalExpenses: 0 });
 
         if (pendingExpandId.current) {
           const target = loaded.find((e) => e._id === pendingExpandId.current);
           const tripId = target?.trip?._id;
-          if (target && tripId && loadedTrips[tripId]) {
-            // The expense lives inside a trip cluster: open both.
-            setExpandedId(tripItemKey(tripId));
-            setClusterExpenseId(target._id);
-          } else if (target) {
-            setExpandedId(target._id);
+          if (target) {
+            // An expense inside a trip cluster opens with its cluster.
+            if (tripId && loadedTrips[tripId]) setOpenTripKey(tripItemKey(tripId));
+            setSelectedId(target._id);
           }
           pendingExpandId.current = null;
         }
@@ -348,6 +403,9 @@ export default function ExpensesPage() {
         }
       } finally {
         if (!active) return;
+        // Also drops a Load more begun while this reload ran (it used the old cursor).
+        listGeneration.current += 1;
+        setLoadingMore(false);
 
         if (initialLoad) {
           setLoadingExpenses(false);
@@ -364,32 +422,55 @@ export default function ExpensesPage() {
     };
   }, [buildQueryParams, flushPendingDeletes, toast, urlSynced, groupTrips]);
 
+  // The item an expense counts towards, as the server pages them.
+  const itemKey = useCallback((expense: Expense) => pageItemKey(expense, groupTrips), [groupTrips]);
+
+  // Continues after the last item loaded (a cursor, not a position), so
+  // deletes since the last page can't make it skip one.
   const loadMore = async () => {
+    const generation = listGeneration.current;
+    const isCurrent = () => generation === listGeneration.current;
     setLoadingMore(true);
     try {
-      const params = buildQueryParams(page + 1, PAGE_SIZE, false);
+      const params = buildQueryParams(nextCursor.current, PAGE_SIZE, false);
       if (groupTrips) params.set("groupTrips", "true");
       const data = await api.get(`/api/expenses?${params.toString()}`);
+      // The filters or view changed meanwhile: this page isn't part of the list now.
+      if (!isCurrent()) return;
       if (groupTrips && data.trips) setTrips((prev) => ({ ...prev, ...data.trips }));
+      // A trip whose latest expense was deleted can sort after the cursor
+      // and come again: keep only the expenses not listed yet.
       setExpenses((prev) => {
         const seen = new Set(prev.map((e) => e._id));
         return [...prev, ...data.expenses.filter((e: Expense) => !seen.has(e._id))];
       });
-      setPage((p) => p + 1);
-      setTotalCount(data.pagination?.total ?? totalCount);
+      nextCursor.current = data.pagination?.nextCursor ?? null;
+      setHasMore(Boolean(data.pagination?.hasMore));
     } catch {
-      toast("Failed to load more expenses", "error");
+      if (isCurrent()) toast("Failed to load more expenses", "error");
     } finally {
-      setLoadingMore(false);
+      if (isCurrent()) setLoadingMore(false);
     }
   };
 
   const handleExport = async () => {
     setExporting(true);
     try {
-      const params = buildQueryParams(1, EXPORT_LIMIT, false);
-      const data = await api.get(`/api/expenses?${params.toString()}`);
-      const rows = (data.expenses as Expense[]).map(expenseCsvRow);
+      // A request returns at most MAX_EXPENSE_PAGE rows: follow the cursor until the list ends.
+      const exported: Expense[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; ; page++) {
+        if (page === MAX_EXPORT_PAGES) throw new Error("Export has too many pages");
+        const params = buildQueryParams(cursor, MAX_EXPENSE_PAGE, false);
+        const data = await api.get(`/api/expenses?${params.toString()}`);
+        exported.push(...(data.expenses as Expense[]));
+        const next: string | null = data.pagination?.nextCursor ?? null;
+        if (!data.pagination?.hasMore) break;
+        // Never stop short silently, nor repeat a page forever.
+        if (!next || next === cursor) throw new Error("Export cursor did not advance");
+        cursor = next;
+      }
+      const rows = exported.map(expenseCsvRow);
       const csv = buildCsv(EXPENSE_CSV_HEADERS, rows);
       downloadCsv(`expenses-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
       toast(`Exported ${rows.length} expense${rows.length !== 1 ? "s" : ""}`);
@@ -400,20 +481,39 @@ export default function ExpensesPage() {
     }
   };
 
-  // The list row an expense belongs to: its trip's cluster in the grouped
-  // view, else its own row. Pagination counts rows, not expenses.
-  const listItemKey = useCallback(
-    (expense: Expense) => {
-      const tripId = expense.trip?._id;
-      return groupTrips && tripId && trips[tripId] ? tripItemKey(tripId) : expense._id;
-    },
-    [groupTrips, trips]
-  );
-
   const listItems = useMemo(
     () => buildExpenseListItems(expenses, groupTrips ? trips : null),
     [expenses, groupTrips, trips]
   );
+  // Loaded items as the server counts them (an unopenable trip's rows are one).
+  const loadedItemCount = useMemo(() => new Set(expenses.map(itemKey)).size, [expenses, itemKey]);
+
+  // Moves an expense's amounts in or out of the totals band (delete / undo),
+  // including the "Paid by" person's share when that filter is on.
+  const adjustTotals = (expense: Expense, sign: 1 | -1) => {
+    const { pocketBase, companyBase } = getPaymentBreakdown(expense);
+    const share = filterPayer ? payerShare(expense, filterPayer) : null;
+    setSummary((prev) => ({
+      ...prev,
+      totalAmount: roundMoney(prev.totalAmount + sign * baseAmount(expense)),
+      totalExpenses: Math.max(0, prev.totalExpenses + sign),
+      ...(prev.companyAmount != null && prev.pocketAmount != null
+        ? {
+            companyAmount: roundMoney(prev.companyAmount + sign * companyBase),
+            pocketAmount: roundMoney(prev.pocketAmount + sign * pocketBase),
+          }
+        : {}),
+      ...(prev.payerSpend && share
+        ? {
+            payerSpend: {
+              totalSpend: roundMoney(prev.payerSpend.totalSpend + sign * (share.pocket + share.company)),
+              pocketSpend: roundMoney(prev.payerSpend.pocketSpend + sign * share.pocket),
+              companySpend: roundMoney(prev.payerSpend.companySpend + sign * share.company),
+            },
+          }
+        : {}),
+    }));
+  };
 
   // Optimistically remove the expense and give the user a short undo window
   // before the delete is committed to the server.
@@ -425,465 +525,333 @@ export default function ExpensesPage() {
     const index = expenses.findIndex((e) => e._id === expense._id);
     if (index === -1) return;
 
-    // Deleting the last expense of a trip cluster removes the whole row.
-    const itemKey = listItemKey(expense);
-    const keyOf = listItemKey;
-    const rowStaysListed = (list: Expense[]) =>
-      list.some((e) => e._id !== expense._id && keyOf(e) === itemKey);
+    // The item leaves the list (and the count) with its last listed expense:
+    // deleting one expense of a trip cluster keeps the cluster.
+    const key = itemKey(expense);
+    const itemStaysListed = (list: Expense[]) =>
+      list.some((e) => e._id !== expense._id && itemKey(e) === key);
 
     setExpenses((prev) => prev.filter((e) => e._id !== expense._id));
-    setSummary((prev) => ({
-      ...prev,
-      totalAmount: prev.totalAmount - (expense.amountInBaseCurrency ?? expense.amount),
-      totalExpenses: Math.max(0, prev.totalExpenses - 1),
-    }));
-    if (!rowStaysListed(expenses)) setTotalCount((prev) => Math.max(0, prev - 1));
-    if (expandedId === expense._id) setExpandedId(null);
+    adjustTotals(expense, -1);
+    if (!itemStaysListed(expenses)) setTotalCount((prev) => Math.max(0, prev - 1));
+    if (selectedId === expense._id) setSelectedId(null);
 
     const restore = () => {
-      const rowReappears = !rowStaysListed(expensesRef.current);
+      const itemReappears = !itemStaysListed(expensesRef.current);
       setExpenses((prev) => {
         const next = [...prev];
         next.splice(Math.min(index, next.length), 0, expense);
         return next;
       });
-      setSummary((prev) => ({
-        ...prev,
-        totalAmount: prev.totalAmount + (expense.amountInBaseCurrency ?? expense.amount),
-        totalExpenses: prev.totalExpenses + 1,
-      }));
-      if (rowReappears) setTotalCount((prev) => prev + 1);
+      adjustTotals(expense, 1);
+      if (itemReappears) setTotalCount((prev) => prev + 1);
     };
 
-    const timer = setTimeout(async () => {
-      if (!pendingDeletes.current.has(expense._id)) return;
-      pendingDeletes.current.delete(expense._id);
-      try {
-        await api.delete(`/api/expenses/${expense._id}`);
-        setAnalyticsRefreshKey((key) => key + 1);
-      } catch {
+    scheduleDelete(expense._id, {
+      onUndo: restore,
+      onFailed: () => {
         restore();
         toast("Failed to delete expense", "error");
-      }
-    }, UNDO_WINDOW_MS);
-
-    pendingDeletes.current.set(expense._id, { expense, index, timer });
+      },
+    });
 
     toast(`Deleted "${expense.title}"`, "info", {
       durationMs: UNDO_WINDOW_MS,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          const pending = pendingDeletes.current.get(expense._id);
-          if (!pending) return;
-          clearTimeout(pending.timer);
-          pendingDeletes.current.delete(expense._id);
-          restore();
-        },
-      },
+      action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
     });
   };
 
-  const toggleExpand = (key: string) => {
-    setExpandedId((prev) => (prev === key ? null : key));
-    // A deep-linked expense only opens with its cluster the first time.
-    setClusterExpenseId(null);
+  const toggleSelected = (expense: Expense | null) => {
+    setSelectedId((prev) => (expense && prev !== expense._id ? expense._id : null));
+  };
+
+  const toggleTrip = (key: string) => {
+    setOpenTripKey((prev) => (prev === key ? null : key));
   };
 
   const toggleGroupTrips = () => {
     // Keep the open expense open across the switch (it may move in or out of a cluster).
-    if (expandedId && !expandedId.startsWith("trip:")) pendingExpandId.current = expandedId;
-    else if (clusterExpenseId) pendingExpandId.current = clusterExpenseId;
-    setExpandedId(null);
-    setClusterExpenseId(null);
+    pendingExpandId.current = selectedId;
+    setSelectedId(null);
+    setOpenTripKey(null);
     setGroupTrips((prev) => !prev);
   };
 
+  const clearDateFilter = () => {
+    setDatePreset("");
+    setCustomFrom("");
+    setCustomTo("");
+  };
+
   const isFiltered = Boolean(search) || hasAnyFilter;
+  const selectedExpense = selectedId ? expenses.find((e) => e._id === selectedId) ?? null : null;
 
   if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
+  const periodLabel =
+    datePreset === CUSTOM_DATE_PRESET
+      ? `${customFrom || "…"} → ${customTo || "…"}`
+      : datePresetOptions.find((o) => o.value === datePreset)?.label ?? "All time";
+  const userName = (id: string) => users.find((u) => u._id === id)?.name;
+  const payerLabel = userName(filterPayer) ?? "this person";
+
   return (
-    <div className="animate-fade-in flex h-full min-h-0 flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Expenses</h1>
-          <p className="text-sm text-muted-foreground">Manage and track all expenses.</p>
-        </div>
-        <Link href="/dashboard/expenses/new" className="btn-primary shadow-md shadow-brand-500/20">
-          <Plus className="h-4 w-4" />
-          Add Expense
-        </Link>
-      </div>
+    <div className="animate-fade-in flex flex-col gap-6">
+      <PageHeader
+        title="Expenses"
+        meta={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            {isAdmin ? "Everyone" : "Your expenses"} · {periodLabel}
+            {refreshingExpenses && <InlineLoader label="Refreshing..." />}
+          </span>
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              icon={Download}
+              loading={exporting}
+              onClick={handleExport}
+              disabled={expenses.length === 0}
+              title="Download the currently filtered expenses as CSV"
+            >
+              Export CSV
+            </Button>
+            <Button icon={Plus} href="/dashboard/expenses/new">
+              New expense
+            </Button>
+          </>
+        }
+      />
 
-      {/* Filters — full width so they visibly drive both the list and the analytics rail */}
-      <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-        <div className="space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search expenses..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="input-field pl-10 pr-10"
-            />
-            {searchInput && (
-              <button
-                onClick={() => setSearchInput("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <XIcon className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="relative">
-              <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-400" />
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={datePreset}
-                onChange={(e) => setDatePreset(e.target.value)}
-                className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                aria-label="Filter by date"
-              >
-                {datePresetOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <MultiSelect
-              options={departments.map((d) => ({ value: d._id, label: d.name }))}
-              selected={filterDepts}
-              onChange={setFilterDepts}
-              placeholder="All Departments"
-              ariaLabel="Filter by department"
-              icon={<Filter className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-blue-400" />}
-            />
-            <MultiSelect
-              options={categories.map((c) => ({ value: c._id, label: c.name }))}
-              selected={filterCats}
-              onChange={setFilterCats}
-              placeholder="All Categories"
-              ariaLabel="Filter by category"
-              icon={<Tag className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-amber-400" />}
-            />
-            {isAdmin && (
-              <div className="relative">
-                <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-400" />
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <select
-                  value={filterUser}
-                  onChange={(e) => setFilterUser(e.target.value)}
-                  className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                  aria-label="Filter by user"
-                >
-                  <option value="">All Users</option>
-                  {users.map((u) => (
-                    <option key={u._id} value={u._id}>{u.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {isAdmin && (
-              <div className="relative">
-                <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-400" />
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <select
-                  value={filterPayer}
-                  onChange={(e) => setFilterPayer(e.target.value)}
-                  className="input-field w-full appearance-none pl-10 pr-9 text-sm"
-                  aria-label="Filter by payer"
-                  title="Expenses counted towards this person on Spend by User"
-                >
-                  <option value="">Paid by anyone</option>
-                  {users.map((u) => (
-                    <option key={u._id} value={u._id}>Paid by {u.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Custom date range inputs */}
+      <div className="flex flex-col gap-3">
+        <form
+          aria-label="Filters"
+          onSubmit={(e) => e.preventDefault()}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <Field label="Search" className="flex-[3_1_240px]">
+            <SearchInput value={searchInput} onValueChange={setSearchInput} placeholder="Title, vendor, note" />
+          </Field>
+          <Field label="Dates" icon={Calendar} className="flex-[1_1_150px]">
+            <select value={datePreset} onChange={(e) => setDatePreset(e.target.value)} className={selectClass}>
+              {datePresetOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
           {datePreset === CUSTOM_DATE_PRESET && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  From
-                </label>
+            <>
+              <Field label="From" className="flex-[1_1_150px]">
                 <input
                   type="date"
                   value={customFrom}
                   max={customTo || undefined}
                   onChange={(e) => setCustomFrom(e.target.value)}
-                  className="input-field w-full text-sm"
-                  aria-label="From date"
+                  className={inputClass}
                 />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  To
-                </label>
+              </Field>
+              <Field label="To" className="flex-[1_1_150px]">
                 <input
                   type="date"
                   value={customTo}
                   min={customFrom || undefined}
                   onChange={(e) => setCustomTo(e.target.value)}
-                  className="input-field w-full text-sm"
-                  aria-label="To date"
+                  className={inputClass}
                 />
-              </div>
-            </div>
+              </Field>
+            </>
           )}
-        </div>
-        {/* Active filter pills */}
+          <Field label="Department" icon={Building2} className="flex-[1_1_150px]">
+            <MultiSelect
+              options={departments.map((d) => ({ value: d._id, label: d.name }))}
+              selected={filterDepts}
+              onChange={setFilterDepts}
+              placeholder={`All ${departments.length}`}
+              listLabel="Filter by department"
+            />
+          </Field>
+          <Field label="Category" icon={Tag} className="flex-[1_1_150px]">
+            <MultiSelect
+              options={categories.map((c) => ({ value: c._id, label: c.name }))}
+              selected={filterCats}
+              onChange={setFilterCats}
+              placeholder={`All ${categories.length}`}
+              listLabel="Filter by category"
+            />
+          </Field>
+          {isAdmin && (
+            <Field label="Submitted by" icon={UserIcon} className="flex-[1_1_150px]">
+              <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} className={selectClass}>
+                <option value="">Anyone</option>
+                {users.map((u) => (
+                  <option key={u._id} value={u._id}>{u.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {isAdmin && (
+            <Field label="Paid by" icon={Wallet} className="flex-[1_1_150px]">
+              <select
+                value={filterPayer}
+                onChange={(e) => setFilterPayer(e.target.value)}
+                className={selectClass}
+                title="Expenses counted towards this person in Spend by user"
+              >
+                <option value="">Anyone</option>
+                {users.map((u) => (
+                  <option key={u._id} value={u._id}>{u.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <GroupTripsSwitch checked={groupTrips} onToggle={toggleGroupTrips} />
+        </form>
+
         {hasAnyFilter && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-            <span className="text-xs text-muted-foreground">Filters:</span>
-            {hasDateFilter && (
-              <button
-                onClick={() => {
-                  setDatePreset("");
-                  setCustomFrom("");
-                  setCustomTo("");
-                }}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
-              >
-                {datePreset === CUSTOM_DATE_PRESET
-                  ? `${customFrom || "…"} → ${customTo || "…"}`
-                  : datePresetOptions.find((o) => o.value === datePreset)?.label}{" "}
-                &times;
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="cap text-ink-3">Filtered by</span>
+            {hasDateFilter && <RemovableChip onRemove={clearDateFilter}>{periodLabel}</RemovableChip>}
             {filterDepts.map((id) => (
-              <button
-                key={id}
-                onClick={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20"
-              >
-                {departments.find((d) => d._id === id)?.name} &times;
-              </button>
+              <RemovableChip key={id} onRemove={() => setFilterDepts((prev) => prev.filter((v) => v !== id))}>
+                {departments.find((d) => d._id === id)?.name}
+              </RemovableChip>
             ))}
             {filterCats.map((id) => (
-              <button
-                key={id}
-                onClick={() => setFilterCats((prev) => prev.filter((v) => v !== id))}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
-              >
-                {categories.find((c) => c._id === id)?.name} &times;
-              </button>
+              <RemovableChip key={id} onRemove={() => setFilterCats((prev) => prev.filter((v) => v !== id))}>
+                {categories.find((c) => c._id === id)?.name}
+              </RemovableChip>
             ))}
-            {filterUser && (
-              <button
-                onClick={() => setFilterUser("")}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
-              >
-                {users.find((u) => u._id === filterUser)?.name} &times;
-              </button>
-            )}
-            {filterPayer && (
-              <button
-                onClick={() => setFilterPayer("")}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
-              >
-                Paid by {users.find((u) => u._id === filterPayer)?.name} &times;
-              </button>
-            )}
+            {filterUser && <RemovableChip onRemove={() => setFilterUser("")}>Submitted by {userName(filterUser)}</RemovableChip>}
+            {filterPayer && <RemovableChip onRemove={() => setFilterPayer("")}>Paid by {userName(filterPayer)}</RemovableChip>}
           </div>
         )}
       </div>
 
-      {/* Mobile view toggle — hidden at xl where both panes are always visible */}
-      <div
-        className="flex rounded-xl border border-line bg-surface p-1 xl:hidden"
-        role="group"
-        aria-label="Toggle between expenses and insights"
-      >
-        <button
-          type="button"
-          onClick={() => setView("list")}
-          aria-pressed={view === "list"}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-            view === "list"
-              ? "bg-brand-500 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Expenses
-        </button>
-        <button
-          type="button"
-          onClick={() => setView("insights")}
-          aria-pressed={view === "insights"}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-            view === "insights"
-              ? "bg-brand-500 text-white shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Insights
-        </button>
-      </div>
+      <StatBand>
+        <Stat
+          headline
+          label={`${periodLabel} total`}
+          value={formatBaseCurrency(summary.totalAmount)}
+          sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}`}
+        />
+        <BandCell label="Company · pocket">
+          {summary.companyAmount != null && summary.pocketAmount != null ? (
+            <SplitBar company={summary.companyAmount} pocket={summary.pocketAmount} />
+          ) : (
+            // The list failed to load: nothing to split.
+            <span className="text-sm text-ink-3">
+              <span aria-hidden="true">—</span>
+              <span className="sr-only">Not available</span>
+            </span>
+          )}
+        </BandCell>
+        {filterPayer && summary.payerSpend && (
+          <Stat
+            label={`Paid by ${payerLabel}`}
+            icon={UserIcon}
+            value={formatBaseCurrency(summary.payerSpend.totalSpend)}
+            sub={`${formatBaseCurrency(summary.payerSpend.pocketSpend)} pocket · ${formatBaseCurrency(summary.payerSpend.companySpend)} company`}
+          />
+        )}
+      </StatBand>
 
-      {/* Split pane: expense list (left) + live analytics rail (right) */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        {/* Left: summary bar + expense list */}
+      <div className="flex flex-wrap items-start gap-5">
         <section
-          aria-label="Expenses list"
-          className={`min-w-0 space-y-6 ${view === "list" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
+          aria-label="Expense ledger"
+          className={cn(panelClass, LEDGER_CONTAINER, "min-w-0 grow-[999] basis-[520px] overflow-hidden")}
         >
-          {/* Summary bar — sticky so the total stays visible on long lists */}
-          <div className="sticky top-0 z-20 -mx-1 -my-2 bg-background/95 px-1 py-2 backdrop-blur-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-3 dark:from-emerald-500/10 dark:to-teal-500/10 dark:border-emerald-500/30">
-                <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 text-white">
-                  <TrendingUp className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                    {datePreset === CUSTOM_DATE_PRESET
-                      ? "Custom Range"
-                      : datePreset
-                        ? datePresetOptions.find((o) => o.value === datePreset)?.label
-                        : "All Time"}{" "}
-                    Total
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
-                    {formatBaseCurrency(summary.totalAmount)}
-                  </p>
-                </div>
-                <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                  {summary.totalExpenses} expense{summary.totalExpenses !== 1 ? "s" : ""}
-                </span>
-                {refreshingExpenses && <InlineLoader label="Refreshing..." className="ml-1 text-emerald-700 dark:text-emerald-300" />}
-              </div>
-              {filterPayer && summary.payerSpend && (
-                <div className="rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 dark:border-violet-500/30 dark:bg-violet-500/10">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-300">
-                    Paid by {users.find((u) => u._id === filterPayer)?.name ?? "this person"}
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-violet-900 dark:text-violet-100">
-                    {formatBaseCurrency(summary.payerSpend.totalSpend)}
-                  </p>
-                  <p className="text-xs tabular-nums text-muted-foreground">
-                    {formatBaseCurrency(summary.payerSpend.pocketSpend)} pocket ·{" "}
-                    {formatBaseCurrency(summary.payerSpend.companySpend)} company
-                  </p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={groupTrips}
-                  onClick={toggleGroupTrips}
-                  className="inline-flex items-center gap-2 rounded-xl border border-line-strong bg-surface px-3 py-2.5 text-sm font-semibold text-foreground shadow-sm transition-all duration-200 hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-background"
-                  title={groupTrips ? "Each trip is one expandable row. Switch off for a flat list." : "Show each trip's expenses as one expandable row"}
-                >
-                  <Plane className="h-4 w-4 text-sky-500" aria-hidden="true" />
-                  Group trips
-                  <span
-                    aria-hidden="true"
-                    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${
-                      groupTrips ? "bg-brand-500" : "bg-line-strong"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                        groupTrips ? "translate-x-[18px]" : "translate-x-0.5"
-                      }`}
-                    />
-                  </span>
-                </button>
-                <button
-                  onClick={handleExport}
-                  disabled={exporting || expenses.length === 0}
-                  className="btn-secondary text-sm"
-                  title="Download the currently filtered expenses as CSV"
-                >
-                  {exporting ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
-                  Export CSV
-                </button>
-              </div>
-            </div>
-          </div>
-
           {listItems.length === 0 ? (
             <EmptyState
-              icon={<Receipt className="h-8 w-8" />}
+              icon={<Receipt />}
               title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
-              description={search || hasAnyFilter ? "Try adjusting your filters." : "Create your first expense to get started."}
+              description={isFiltered ? "Try adjusting your filters." : "Create your first expense to get started."}
               action={
-                !search && !hasAnyFilter ? (
-                  <Link href="/dashboard/expenses/new" className="btn-primary">
-                    <Plus className="h-4 w-4" />
-                    Add Expense
-                  </Link>
+                !isFiltered ? (
+                  <Button icon={Plus} href="/dashboard/expenses/new">
+                    Add expense
+                  </Button>
                 ) : undefined
               }
             />
           ) : (
-            <div className="space-y-2.5">
-              {listItems.map((item) =>
-                item.kind === "trip" ? (
-                  <TripCluster
-                    key={item.key}
-                    trip={item.trip}
-                    expenses={item.expenses}
-                    expanded={expandedId === item.key}
-                    onToggle={() => toggleExpand(item.key)}
-                    onDelete={handleDelete}
-                    initialExpandedId={expandedId === item.key ? clusterExpenseId : null}
-                    filtered={isFiltered}
-                  />
-                ) : (
-                  <ExpenseCard
-                    key={item.key}
-                    expense={item.expense}
-                    expanded={expandedId === item.key}
-                    onToggle={() => toggleExpand(item.key)}
-                    onDelete={handleDelete}
-                    showTripBadge={!groupTrips}
-                  />
-                )
-              )}
-
-              {/* Pagination */}
-              <div className="flex flex-col items-center gap-3 pt-3">
-                <p className="text-xs text-muted-foreground">
-                  {groupTrips
-                    ? `Showing ${listItems.length} of ${totalCount} item${totalCount !== 1 ? "s" : ""} · each trip counts as one`
-                    : `Showing ${listItems.length} of ${totalCount} expense${totalCount !== 1 ? "s" : ""}`}
-                </p>
-                {listItems.length < totalCount && (
-                  <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm">
-                    {loadingMore ? (
-                      <>
-                        <Spinner size="sm" /> Loading...
-                      </>
+            <>
+              <LedgerHead />
+              <ul>
+                {listItems.map((item) => (
+                  <li key={item.key}>
+                    {item.kind === "trip" ? (
+                      <TripCluster
+                        trip={item.trip}
+                        expenses={item.expenses}
+                        expanded={openTripKey === item.key}
+                        onToggle={() => toggleTrip(item.key)}
+                        selectedId={selectedId}
+                        onSelect={toggleSelected}
+                        inlineDetail={!sidePanel}
+                        detailId={DETAIL_PANEL_ID}
+                        onDelete={handleDelete}
+                        filtered={isFiltered}
+                      />
                     ) : (
-                      <>
-                        <ChevronDown className="h-4 w-4" />
-                        Load more
-                      </>
+                      <ExpenseRow
+                        expense={item.expense}
+                        selected={selectedId === item.expense._id}
+                        onSelect={() => toggleSelected(item.expense)}
+                        inlineDetail={!sidePanel}
+                        detailId={DETAIL_PANEL_ID}
+                        editHref={expenseEditHref(item.expense._id)}
+                        onDelete={handleDelete}
+                        showTripLink={!groupTrips}
+                      />
                     )}
-                  </button>
+                  </li>
+                ))}
+              </ul>
+              <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", panelPadX)}>
+                <span>
+                  {`Showing ${loadedItemCount} of ${totalCount} ${groupTrips ? "item" : "expense"}${totalCount !== 1 ? "s" : ""}${groupTrips ? " · each trip counts as one" : ""}`}
+                </span>
+                {hasMore && (
+                  <Button variant="secondary" icon={ChevronDown} loading={loadingMore} onClick={loadMore}>
+                    {loadingMore ? "Loading..." : "Load more"}
+                  </Button>
                 )}
               </div>
-            </div>
+            </>
           )}
         </section>
 
-        {/* Right: live analytics rail driven by the same filters as the list */}
-        <aside
-          aria-label="Expense analytics"
-          className={`min-w-0 ${view === "insights" ? "" : "hidden"} xl:block xl:min-h-0 xl:overflow-y-auto xl:pr-2`}
-        >
-          <ExpenseAnalytics filterQuery={filterQuery} refreshKey={analyticsRefreshKey} />
-        </aside>
+        {sidePanel && (
+          <aside
+            id={DETAIL_PANEL_ID}
+            aria-label="Selected expense"
+            className={cn(
+              panelClass,
+              // <main> scrolls below the 4rem top bar, so the panel fits in
+              // 100dvh minus the bar and a 1rem gap above and below.
+              "sticky top-4 flex max-h-[calc(100dvh-6rem)] min-w-0 grow basis-[340px] flex-col overflow-y-auto"
+            )}
+          >
+            {selectedExpense ? (
+              <ExpenseDetail
+                key={selectedExpense._id}
+                expense={selectedExpense}
+                editHref={expenseEditHref(selectedExpense._id)}
+                onDelete={handleDelete}
+                onClose={() => setSelectedId(null)}
+                showHeader
+                className="bg-wash-r p-5"
+              />
+            ) : (
+              <EmptyState
+                icon={<MousePointerClick />}
+                title="No expense selected"
+                description="Pick a row to see its receipt, who paid and what you can do with it."
+              />
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );
