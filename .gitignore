@@ -41,3 +41,7 @@ next-env.d.ts
 
 .gemini/
 gha-creds-*.json
+
+# Claude Code: personal settings and local worktrees
+.claude/settings.local.json
+.claude/worktrees/
