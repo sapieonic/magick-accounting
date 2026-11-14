@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/sapieonic/magick-accounting/compare/v1.13.1...v1.14.0) (2026-11-14)
+
+
+### Features
+
+* Ledger redesign of the whole app ([#31](https://github.com/sapieonic/magick-accounting/issues/31)) ([515e138](https://github.com/sapieonic/magick-accounting/commit/515e138502084e140a1b9dd46376b7d3da7386d7))
+
 ## [1.13.1](https://github.com/sapieonic/magick-accounting/compare/v1.13.0...v1.13.1) (2026-11-03)
 
 
