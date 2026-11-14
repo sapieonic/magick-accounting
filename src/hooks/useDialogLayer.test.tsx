@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -52,27 +52,6 @@ describe("useDialogLayer", () => {
       screen.getByRole("button", { name: "Last visible" }).focus();
       await user.tab();
       expect(screen.getByRole("button", { name: "First" })).toHaveFocus();
-    });
-
-    it("leaves Tab alone while its container isn't rendered (a drawer hidden at lg)", () => {
-      withLayout((el) => el.closest("[data-hidden]") !== null);
-      render(
-        <>
-          <button>Page</button>
-          <div data-hidden="">
-            <Layer open label="Drawer">
-              <button>In drawer</button>
-            </Layer>
-          </div>
-        </>
-      );
-      // Focus is out on the page (the trap would pull it back in).
-      const page = screen.getByRole("button", { name: "Page" });
-      page.focus();
-      const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
-      page.dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(false);
-      expect(page).toHaveFocus();
     });
 
     it("still keeps focus in a rendered container with nothing focusable", () => {
@@ -160,83 +139,32 @@ describe("useDialogLayer", () => {
     });
   });
 
-  describe("scroll lock", () => {
-    it("locks the #main scroller while any layer is open, ref-counted", () => {
-      function Harness({ a, b }: { a: boolean; b: boolean }) {
-        return (
-          <MainShell>
-            <Layer open={a} label="A" />
-            <Layer open={b} label="B" />
-          </MainShell>
-        );
-      }
-      const { rerender } = render(<Harness a={false} b={false} />);
-      const main = document.getElementById("main")!;
-      expect(main.style.overflow).toBe("auto");
-
-      rerender(<Harness a b={false} />);
-      expect(main.style.overflow).toBe("hidden");
-      rerender(<Harness a b />);
-      // The first one closing must not unlock while the second is open.
-      rerender(<Harness a={false} b />);
-      expect(main.style.overflow).toBe("hidden");
-      rerender(<Harness a={false} b={false} />);
-      expect(main.style.overflow).toBe("auto");
-      expect(document.body.style.overflow).toBe("");
-    });
-
-    it("unlocks when an open layer unmounts", () => {
-      const { unmount } = render(
-        <MainShell>
-          <Layer open label="A" />
-        </MainShell>
-      );
-      const main = document.getElementById("main")!;
-      expect(main.style.overflow).toBe("hidden");
-      unmount();
-      expect(main.style.overflow).toBe("auto");
-    });
-  });
-
-  describe("popup layers", () => {
-    function Popup({ onClose }: { onClose: () => void }) {
-      const trigger = useRef<HTMLButtonElement>(null);
-      const menu = useRef<HTMLDivElement>(null);
-      const [open, setOpen] = useState(false);
-      useDialogLayer(open, menu, () => { setOpen(false); onClose(); }, { popup: true, returnFocus: trigger });
-      return (
-        <>
-          <button ref={trigger} onClick={() => setOpen(true)}>Menu</button>
-          {open && (
-            <div ref={menu}>
-              <button tabIndex={-1}>Item</button>
-            </div>
-          )}
-        </>
-      );
-    }
-
-    it("doesn't take focus on open, and Escape closes only the popup", async () => {
-      const user = userEvent.setup();
-      const closeDialog = vi.fn();
-      const closePopup = vi.fn();
+  describe("Escape", () => {
+    it("closes only the topmost layer", () => {
+      const closeOuter = vi.fn();
+      const closeInner = vi.fn();
       render(
-        <MainShell>
-          <Layer open onClose={closeDialog} label="Dialog">
-            <Popup onClose={closePopup} />
-          </Layer>
-        </MainShell>
+        <Layer open onClose={closeOuter} label="Outer">
+          <Layer open onClose={closeInner} label="Inner" />
+        </Layer>
       );
-      const trigger = screen.getByRole("button", { name: "Menu" });
-      await user.click(trigger);
-      expect(trigger).toHaveFocus();
-      expect(screen.getByRole("button", { name: "Item" })).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(closeInner).toHaveBeenCalledTimes(1);
+      expect(closeOuter).not.toHaveBeenCalled();
+    });
 
-      fireEvent.keyDown(document, { key: "Escape" });
-      expect(closePopup).toHaveBeenCalledTimes(1);
-      expect(closeDialog).not.toHaveBeenCalled();
-      fireEvent.keyDown(document, { key: "Escape" });
-      expect(closeDialog).toHaveBeenCalledTimes(1);
+    it("leaves an Escape that a control inside already handled", () => {
+      const onClose = vi.fn();
+      render(
+        <Layer open onClose={onClose} label="Dialog">
+          <button onKeyDown={(e) => e.key === "Escape" && e.preventDefault()}>Menu</button>
+        </Layer>
+      );
+      const menu = screen.getByRole("button", { name: "Menu" });
+      fireEvent.keyDown(menu, { key: "Escape" });
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 });

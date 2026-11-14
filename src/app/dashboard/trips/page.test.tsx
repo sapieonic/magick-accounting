@@ -173,7 +173,7 @@ describe("TripsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Plan your first trip/ }));
     expect(screen.getByRole("dialog", { name: "New trip" })).toBeInTheDocument();
     // Let the people lookup settle before the test ends.
-    await waitFor(() => expect(screen.getByRole("button", { name: "Travelers" })).toHaveTextContent("Manas"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Travelers" })).toHaveTextContent("Manas"));
     await waitFor(() => expect(screen.getByLabelText("Department")).toHaveDisplayValue("No department"));
     await act(async () => {});
   });

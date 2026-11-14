@@ -25,12 +25,13 @@ describe("CommandPalette", () => {
     isAdmin = false;
   });
 
-  it("is hidden until Cmd+K is pressed", () => {
+  it("is hidden until Cmd+K is pressed, and aria-modal only while open (the scroll lock keys off it)", () => {
     render(<CommandPalette />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
 
     openPalette();
-    expect(screen.getByRole("dialog", { name: /command palette/i })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /command palette/i })).toHaveAttribute("aria-modal", "true");
   });
 
   it("opens via the custom open event", () => {

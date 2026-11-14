@@ -56,33 +56,3 @@ export function expenseEditHref(expenseId: string, returnTo?: string): string {
 export function baseAmount(expense: Pick<ExpenseListItem, "amount" | "amountInBaseCurrency">): number {
   return expense.amountInBaseCurrency ?? expense.amount ?? 0;
 }
-
-/** A payment entry as the list returns it: `paidBy` populated (or a bare id), with its base amount. */
-interface ListedPayment {
-  paidBy?: { _id?: string } | string | null;
-  amountInBaseCurrency?: number;
-  source: string;
-}
-
-/**
- * The part of an expense credited to `payerId` in base currency, by the
- * server's rule (`payerShareStages`): a "several people" expense credits
- * each payer's own entries, anything else counts wholly to its submitter.
- */
-export function payerShare(expense: ExpenseListItem, payerId: string): { pocket: number; company: number } {
-  const payments = (expense.paymentSource === "multiple" ? expense.payments ?? [] : []) as ListedPayment[];
-  if (payments.length > 0) {
-    const share = { pocket: 0, company: 0 };
-    for (const entry of payments) {
-      const paidBy = typeof entry.paidBy === "string" ? entry.paidBy : entry.paidBy?._id;
-      if (paidBy !== payerId) continue;
-      const base = entry.amountInBaseCurrency ?? 0;
-      if (entry.source === "pocket") share.pocket += base;
-      else if (entry.source === "company") share.company += base;
-    }
-    return share;
-  }
-  if (expense.createdBy?._id !== payerId) return { pocket: 0, company: 0 };
-  const { pocketBase, companyBase } = getPaymentBreakdown(expense);
-  return { pocket: pocketBase, company: companyBase };
-}

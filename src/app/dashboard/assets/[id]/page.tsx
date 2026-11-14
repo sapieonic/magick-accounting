@@ -19,7 +19,7 @@ import Spinner from "@/components/ui/Spinner";
 import StatBand, { Stat } from "@/components/ui/StatBand";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/components/ui/cn";
-import { inlineLinkClass, linkClass, ICON_STROKE } from "@/components/ui/styles";
+import { inlineLinkClass, textButtonClass, ICON_STROKE } from "@/components/ui/styles";
 import AssetStatusBadge, { ASSET_STATUSES, TERMINAL_STATUSES } from "@/components/assets/AssetStatusBadge";
 import { AssetEventList, AssignmentList, type AssetAssignment, type AssetEvent } from "@/components/assets/AssetHistory";
 import DetailList from "@/components/ui/DetailList";
@@ -336,7 +336,7 @@ export default function AssetDetailPage() {
                     type="button"
                     onClick={() => openReceipt(asset._id, purchase.receiptKey)}
                     disabled={opening !== null}
-                    className={cn(linkClass, "inline-flex min-h-[40px] max-w-full items-center gap-1.5 text-left")}
+                    className={cn(textButtonClass, "max-w-full text-left")}
                   >
                     {opening ? <Spinner size="sm" /> : <Download aria-hidden="true" size={15} strokeWidth={ICON_STROKE} />}
                     <span className="ell">{purchase.receiptFilename || "Open receipt"}</span>

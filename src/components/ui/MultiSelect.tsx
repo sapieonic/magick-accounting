@@ -6,7 +6,6 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 import Checkbox from "@/components/ui/Checkbox";
 import { inputClass, linkClass, transition } from "@/components/ui/styles";
-import { useDialogLayer } from "@/hooks/useDialogLayer";
 
 interface Option {
   value: string;
@@ -36,10 +35,17 @@ const MIN_MENU_WIDTH = 256;
 /** Side gutter the popover keeps from the viewport edges. */
 const SIDE_GUTTER = 16;
 
-/** The menu's focusable rows (Clear selection, then the options), in order. */
-const menuItems = (menu: HTMLElement | null) =>
-  menu ? Array.from(menu.querySelectorAll<HTMLButtonElement>("button")) : [];
+/** `active` value for the "Clear selection" row, which sits above the options. */
+const CLEAR = -1;
 
+/** The keyboard's row: the same 2px accent ring a focused control gets. */
+const activeRowClass = "bg-hover shadow-[inset_0_0_0_2px_rgb(var(--accent))]";
+
+/**
+ * A select-only combobox: focus stays on the trigger, which points at the
+ * keyboard's row with aria-activedescendant. Arrows / Home / End move (opening
+ * the menu first), Enter / Space toggle, Escape and leaving the trigger close.
+ */
 export default function MultiSelect({
   options,
   selected,
@@ -53,6 +59,8 @@ export default function MultiSelect({
   "aria-describedby": describedBy,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  // The keyboard's row: an option index, CLEAR, or null (opened by mouse, no key yet).
+  const [active, setActive] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState<{
     top: number;
     left: number;
@@ -61,18 +69,12 @@ export default function MultiSelect({
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  // Set when the keyboard opened the menu: the first (or last) row takes focus once it renders.
-  const pendingFocus = useRef<"first" | "last" | null>(null);
   const listboxId = useId();
   const empty = options.length === 0;
-  const close = useCallback(() => setOpen(false), []);
-
-  // A popup layer: Escape closes only the topmost layer (this menu, or a palette
-  // opened over it); Tab closes it and moves on from the trigger, inside an
-  // enclosing Modal's trap; focus returns to the trigger when it was in the menu.
-  useDialogLayer(open, menuRef, close, { popup: true, returnFocus: triggerRef });
-
+  const hasClear = selected.length > 0;
+  const lastRow = options.length - 1;
+  // Options or the selection can change under the menu: a row that is gone isn't active.
+  const activeRow = active === CLEAR ? (hasClear ? CLEAR : null) : active !== null && active <= lastRow ? active : null;
   const updateMenuPosition = useCallback(() => {
     if (!containerRef.current || typeof window === "undefined") return;
 
@@ -106,78 +108,73 @@ export default function MultiSelect({
 
   useEffect(() => {
     if (!open) return;
-
-    const handlePointerDown = (e: globalThis.MouseEvent) => {
-      const target = e.target as Node;
-      const inTrigger = containerRef.current?.contains(target);
-      const inMenu = menuRef.current?.contains(target);
-      if (!inTrigger && !inMenu) {
-        setOpen(false);
-      }
-    };
-
     updateMenuPosition();
-    document.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("resize", updateMenuPosition);
     window.addEventListener("scroll", updateMenuPosition, true);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
   }, [open, updateMenuPosition]);
-
-  // Keyboard-opened: focus a row once the menu has rendered.
-  useEffect(() => {
-    if (!open || !pendingFocus.current || !menuRef.current) return;
-    const rows = Array.from(menuRef.current.querySelectorAll<HTMLElement>("[role='option']"));
-    (pendingFocus.current === "last" ? rows[rows.length - 1] : rows[0])?.focus();
-    pendingFocus.current = null;
-  });
 
   // Options can disappear while open (lookups reload).
   useEffect(() => {
     if (empty) setOpen(false);
   }, [empty]);
 
-  const openWithFocus = (row: "first" | "last") => {
-    pendingFocus.current = row;
-    if (open) {
-      // Already open (by mouse): just move into it.
-      const rows = Array.from(menuRef.current?.querySelectorAll<HTMLElement>("[role='option']") ?? []);
-      (row === "last" ? rows[rows.length - 1] : rows[0])?.focus();
-      pendingFocus.current = null;
-    } else {
-      setOpen(true);
-    }
+  const openAt = (row: number | null) => {
+    setActive(row);
+    setOpen(true);
   };
 
   const handleTriggerClick = (e: MouseEvent<HTMLButtonElement>) => {
-    // Enter / Space (a click with no pointer, detail 0) opens into the first option.
-    if (!open && e.detail === 0) openWithFocus("first");
-    else setOpen((v) => !v);
+    // Safari doesn't focus a clicked button; the keys and close-on-blur need it.
+    triggerRef.current?.focus();
+    if (open) setOpen(false);
+    // A click with no pointer (assistive tech) starts on the first option.
+    else openAt(e.detail === 0 ? 0 : null);
   };
 
   const handleTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      openWithFocus(e.key === "ArrowDown" ? "first" : "last");
+    const firstRow = hasClear ? CLEAR : 0;
+    // Closed, or opened by mouse: arrows start from the ends.
+    const fromEnd = !open || activeRow === null;
+    let next: number;
+    switch (e.key) {
+      case "ArrowDown":
+        next = fromEnd ? 0 : Math.min(activeRow + 1, lastRow);
+        break;
+      case "ArrowUp":
+        next = fromEnd ? lastRow : Math.max(activeRow - 1, firstRow);
+        break;
+      case "Home":
+        next = open ? firstRow : 0;
+        break;
+      case "End":
+        next = lastRow;
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (!open) openAt(0);
+        else if (activeRow === CLEAR) {
+          onChange([]);
+          setActive(0);
+        } else if (activeRow !== null) toggle(options[activeRow].value);
+        else setOpen(false);
+        return;
+      case "Escape":
+        // Handled here, so an enclosing dialog's Escape listener leaves it (useDialogLayer).
+        if (open) {
+          e.preventDefault();
+          setOpen(false);
+        }
+        return;
+      default:
+        return;
     }
-  };
-
-  // Arrow keys move between the rows; Enter / Space toggle (native button click).
-  const handleMenuKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const rows = menuItems(menuRef.current);
-    if (rows.length === 0) return;
-    const index = rows.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number | null = null;
-    if (e.key === "ArrowDown") next = index < 0 ? 0 : Math.min(index + 1, rows.length - 1);
-    else if (e.key === "ArrowUp") next = index < 0 ? rows.length - 1 : Math.max(index - 1, 0);
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = rows.length - 1;
-    if (next === null) return;
     e.preventDefault();
-    rows[next].focus();
+    openAt(next);
   };
 
   const toggle = (value: string) => {
@@ -201,11 +198,19 @@ export default function MultiSelect({
           ? selectedLabels[0]
           : `${selectedLabels.length} selected`;
 
+  const menuShown = open && !!menuPosition;
+  const activeId =
+    !menuShown || activeRow === null ? undefined : activeRow === CLEAR ? `${listboxId}-clear` : `${listboxId}-${activeRow}`;
+
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: "nearest" });
+  }, [activeId]);
+
   const menu =
-    open && menuPosition && typeof document !== "undefined" ? (
+    menuShown && typeof document !== "undefined" ? (
+      // Rows never take focus: mousedown is kept from blurring the trigger (which closes the menu).
       <div
-        ref={menuRef}
-        onKeyDown={handleMenuKeyDown}
+        onMouseDown={(e) => e.preventDefault()}
         className="animate-slide-up fixed z-50 overflow-y-auto rounded-panel border border-rule bg-surface p-1 shadow-elevated"
         style={{
           top: menuPosition.top,
@@ -214,28 +219,39 @@ export default function MultiSelect({
           maxHeight: menuPosition.maxHeight,
         }}
       >
-        {selected.length > 0 && (
+        {hasClear && (
           <button
             type="button"
+            id={`${listboxId}-clear`}
             tabIndex={-1}
-            onClick={() => onChange([])}
-            className={cn(linkClass, "mb-1 min-h-9 w-full rounded-control px-3 text-left text-xs hover:bg-hover")}
+            onClick={() => {
+              onChange([]);
+              setActive(null);
+            }}
+            className={cn(
+              linkClass,
+              "mb-1 min-h-9 w-full rounded-control px-3 text-left text-xs hover:bg-hover",
+              activeRow === CLEAR && activeRowClass
+            )}
           >
             Clear selection
           </button>
         )}
         <div id={listboxId} role="listbox" aria-multiselectable="true" aria-label={listLabel ?? ariaLabel ?? placeholder}>
-          {options.map((opt) => {
+          {options.map((opt, i) => {
             const isSelected = selected.includes(opt.value);
             return (
-              <button
+              <div
                 key={opt.value}
-                type="button"
-                tabIndex={-1}
-                onClick={() => toggle(opt.value)}
+                id={`${listboxId}-${i}`}
+                onClick={() => {
+                  toggle(opt.value);
+                  setActive(i);
+                }}
                 className={cn(
-                  "flex min-h-10 w-full cursor-pointer items-start gap-2.5 rounded-control px-3 py-2.5 text-left text-sm hover:bg-hover",
-                  transition
+                  "flex min-h-10 cursor-pointer items-start gap-2.5 rounded-control px-3 py-2.5 text-sm hover:bg-hover",
+                  transition,
+                  activeRow === i && activeRowClass
                 )}
                 role="option"
                 aria-selected={isSelected}
@@ -243,7 +259,7 @@ export default function MultiSelect({
                 <Checkbox checked={isSelected} className="mt-0.5" />
                 {/* Wraps rather than truncates: "Software & Subscriptions" stays readable. */}
                 <span className="min-w-0 flex-1 break-words text-ink">{opt.label}</span>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -258,7 +274,11 @@ export default function MultiSelect({
         type="button"
         onClick={handleTriggerClick}
         onKeyDown={handleTriggerKeyDown}
+        // Space's native click comes on keyup; keydown has already handled the key.
+        onKeyUp={(e) => e.key === " " && e.preventDefault()}
+        onBlur={() => setOpen(false)}
         id={id}
+        role="combobox"
         disabled={empty}
         className={cn(
           inputClass,
@@ -269,6 +289,7 @@ export default function MultiSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={activeId}
         aria-label={ariaLabel}
       >
         <span className={cn("truncate", selectedLabels.length === 0 ? "text-ink-3" : "text-ink")}>

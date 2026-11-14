@@ -21,7 +21,7 @@ import { useTitle } from "@/hooks/useTitle";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { getPaymentBreakdown } from "@/lib/expense";
+import { getPaymentBreakdown, payerShare } from "@/lib/expense";
 import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
@@ -39,8 +39,8 @@ import { cn } from "@/components/ui/cn";
 import { focusRing, panelClass, panelPadX, transition } from "@/components/ui/styles";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
-import { baseAmount, expenseEditHref, payerShare } from "@/components/expenses/ledger/format";
-import { monthFromKey } from "@/lib/month";
+import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
+import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import TripCluster, { buildExpenseListItems, pageItemKey, tripItemKey } from "@/components/trips/TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
@@ -69,9 +69,6 @@ const UNDO_WINDOW_MS = 5000;
 const SIDE_PANEL_QUERY = "(min-width: 1280px)";
 const DETAIL_PANEL_ID = "expense-detail-panel";
 
-/** A month preset, "YYYY-MM". */
-const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
-
 /**
  * All time, the last 12 months (newest first) and Custom range. `selected`, a
  * month outside those 12 (e.g. a bookmarked `?month=`), is listed in order too.
@@ -80,8 +77,7 @@ function getDatePresetOptions(selected = ""): { value: string; label: string }[]
   const now = new Date();
   const months = new Set<string>();
   for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    months.add(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   }
   if (MONTH_KEY.test(selected)) months.add(selected);
   return [
@@ -103,8 +99,7 @@ function resolveDateRange(
     return { from: customFrom, to: customTo };
   }
   if (preset) {
-    const [year, month] = preset.split("-").map(Number);
-    const monthStart = new Date(year, month - 1, 1);
+    const monthStart = monthFromKey(preset);
     return {
       from: format(monthStart, "yyyy-MM-dd"),
       to: format(endOfMonth(monthStart), "yyyy-MM-dd"),
@@ -113,17 +108,10 @@ function resolveDateRange(
   return { from: "", to: "" };
 }
 
+/** A delete still inside its undo window (it leaves the map once committed). */
 interface PendingDelete {
   expense: Expense;
-  index: number;
   timer: ReturnType<typeof setTimeout>;
-  /** The undo window is over and the DELETE request is on its way. */
-  committing: boolean;
-}
-
-/** Adds two base-currency amounts without float drift (or a "-₹0.00"). */
-function addMoney(a: number, b: number): number {
-  return roundMoney(a + b) || 0;
 }
 
 /** On/off switch for the "Group trips" view. */
@@ -192,7 +180,7 @@ export default function ExpensesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<ExpenseSummary>({ totalAmount: 0, totalExpenses: 0 });
-  /** Items in the whole list, as the server counts them, less optimistic deletes. */
+  /** Items in the whole list, as the server first counted them, less deletes since. */
   const [totalCount, setTotalCount] = useState(0);
   /** The server has items after the loaded ones. */
   const [hasMore, setHasMore] = useState(false);
@@ -204,8 +192,8 @@ export default function ExpensesPage() {
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
   const pendingDeletes = useRef(new Map<string, PendingDelete>());
-  /** Where the next page starts on the server: items loaded, less those deleted since. */
-  const nextOffset = useRef(0);
+  /** The server's cursor for the page after the loaded ones. */
+  const nextCursor = useRef<string | null>(null);
   const expensesRef = useRef<Expense[]>([]);
   expensesRef.current = expenses;
 
@@ -355,9 +343,9 @@ export default function ExpensesPage() {
   }, [filterDepts, filterCats, filterUser, filterPayer, search, datePreset, customFrom, customTo]);
 
   const buildQueryParams = useCallback(
-    (offset: number, limit: number, includeSummary: boolean) => {
+    (cursor: string | null, limit: number, includeSummary: boolean) => {
       const params = buildFilterParams();
-      params.set("offset", String(offset));
+      if (cursor) params.set("cursor", cursor);
       params.set("limit", String(limit));
       if (includeSummary) params.set("includeSummary", "true");
       return params;
@@ -369,7 +357,7 @@ export default function ExpensesPage() {
   // the list (so the server result matches the UI) and on unmount.
   // (Deletes already committing finish on their own.)
   const flushPendingDeletes = useCallback(async () => {
-    const entries = Array.from(pendingDeletes.current.values()).filter((entry) => !entry.committing);
+    const entries = Array.from(pendingDeletes.current.values());
     entries.forEach((entry) => {
       clearTimeout(entry.timer);
       pendingDeletes.current.delete(entry.expense._id);
@@ -398,7 +386,7 @@ export default function ExpensesPage() {
 
       try {
         await flushPendingDeletes();
-        const params = buildQueryParams(0, PAGE_SIZE, true);
+        const params = buildQueryParams(null, PAGE_SIZE, true);
         if (groupTrips) params.set("groupTrips", "true");
         const data = await api.get(`/api/expenses?${params.toString()}`);
         if (!active) return;
@@ -409,7 +397,7 @@ export default function ExpensesPage() {
         setTrips(loadedTrips);
         setTotalCount(data.pagination?.total ?? loaded.length);
         setHasMore(Boolean(data.pagination?.hasMore));
-        nextOffset.current = data.pagination?.nextOffset ?? loaded.length;
+        nextCursor.current = data.pagination?.nextCursor ?? null;
         setSummary(data.summary || { totalAmount: 0, totalExpenses: 0 });
 
         if (pendingExpandId.current) {
@@ -447,36 +435,23 @@ export default function ExpensesPage() {
   // The item an expense counts towards, as the server pages them.
   const itemKey = useCallback((expense: Expense) => pageItemKey(expense, groupTrips), [groupTrips]);
 
-  // Items whose every listed expense is still inside its undo window: gone
-  // from the list, but still counted by the server.
-  const pendingRemovedItems = () => {
-    const listed = new Set(expensesRef.current.map(itemKey));
-    const removed = new Set<string>();
-    for (const entry of pendingDeletes.current.values()) {
-      const key = itemKey(entry.expense);
-      if (!entry.committing && !listed.has(key)) removed.add(key);
-    }
-    return removed.size;
-  };
-
-  // Continues from the server offset rather than the next page number, so
-  // deletes since the last page don't make it skip an item.
+  // Continues after the last item loaded (a cursor, not a position), so
+  // deletes since the last page can't make it skip one.
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const params = buildQueryParams(nextOffset.current, PAGE_SIZE, false);
+      const params = buildQueryParams(nextCursor.current, PAGE_SIZE, false);
       if (groupTrips) params.set("groupTrips", "true");
       const data = await api.get(`/api/expenses?${params.toString()}`);
       if (groupTrips && data.trips) setTrips((prev) => ({ ...prev, ...data.trips }));
+      // A trip whose latest expense was deleted can sort after the cursor
+      // and come again: keep only the expenses not listed yet.
       setExpenses((prev) => {
         const seen = new Set(prev.map((e) => e._id));
         return [...prev, ...data.expenses.filter((e: Expense) => !seen.has(e._id))];
       });
-      if (data.pagination) {
-        nextOffset.current = data.pagination.nextOffset;
-        setHasMore(Boolean(data.pagination.hasMore));
-        setTotalCount(Math.max(0, data.pagination.total - pendingRemovedItems()));
-      }
+      nextCursor.current = data.pagination?.nextCursor ?? null;
+      setHasMore(Boolean(data.pagination?.hasMore));
     } catch {
       toast("Failed to load more expenses", "error");
     } finally {
@@ -487,7 +462,7 @@ export default function ExpensesPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const params = buildQueryParams(0, EXPORT_LIMIT, false);
+      const params = buildQueryParams(null, EXPORT_LIMIT, false);
       const data = await api.get(`/api/expenses?${params.toString()}`);
       const rows = (data.expenses as Expense[]).map(expenseCsvRow);
       const csv = buildCsv(EXPENSE_CSV_HEADERS, rows);
@@ -514,20 +489,20 @@ export default function ExpensesPage() {
     const share = filterPayer ? payerShare(expense, filterPayer) : null;
     setSummary((prev) => ({
       ...prev,
-      totalAmount: addMoney(prev.totalAmount, sign * baseAmount(expense)),
+      totalAmount: roundMoney(prev.totalAmount + sign * baseAmount(expense)),
       totalExpenses: Math.max(0, prev.totalExpenses + sign),
       ...(prev.companyAmount != null && prev.pocketAmount != null
         ? {
-            companyAmount: addMoney(prev.companyAmount, sign * companyBase),
-            pocketAmount: addMoney(prev.pocketAmount, sign * pocketBase),
+            companyAmount: roundMoney(prev.companyAmount + sign * companyBase),
+            pocketAmount: roundMoney(prev.pocketAmount + sign * pocketBase),
           }
         : {}),
       ...(prev.payerSpend && share
         ? {
             payerSpend: {
-              totalSpend: addMoney(prev.payerSpend.totalSpend, sign * (share.pocket + share.company)),
-              pocketSpend: addMoney(prev.payerSpend.pocketSpend, sign * share.pocket),
-              companySpend: addMoney(prev.payerSpend.companySpend, sign * share.company),
+              totalSpend: roundMoney(prev.payerSpend.totalSpend + sign * (share.pocket + share.company)),
+              pocketSpend: roundMoney(prev.payerSpend.pocketSpend + sign * share.pocket),
+              companySpend: roundMoney(prev.payerSpend.companySpend + sign * share.company),
             },
           }
         : {}),
@@ -544,7 +519,8 @@ export default function ExpensesPage() {
     const index = expenses.findIndex((e) => e._id === expense._id);
     if (index === -1) return;
 
-    // Deleting the last expense of a trip cluster removes the whole item.
+    // The item leaves the list (and the count) with its last listed expense:
+    // deleting one expense of a trip cluster keeps the cluster.
     const key = itemKey(expense);
     const itemStaysListed = (list: Expense[]) =>
       list.some((e) => e._id !== expense._id && itemKey(e) === key);
@@ -565,32 +541,19 @@ export default function ExpensesPage() {
       if (itemReappears) setTotalCount((prev) => prev + 1);
     };
 
+    // Leaving the map ends the undo window (and keeps a flush from repeating the request).
     const commit = async () => {
-      const pending = pendingDeletes.current.get(expense._id);
-      if (!pending || pending.committing) return;
-      pending.committing = true;
-      // The server item goes with its last expense; siblings still in their
-      // undo window keep it. Moving the offset first errs towards loading an
-      // item twice (de-duplicated) rather than skipping one.
-      const removesItem =
-        !itemStaysListed(expensesRef.current) &&
-        ![...pendingDeletes.current.values()].some(
-          (entry) => !entry.committing && itemKey(entry.expense) === key
-        );
-      if (removesItem) nextOffset.current = Math.max(0, nextOffset.current - 1);
+      if (!pendingDeletes.current.delete(expense._id)) return;
       try {
         await api.delete(`/api/expenses/${expense._id}`);
       } catch {
-        if (removesItem) nextOffset.current += 1;
         restore();
         toast("Failed to delete expense", "error");
-      } finally {
-        pendingDeletes.current.delete(expense._id);
       }
     };
 
     const timer = setTimeout(() => void commit(), UNDO_WINDOW_MS);
-    pendingDeletes.current.set(expense._id, { expense, index, timer, committing: false });
+    pendingDeletes.current.set(expense._id, { expense, timer });
 
     toast(`Deleted "${expense.title}"`, "info", {
       durationMs: UNDO_WINDOW_MS,
@@ -598,7 +561,7 @@ export default function ExpensesPage() {
         label: "Undo",
         onClick: () => {
           const pending = pendingDeletes.current.get(expense._id);
-          if (!pending || pending.committing) return;
+          if (!pending) return;
           clearTimeout(pending.timer);
           pendingDeletes.current.delete(expense._id);
           restore();
@@ -856,9 +819,7 @@ export default function ExpensesPage() {
               </ul>
               <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", panelPadX)}>
                 <span>
-                  {groupTrips
-                    ? `Showing ${loadedItemCount} of ${totalCount} item${totalCount !== 1 ? "s" : ""} · each trip counts as one`
-                    : `Showing ${loadedItemCount} of ${totalCount} expense${totalCount !== 1 ? "s" : ""}`}
+                  {`Showing ${loadedItemCount} of ${totalCount} ${groupTrips ? "item" : "expense"}${totalCount !== 1 ? "s" : ""}${groupTrips ? " · each trip counts as one" : ""}`}
                 </span>
                 {hasMore && (
                   <Button variant="secondary" icon={ChevronDown} loading={loadingMore} onClick={loadMore}>

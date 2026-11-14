@@ -8,7 +8,7 @@ import { travelTypeLabel } from "@/lib/trip";
 import { IconButton } from "@/components/ui/Button";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
-import { panelPadX, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
+import { ledgerPad, rowClass, rowSelectedClass, target24, transition } from "@/components/ui/styles";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ExpenseDetail, { type ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import PaymentDot from "@/components/expenses/ledger/PaymentDot";
@@ -22,25 +22,6 @@ import type { ExpenseListItem } from "@/types/expense";
  * They're literal so Tailwind generates them.
  */
 export const LEDGER_CONTAINER = "[container-type:inline-size]";
-
-/**
- * Side padding of ledger rows and their heads: `panelPadX`, or inside a trip
- * band the same plus 22px, so the row's glyph sits under the band's icon.
- */
-export function ledgerPad(nested = false): string {
-  return nested ? "pl-[calc(clamp(16px,2vw,24px)+22px)] pr-[clamp(16px,2vw,24px)]" : panelPadX;
-}
-
-/**
- * Hover actions are 40px icon buttons in a pill (2px padding and gaps, 1px
- * border). The amount cell is at least this wide where they can show, so the
- * pill covers the amount (hidden meanwhile) and never the columns before it.
- */
-const ACTIONS_WIDTH: Record<number, string> = {
-  1: "sm:[@media(hover:hover)]:min-w-[46px]",
-  2: "sm:[@media(hover:hover)]:min-w-[88px]",
-  3: "sm:[@media(hover:hover)]:min-w-[130px]",
-};
 
 const LAYOUT = {
   ledger: {
@@ -122,7 +103,6 @@ export default function ExpenseRow({
   const typeLabel = travelTypeLabel(expense.travelType);
   // An untagged trip expense is named by its category instead of "Untagged".
   const kindLabel = expense.travelType ? typeLabel : expense.category?.name || typeLabel;
-  const actionCount = 1 + (onRemoveFromTrip ? 1 : 0) + (onDelete ? 1 : 0);
   const assets = expense.linkedAssetCount || 0;
   const trip = showTripLink ? expense.trip : null;
   const inlineId = detailId ?? `expense-detail-${expense._id}`;
@@ -198,8 +178,8 @@ export default function ExpenseRow({
               href={`/dashboard/trips/${trip._id}`}
               title={`Open trip: ${trip.name}`}
               className={cn(
-                // min-h-6: a 24px target (WCAG 2.5.8) for this small inline link.
-                "relative z-10 inline-flex min-h-6 w-fit max-w-full items-center gap-1 text-xs font-medium text-cat-tr hover:text-ink",
+                target24,
+                "relative z-10 w-fit max-w-full gap-1 text-xs font-medium text-cat-tr hover:text-ink",
                 transition
               )}
             >
@@ -220,11 +200,14 @@ export default function ExpenseRow({
           </span>
         )}
 
-        <span className={cn("relative flex flex-col items-end", ACTIONS_WIDTH[actionCount])}>
+        {/* The amount and the hover actions share one grid cell, so the cell is
+            as wide as the wider of the two: the actions cover the amount
+            (hidden meanwhile) and never the columns before it. */}
+        <span className="grid items-center justify-items-end">
           {/* Hidden while the hover actions cover it. */}
           <span
             className={cn(
-              "flex flex-col items-end",
+              "flex flex-col items-end [grid-area:1/1]",
               "sm:[@media(hover:hover)]:group-hover:invisible sm:[@media(hover:hover)]:group-has-[[data-row-actions]:focus-within]:invisible"
             )}
           >
@@ -235,14 +218,15 @@ export default function ExpenseRow({
           </span>
 
           {/* Quick actions on hover/focus, without opening the row, over the
-              amount. Only where the pointer can hover: on touch the row opens
-              its detail, which has the same actions. While hidden they don't
-              take clicks either. */}
+              amount. Only where the pointer can hover (else display:none, so
+              they don't widen the cell): on touch the row opens its detail,
+              which has the same actions. While hidden they don't take clicks either. */}
           <span
             data-testid="row-actions"
             data-row-actions=""
             className={cn(
-              "absolute right-0 top-1/2 z-10 hidden -translate-y-1/2 items-center gap-0.5 rounded-control border border-rule bg-surface p-0.5 transition-opacity duration-140",
+              // Above the title button's row-wide click target.
+              "relative z-10 hidden items-center gap-0.5 rounded-control border border-rule bg-surface p-0.5 transition-opacity duration-140 [grid-area:1/1]",
               "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
               "sm:[@media(hover:hover)]:flex"
             )}

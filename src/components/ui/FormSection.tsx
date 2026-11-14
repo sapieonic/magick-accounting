@@ -72,14 +72,12 @@ export function SectionRow({ min = 320, children }: { min?: number; children: Re
   );
 }
 
-/** CSS variable on <html> holding the mounted FormFooter's height (toasts sit above it). */
-export const FORM_FOOTER_HEIGHT_VAR = "--form-footer-h";
-
 /**
  * The action strip at the foot of a form sheet. It sticks to the bottom of
  * the scrolling page, just above the mobile tab bar (`--tabbar-h`, 0 from `lg`
  * up). While mounted it publishes its height (it grows when its contents wrap)
- * as `--form-footer-h` on <html>, so fixed layers such as toasts clear it.
+ * as `--form-footer-h` on <html>, so fixed layers such as toasts clear it;
+ * `data-form-footer` tells the dashboard layout to drop its page-end toast room.
  */
 export function FormFooter({ children, className }: { children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -88,13 +86,13 @@ export function FormFooter({ children, className }: { children: ReactNode; class
     const el = ref.current;
     if (!el) return;
     const root = document.documentElement.style;
-    const publish = () => root.setProperty(FORM_FOOTER_HEIGHT_VAR, `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    const publish = () => root.setProperty("--form-footer-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
     publish();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(publish);
     observer?.observe(el);
     return () => {
       observer?.disconnect();
-      root.removeProperty(FORM_FOOTER_HEIGHT_VAR);
+      root.removeProperty("--form-footer-h");
     };
   }, []);
 

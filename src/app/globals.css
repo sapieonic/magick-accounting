@@ -62,6 +62,12 @@
        padding, toasts) build on this. FormFooter publishes its own height as
        --form-footer-h on <html> while it is mounted. */
     --tabbar-h: calc(55px + max(10px, env(safe-area-inset-bottom)));
+    /* Room a toast needs above the page end (a ~54px toast + its 12px offset,
+       with some air): pages without a FormFooter end this far above the tab bar,
+       so a toast never covers their last control (e.g. "Load more"). */
+    --toast-room: 88px;
+    /* Side padding of a panel's head, body and footer (panelPadX in styles.ts). */
+    --panel-pad-x: clamp(16px, 2vw, 24px);
     color-scheme: light;
   }
 
@@ -239,6 +245,19 @@
  */
 .dark .shadow-elevated {
   --tw-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 40px -12px rgb(0 0 0 / 0.8);
+}
+
+/*
+ * While a dialog, the nav drawer or the palette is open (anything aria-modal),
+ * the page scroller behind it stays put. #main always reserves its scrollbar
+ * gutter, so the content doesn't widen when the lock hides the scrollbar.
+ */
+#main {
+  scrollbar-gutter: stable;
+}
+
+body:has([aria-modal="true"]) #main {
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {

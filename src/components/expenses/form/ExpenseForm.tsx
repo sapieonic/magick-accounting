@@ -65,7 +65,6 @@ function AmountControl({ currencySelect, ...input }: InputHTMLAttributes<HTMLInp
   );
 }
 
-
 export interface ExpenseFormProps {
   /** Page heading, e.g. "New expense". */
   heading: string;

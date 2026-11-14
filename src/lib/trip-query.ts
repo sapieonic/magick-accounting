@@ -2,7 +2,13 @@ import mongoose, { type PipelineStage } from "mongoose";
 import type { AuthUser } from "@/lib/auth";
 import { roundMoney } from "@/lib/asset";
 import { baseTotalExpr, companyBaseExpr, pocketBaseExpr, spendByPayerPipeline } from "@/lib/expense";
-import { buildExpenseFilter, escapeRegExp, groupedExpensePagePipeline } from "@/lib/expense-query";
+import {
+  buildExpenseFilter,
+  escapeRegExp,
+  expensePagination,
+  groupedExpensePagePipeline,
+  type ExpensePageParams,
+} from "@/lib/expense-query";
 import { getTripStatus, OBJECT_ID_PATTERN, totalsByTravelType, type TravelType } from "@/lib/trip";
 import { canManageTrip, canViewTrip, idOf, isAdminUser, TRIP_TRAVELER_FIELDS } from "@/lib/trip-server";
 import Expense from "@/models/Expense";
@@ -296,25 +302,29 @@ export async function getTripDetailSummary(
 interface GroupedItem {
   _id: unknown;
   ids: unknown[];
+  date: Date;
+  createdAt: Date | null;
 }
 
 /**
- * One page of the expense list where each trip is one item, skipping `skip`
- * items. Returns the page's expenses flat, in item order (a trip's own
- * expenses oldest first), the trips that appear on the page, the number of
- * items on the page and the total number of items.
+ * One page of the expense list where each trip is one item, continuing after
+ * `cursor`. Returns the page's expenses flat, in item order (a trip's own
+ * expenses oldest first), the trips that appear on the page, and the
+ * `pagination` block (`expensePagination`), counted in items.
  */
 export async function getGroupedExpensePage(
   filter: Record<string, unknown>,
-  skip: number,
-  limit: number,
+  { cursor, limit }: ExpensePageParams,
   user: AuthUser
 ) {
   const [result] = await Expense.aggregate(
-    groupedExpensePagePipeline(filter, skip, limit) as PipelineStage[]
+    groupedExpensePagePipeline(filter, cursor, limit) as PipelineStage[]
   );
-  const items: GroupedItem[] = result?.items ?? [];
-  const total: number = result?.total?.[0]?.count ?? 0;
+  const { page: items, pagination } = expensePagination<GroupedItem>(
+    result?.items ?? [],
+    limit,
+    result?.total?.[0]?.count ?? 0
+  );
 
   const allIds = items.flatMap((item) => item.ids);
   const isTripItem = (item: GroupedItem) =>
@@ -366,7 +376,7 @@ export async function getGroupedExpensePage(
     );
   }
 
-  return { expenses: await withLinkedAssetCounts(ordered), trips: tripMap, count: items.length, total };
+  return { expenses: await withLinkedAssetCounts(ordered), trips: tripMap, pagination };
 }
 
 // ---------------------------------------------------------------------------

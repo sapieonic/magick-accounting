@@ -10,7 +10,6 @@ import Avatar from "@/components/ui/Avatar";
 import { ADMIN_ITEMS, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
 import { useDialogLayer } from "@/hooks/useDialogLayer";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
 import pkg from "../../../package.json";
 
 interface SidebarProps {
@@ -187,15 +186,25 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const lastPathname = useRef(pathname);
 
-  // Focus into the drawer, trap Tab, lock the page scroll, Escape closes it, focus back to "More".
+  // Focus into the drawer, trap Tab, Escape closes it, focus back to "More". (aria-modal locks the page scroll.)
   useDialogLayer(open, drawerRef, onClose);
 
   // The drawer is lg:hidden: left open across the breakpoint it would keep
-  // trapping keys while invisible, so close it once the rail takes over.
-  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  // trapping keys while invisible, so close it once the rail takes over
+  // (watched only while it is open).
   useEffect(() => {
-    if (open && isDesktop) onClose();
-  }, [open, isDesktop, onClose]);
+    if (!open || typeof window.matchMedia !== "function") return;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    if (desktop.matches) {
+      onClose();
+      return;
+    }
+    const closeAtDesktop = () => {
+      if (desktop.matches) onClose();
+    };
+    desktop.addEventListener("change", closeAtDesktop);
+    return () => desktop.removeEventListener("change", closeAtDesktop);
+  }, [open, onClose]);
 
   // Close the drawer whenever the route changes, however it changed (link, ⌘K, back).
   useEffect(() => {

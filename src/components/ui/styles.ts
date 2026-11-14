@@ -12,6 +12,13 @@ export const transition = "transition-[background-color,border-color,color,box-s
 export const focusRing =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
+/** `focusRing` for a visual box placed right after an `sr-only` `peer` input that takes the focus. */
+export const peerFocusRing =
+  "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent";
+
+/** A 24px minimum target (WCAG 2.5.8) for a small inline control. */
+export const target24 = "inline-flex min-h-6 items-center";
+
 /**
  * Form controls get the `control-line` border (>= 3:1, WCAG 1.4.11); hover raises contrast.
  * Focus is an opaque 2px accent ring outside the border, independent of the border colour, so it
@@ -66,13 +73,24 @@ export const linkClass = cn(
 export const textButtonClass = cn(linkClass, "inline-flex min-h-10 items-center gap-1.5 rounded-control text-[13px]");
 
 /** Small inline link with a 24px minimum target (WCAG 2.5.8). */
-export const inlineLinkClass = cn(linkClass, "inline-flex min-h-6 items-center");
+export const inlineLinkClass = cn(linkClass, target24);
 
-/** Side padding of a panel's head, body and footer; reuse it for edge-to-edge rows inside a flush panel. */
-export const panelPadX = "px-[clamp(16px,2vw,24px)]";
+/**
+ * Side padding of a panel's head, body and footer (`--panel-pad-x`); reuse it
+ * for edge-to-edge rows inside a flush panel.
+ */
+export const panelPadX = "px-[var(--panel-pad-x)]";
 
 /** Left side only of `panelPadX`, for rows whose trailing icon buttons sit closer to the edge. */
-export const panelPadL = "pl-[clamp(16px,2vw,24px)]";
+export const panelPadL = "pl-[var(--panel-pad-x)]";
+
+/**
+ * Side padding of ledger rows and their heads: `panelPadX`, or inside a trip
+ * cluster (`nested`) 22px more on the left, so the rows indent under the trip.
+ */
+export function ledgerPad(nested = false): string {
+  return nested ? "pl-[calc(var(--panel-pad-x)+22px)] pr-[var(--panel-pad-x)]" : panelPadX;
+}
 
 /** Ruled surface: 1px rule, 8px radius, no shadow. */
 export const panelClass = "rounded-panel border border-rule bg-surface";

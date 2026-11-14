@@ -36,6 +36,8 @@ Utilities: `.num` (Geist Mono, tabular, -0.02em: every amount, count, date in a 
 Page padding is `var(--pad)` = `clamp(16px, 2.6vw, 40px)`; the layout already applies it on a wrapper inside `<main>` (not on the scroller itself, so `sticky` offsets mean what they say).
 `var(--tabbar-h)` is the height of the fixed mobile tab bar (safe area included; `0px` from `lg`): build bottom
 offsets on it (the page's bottom padding, `FormFooter`, toasts) rather than repeating the number.
+`var(--toast-room)` (88px) is the extra space a page without a `FormFooter` keeps at its end so a toast never covers
+its last control; `var(--panel-pad-x)` is a panel's side padding (behind `panelPadX`, `panelPadL`, `ledgerPad`).
 
 Focus: every `:focus-visible` gets a 2px solid accent outline, offset 2px (global rule; `focusRing` from `styles`
 restates it for custom controls). Form controls (`inputClass`, `selectClass`, `textareaClass`) drop the outline
@@ -99,9 +101,12 @@ Style helpers (from `Field` or `styles`): `inputClass`, `selectClass`, `textarea
 `compactSelectClass` (a narrow select beside another control, e.g. the currency before an amount: tighter
 padding, no `w-full`, so set its width yourself), `aiFilledClass` (a tint only: the border stays `control-line`
 and the Field's `aside` says where the value came from).
-`MultiSelect` (`options`, `selected`, `onChange`, `placeholder`, `icon?`, `loading?`, `id?`): the trigger is named
-by its `Field` label (or `ariaLabel` when there is none); `listLabel?` names the popup listbox, e.g.
-"Departments" (falls back to `ariaLabel`, then `placeholder`). Its options show a `Checkbox`.
+`MultiSelect` (`options`, `selected`, `onChange`, `placeholder`, `icon?`, `loading?`, `id?`): a select-only
+combobox. Focus stays on the trigger (`role="combobox"`, `aria-activedescendant`), so it must be named by its
+`Field` label (or `ariaLabel` when there is none), not its text; `listLabel?` names the popup listbox, e.g.
+"Departments" (falls back to `ariaLabel`, then `placeholder`). Arrow keys/Home/End move, Enter/Space toggle,
+Escape closes, Tab leaves (the menu closes on blur); "Clear selection" sits above the first option. Its options
+show a `Checkbox`.
 `SearchInput` (`value`, `onValueChange`, input props, `className` for the wrapper): magnifier inside, Clear button once there is text; wrap it in a `Field` or give it an `aria-label`.
 
 ```tsx
@@ -162,10 +167,10 @@ truncates; the share and amount never do.
 `ConfirmDialog` (from `@/components/ui/ConfirmDialog`): destructive confirmation; can't be dismissed while `busy`.
 `Modal` (and the palette and the phone nav drawer) move focus in, trap Tab, close on Escape only when they are
 the topmost layer, and return focus to the opener (`useDialogLayer` in `@/hooks/useDialogLayer`; reuse it for
-any new overlay). Keys go only to the topmost layer; an open layer locks `#main`'s scrolling (ref-counted);
-if the opener is gone on close, focus falls back to the layer below, then `#main`. A popup such as MultiSelect's
-menu opens with `{ popup: true, returnFocus }`: no focus trap or scroll lock, Tab closes it and continues from
-its trigger. The phone drawer closes itself once the viewport reaches `lg`. `DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
+any new overlay). Keys go only to the topmost layer; a control that handles Escape itself calls
+`preventDefault()` and the layer then ignores it. While anything `aria-modal="true"` is mounted, `globals.css`
+locks `#main`'s scrolling (`#main` always reserves its scrollbar gutter, so nothing shifts). If the opener is
+gone or hidden on close, focus falls back to the layer below, then `#main`. The phone drawer closes itself once the viewport reaches `lg`. `DialogActions`: Cancel + confirm in the sticky `ModalFooter`; submits its form unless `onConfirm` is given;
 `variant?`, `icon?`, `disabled?`, `busyLabel?`, children (e.g. a selection summary) go before the buttons.
 Every dialog with actions ends with one of these (or `ModalFooter` from `Modal` for anything else).
 
@@ -173,9 +178,10 @@ Helpers in `@/components/ui/styles`: `buttonClass()`, `iconButtonClass()`, `rowC
 tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass` (accent text; dims when `disabled`),
 `textButtonClass` (a link-styled `<button>`, or a link that acts like one: 40px tall, 13px, icon gap; a ghost
 `Button`'s ink text can't be recoloured), `inlineLinkClass` (a small standalone link with a 24px minimum target,
-WCAG 2.5.8; links inside a sentence can stay `linkClass`), `panelClass`, `panelPadX` (and `panelPadL`,
-its left side only, for rows with trailing icon buttons), `transition`,
-`focusRing`, `ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
+WCAG 2.5.8; links inside a sentence can stay `linkClass`), `target24` (that 24px target alone, for links with
+their own colour), `panelClass`, `panelPadX` (and `panelPadL`, its left side only, for rows with trailing icon
+buttons), `ledgerPad(nested?)` (ledger row padding), `transition`,
+`focusRing`, `peerFocusRing` (the same ring on a visual box after an sr-only `peer` input), `ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
 `className` can't override a class the primitive already sets; add a prop or variant instead).
 `useMediaQuery(query)` lives in `@/hooks/useMediaQuery`.
 
@@ -184,9 +190,8 @@ Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Ske
 buttons) / `InlineLoader` (one status, named by its label),
 `Toast` (`toast(message, type?, { action?, durationMs? })` from `useToast`; at the bottom: full width with 16px
 gutters on phones, bottom-right and at most 24rem wide from `sm`; it sits 12px above the mobile tab bar and any
-mounted `FormFooter` (`--tabbar-h` + `--form-footer-h`), and from `lg` at least 112px up so it clears a list's
-"Load more" strip; on phones, pages without a `FormFooter` end with extra room for the same reason: it never
-covers Save, a total, Load more or page-header actions). `#main` has scroll padding for the tab bar and a
+mounted `FormFooter` (`--tabbar-h` + `--form-footer-h`), at every width; pages without a `FormFooter` end with
+`--toast-room` to spare, so it never covers Save, a total, "Load more" or page-header actions). `#main` has scroll padding for the tab bar and a
 mounted `FormFooter`, so a focused field never scrolls under them,
 `MultiSelect`, `CommandPalette`,
 `ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
@@ -211,8 +216,9 @@ each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the pa
 - Ledger tables: a 4-column grid row (date · expense · category/department · amount) that collapses to
   2 columns (title block · amount) when the panel is under ~620px; the date and category move into the
   sub-line. Row height ≥ 56px, hairline `border-rule-2` between rows, `rowClass` for hover.
-  Rows pad with `ledgerPad()` (`panelPadX`; nested in a trip band, that plus 22px). Row hover actions sit over the
-  amount cell, which hides while they show, so they never cover the title or category.
+  Rows pad with `ledgerPad()` (`panelPadX`; nested in a trip band, that plus 22px). Row hover actions share the
+  amount's grid cell (`[grid-area:1/1]`), so the cell is as wide as the wider of the two and the amount hides while
+  they show: they never cover the title or category.
 - Touch targets ≥ 44px (40px minimum for dense secondary controls).
 - Copy is sentence case everywhere: buttons, dialog titles, labels ("Add department", "Update rate").
 
@@ -239,7 +245,7 @@ use the nav icons from `nav.ts` for sections and `CategoryGlyph` for categories.
 
 ## Page shells
 
-`not-found` and `global-error` share `StatusPage` (`@/components/layout/StatusPage`). The theme boot script and
+`not-found` and `global-error` share `StatusPage` (`@/components/layout/StatusPage`: `eyebrow`, `tone`, `title`, `top?`, children). The theme boot script and
 storage key live in `@/lib/theme` (a plain module, so a server layout gets the string); `global-error` renders the
 script in its own `<head>` because it replaces the root layout. Month-key helpers (`monthFromKey`, `monthProgress`)
 are in `@/lib/month`.

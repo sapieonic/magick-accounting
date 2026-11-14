@@ -7,12 +7,11 @@ import { formatBaseCurrency } from "@/lib/currency";
 import { formatTripDates, getTripStatus } from "@/lib/trip";
 import Button from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
-import { focusRing, linkClass } from "@/components/ui/styles";
+import { focusRing, ledgerPad, textButtonClass } from "@/components/ui/styles";
 import { TripStatusBadge } from "@/components/trips/TripMeta";
 import TripTimeline from "@/components/trips/TripTimeline";
 import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import { baseAmount } from "@/components/expenses/ledger/format";
-import { ledgerPad } from "@/components/expenses/ledger/ExpenseRow";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
 
@@ -160,7 +159,7 @@ export default function TripCluster({
           <Link
             href={`/dashboard/trips/${trip._id}`}
             aria-label={`Open trip ${trip.name}`}
-            className={cn(linkClass, "inline-flex min-h-11 items-center gap-1 text-[13px]")}
+            className={textButtonClass}
           >
             Open trip
             <ArrowUpRight aria-hidden="true" size={13} strokeWidth={1.75} />

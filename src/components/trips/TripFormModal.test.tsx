@@ -96,7 +96,7 @@ describe("TripFormModal", () => {
     await fill(user, screen.getByLabelText("Purpose / client"), "Acme pitch");
     await fill(user, screen.getByLabelText("Budget (₹)"), "50000");
 
-    await user.click(screen.getByRole("button", { name: "Travelers" }));
+    await user.click(screen.getByRole("combobox", { name: "Travelers" }));
     await user.click(await screen.findByRole("option", { name: "Priya" }));
 
     await user.click(screen.getByRole("button", { name: "Create trip" }));
@@ -121,7 +121,7 @@ describe("TripFormModal", () => {
     vi.mocked(api.get).mockReturnValue(new Promise(() => {}));
     renderModal();
 
-    const travelers = screen.getByRole("button", { name: "Travelers" });
+    const travelers = screen.getByRole("combobox", { name: "Travelers" });
     expect(travelers).toHaveTextContent("Loading people...");
     expect(travelers).not.toHaveTextContent("None available");
   });

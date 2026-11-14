@@ -11,6 +11,7 @@ import Currency from "@/models/Currency";
 import Asset from "@/models/Asset";
 import User from "@/models/User";
 import Trip from "@/models/Trip";
+import { encodeExpenseCursor } from "@/lib/expense-query";
 
 vi.mock("@/lib/auth", () => ({ verifyAuth: vi.fn() }));
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
@@ -353,6 +354,36 @@ describe("GET /api/expenses", () => {
   const orphan = expense("Orphan", "2026-10-03", deletedTrip);
   const docs = [hotel, flight, cab, lunch, books, orphan];
 
+  /** `Expense.find` over `source`, honouring sort and limit; unsorted, shuffled (as `$in` gives no order). */
+  function findChain(filter: Record<string, unknown>, source = docs) {
+    let cursor = new Query(filter).find(source);
+    let sorted = false;
+    const query = {
+      populate: vi.fn(() => query),
+      sort: vi.fn((spec: Record<string, 1 | -1>) => {
+        cursor = cursor.sort(spec);
+        sorted = true;
+        return query;
+      }),
+      limit: vi.fn((n: number) => {
+        cursor = cursor.limit(n);
+        return query;
+      }),
+      lean: vi.fn(() => {
+        const found = cursor.all();
+        return Promise.resolve(sorted ? found : found.reverse());
+      }),
+    };
+    return query;
+  }
+
+  function aggregateOver(source: Record<string, unknown>[]) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(source))) as never;
+  }
+
+  const titles = (body: { expenses: { title: string }[] }) => body.expenses.map((e) => e.title);
+
   function get(query: string) {
     return GET({ url: `http://localhost/api/expenses${query}` } as NextRequest);
   }
@@ -366,15 +397,8 @@ describe("GET /api/expenses", () => {
       name: "Admin",
       role: "admin",
     });
-    vi.mocked(Expense.aggregate).mockImplementation(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ((pipeline: any[]) =>
-        Promise.resolve(new Aggregator(pipeline).run(docs))) as never
-    );
-    vi.mocked(Expense.find).mockImplementation(
-      // Returned shuffled, as $in gives no order.
-      ((filter: Record<string, unknown>) => chain(new Query(filter).find(docs).all().reverse())) as never
-    );
+    vi.mocked(Expense.aggregate).mockImplementation(aggregateOver(docs));
+    vi.mocked(Expense.find).mockImplementation(((filter: Record<string, unknown>) => findChain(filter)) as never);
     vi.mocked(Asset.aggregate).mockResolvedValue([{ _id: lunch._id, count: 1 }] as never);
     vi.mocked(Trip.find).mockReturnValue(
       chain([
@@ -391,7 +415,7 @@ describe("GET /api/expenses", () => {
   });
 
   it("groups each trip into one item, oldest expense first inside it", async () => {
-    const response = await get("?groupTrips=true&page=1&limit=3");
+    const response = await get("?groupTrips=true&limit=3");
     const body = await response.json();
 
     expect(body.expenses.map((e: { title: string }) => e.title)).toEqual([
@@ -401,7 +425,8 @@ describe("GET /api/expenses", () => {
       "Hotel",
       "Books",
     ]);
-    expect(body.pagination).toEqual({ page: 1, limit: 3, total: 4, pages: 2, offset: 0, nextOffset: 3, hasMore: true });
+    // Continues after Books, the third item.
+    expect(body.pagination).toEqual({ total: 4, hasMore: true, nextCursor: encodeExpenseCursor(books) });
     expect(Object.keys(body.trips)).toEqual([String(goa)]);
     expect(body.trips[String(goa)]).toEqual(
       expect.objectContaining({
@@ -427,7 +452,7 @@ describe("GET /api/expenses", () => {
       role: "user",
     });
 
-    const onTrip = await (await get("?groupTrips=true&page=1&limit=3")).json();
+    const onTrip = await (await get("?groupTrips=true&limit=3")).json();
     expect(Object.keys(onTrip.trips)).toEqual([String(goa)]);
 
     // Taken off the travelers (and not the creator): the cluster would link to
@@ -445,9 +470,15 @@ describe("GET /api/expenses", () => {
         },
       ]) as never
     );
-    const offTrip = await (await get("?groupTrips=true&page=1&limit=3")).json();
+    const offTrip = await (await get("?groupTrips=true&limit=2")).json();
     expect(offTrip.trips).toEqual({});
-    expect(offTrip.expenses.map((e: { title: string }) => e.title)).toContain("Hotel");
+    // Still one item, paged whole: two items are Lunch and all of Goa's rows.
+    expect(titles(offTrip)).toEqual(["Lunch", "Flight", "Cab", "Hotel"]);
+    expect(offTrip.pagination).toEqual({
+      total: 4,
+      hasMore: true,
+      nextCursor: encodeExpenseCursor({ date: hotel.date, createdAt: hotel.createdAt, _id: goa }),
+    });
     // The trip still exists, so its expenses are not unlinked.
     expect(Expense.updateMany).not.toHaveBeenCalled();
   });
@@ -455,7 +486,7 @@ describe("GET /api/expenses", () => {
   it("leaves a trip whose document is gone out of the trips map", async () => {
     vi.mocked(Trip.find).mockReturnValue(chain([]) as never);
 
-    const body = await (await get("?groupTrips=true&page=2&limit=3")).json();
+    const body = await (await get(`?groupTrips=true&limit=3&cursor=${encodeExpenseCursor(books)}`)).json();
 
     expect(body.expenses.map((e: { title: string }) => e.title)).toEqual(["Orphan"]);
     expect(body.trips).toEqual({});
@@ -467,27 +498,48 @@ describe("GET /api/expenses", () => {
     );
   });
 
-  it("starts a grouped page at an item offset", async () => {
-    // Items: Lunch, Goa (3 expenses), Books, Orphan's trip. Offset 2 starts at Books.
-    const body = await (await get("?groupTrips=true&offset=2&limit=3")).json();
+  it("continues a grouped page after the cursor, even once earlier items are deleted", async () => {
+    const first = await (await get("?groupTrips=true&limit=2")).json();
+    expect(titles(first)).toEqual(["Lunch", "Flight", "Cab", "Hotel"]);
+    expect(first.pagination.hasMore).toBe(true);
 
-    expect(body.expenses.map((e: { title: string }) => e.title)).toEqual(["Books", "Orphan"]);
-    expect(body.pagination).toEqual(
-      expect.objectContaining({ offset: 2, nextOffset: 4, total: 4, hasMore: false })
-    );
+    // Lunch and Goa's flight are deleted before the next page is asked for.
+    vi.mocked(Expense.aggregate).mockImplementation(aggregateOver(docs.filter((d) => d !== lunch && d !== flight)));
+    const next = await (await get(`?groupTrips=true&limit=2&cursor=${first.pagination.nextCursor}`)).json();
+
+    expect(titles(next)).toEqual(["Books", "Orphan"]);
+    expect(next.pagination).toEqual({ total: 3, hasMore: false, nextCursor: null });
   });
 
-  it("starts a flat page at an expense offset", async () => {
+  it("continues a flat page after the cursor, even once earlier rows are deleted", async () => {
     vi.mocked(Expense.countDocuments).mockResolvedValue(6 as never);
 
-    const body = await (await get("?page=2&limit=2&offset=3")).json();
-
+    const first = await (await get("?limit=2")).json();
+    expect(titles(first)).toEqual(["Lunch", "Hotel"]);
+    expect(first.pagination).toEqual({ total: 6, hasMore: true, nextCursor: encodeExpenseCursor(hotel) });
     const query = vi.mocked(Expense.find).mock.results[0].value;
-    expect(query.skip).toHaveBeenCalledWith(3);
-    expect(query.limit).toHaveBeenCalledWith(2);
-    expect(body.pagination).toEqual(
-      expect.objectContaining({ page: 2, offset: 3, nextOffset: 3 + body.expenses.length, total: 6 })
-    );
+    expect(query.sort).toHaveBeenCalledWith({ date: -1, createdAt: -1, _id: -1 });
+    expect(query.limit).toHaveBeenCalledWith(3);
+
+    // Hotel is deleted: Cab (same day, entered earlier) still comes next.
+    vi.mocked(Expense.find).mockImplementation(((filter: Record<string, unknown>) =>
+      findChain(filter, docs.filter((d) => d !== hotel))) as never);
+    vi.mocked(Expense.countDocuments).mockResolvedValue(5 as never);
+    const next = await (await get(`?limit=2&cursor=${first.pagination.nextCursor}`)).json();
+    expect(titles(next)).toEqual(["Cab", "Books"]);
+    expect(next.pagination).toEqual({ total: 5, hasMore: true, nextCursor: encodeExpenseCursor(books) });
+
+    const last = await (await get(`?limit=2&cursor=${next.pagination.nextCursor}`)).json();
+    expect(titles(last)).toEqual(["Orphan", "Flight"]);
+    expect(last.pagination).toEqual({ total: 5, hasMore: false, nextCursor: null });
+  });
+
+  it("refuses a malformed cursor", async () => {
+    const response = await get("?cursor=not-a-cursor");
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Page cursor is invalid" });
+    expect(Expense.find).not.toHaveBeenCalled();
   });
 
   it("handles a page with no matches", async () => {
@@ -498,7 +550,7 @@ describe("GET /api/expenses", () => {
     expect(body).toEqual({
       expenses: [],
       trips: {},
-      pagination: { page: 1, limit: 20, total: 0, pages: 0, offset: 0, nextOffset: 0, hasMore: false },
+      pagination: { total: 0, hasMore: false, nextCursor: null },
     });
     expect(Expense.find).not.toHaveBeenCalled();
     expect(Trip.find).not.toHaveBeenCalled();
@@ -512,10 +564,10 @@ describe("GET /api/expenses", () => {
     Object.assign(lunch, { paymentSource: "split", amountInBaseCurrency: 100, pocketAmountInBaseCurrency: 30 });
 
     try {
-      const flat = await (await get("?page=1&limit=20&includeSummary=true")).json();
+      const flat = await (await get("?limit=20&includeSummary=true")).json();
       expect(flat.summary).toEqual({ totalExpenses: 6, totalAmount: 600, companyAmount: 170, pocketAmount: 430 });
 
-      const grouped = await (await get("?groupTrips=true&page=1&limit=3&includeSummary=true")).json();
+      const grouped = await (await get("?groupTrips=true&limit=3&includeSummary=true")).json();
       expect(grouped.summary).toEqual(flat.summary);
     } finally {
       for (const doc of [hotel, lunch]) {
@@ -529,13 +581,13 @@ describe("GET /api/expenses", () => {
   it("keeps the flat list (now with the trip populated) by default", async () => {
     vi.mocked(Expense.countDocuments).mockResolvedValue(6 as never);
 
-    const body = await (await get("?page=1&limit=20")).json();
+    const body = await (await get("?limit=20")).json();
 
     expect(body.expenses).toHaveLength(6);
     expect(body).not.toHaveProperty("trips");
-    expect(body.pagination).toEqual({ page: 1, limit: 20, total: 6, pages: 1, offset: 0, nextOffset: 6, hasMore: false });
+    expect(body.pagination).toEqual({ total: 6, hasMore: false, nextCursor: null });
     const query = vi.mocked(Expense.find).mock.results[0].value;
-    expect(query.sort).toHaveBeenCalledWith({ date: -1 });
+    expect(query.sort).toHaveBeenCalledWith({ date: -1, createdAt: -1, _id: -1 });
     expect(query.populate).toHaveBeenCalledWith("trip", "name");
     expect(Expense.aggregate).not.toHaveBeenCalled();
   });

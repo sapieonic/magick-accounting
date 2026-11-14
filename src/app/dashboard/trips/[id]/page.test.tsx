@@ -468,6 +468,55 @@ describe("TripDetailPage", () => {
     expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
   });
 
+  it("takes a shared bill's delete off each payer's own row", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    // Manas paid 600 from pocket and Priya 400 on the company card.
+    const dinner = makeExpense({
+      _id: "3".repeat(24),
+      title: "Team dinner",
+      amount: 1000,
+      amountInBaseCurrency: 1000,
+      paymentSource: "multiple",
+      pocketAmount: 600,
+      pocketAmountInBaseCurrency: 600,
+      travelType: "food",
+      payments: [
+        { paidBy: me, amount: 600, amountInBaseCurrency: 600, source: "pocket" },
+        { paidBy: priya, amount: 400, amountInBaseCurrency: 400, source: "company" },
+      ],
+    });
+    const base = detail();
+    response = detail({
+      expenses: [flight, hotel, dinner],
+      summary: {
+        ...base.summary,
+        totalAmount: 13500,
+        expenseCount: 3,
+        pocketAmount: 7600,
+        companyAmount: 5900,
+        byType: [...base.summary.byType, { travelType: "food", total: 1000, count: 1 }],
+        byPayer: [
+          { user: me, totalSpend: 7600, pocketSpend: 7600, companySpend: 0 },
+          { user: priya, totalSpend: 5900, pocketSpend: 0, companySpend: 5900 },
+        ],
+      },
+    });
+    render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+    const payerTexts = () => screen.getAllByTestId("payer-row").map((row) => row.textContent);
+    expect(payerTexts()[0]).toContain(`${formatBaseCurrency(7600)} total`);
+
+    await user.click(screen.getByRole("button", { name: "Delete Team dinner" }));
+
+    const [manas, priyaRow] = payerTexts();
+    expect(manas).toContain(`${formatBaseCurrency(7000)} total · ${formatBaseCurrency(0)} company`);
+    expect(manas).toContain(formatBaseCurrency(7000));
+    expect(priyaRow).toContain(`${formatBaseCurrency(5500)} total · ${formatBaseCurrency(5500)} company`);
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
   it("refreshes the suggestions once per reload, not on every change to the loaded trip", async () => {
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });

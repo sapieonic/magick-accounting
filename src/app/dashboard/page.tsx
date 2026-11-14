@@ -17,7 +17,7 @@ import Avatar from "@/components/ui/Avatar";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import EmptyState from "@/components/ui/EmptyState";
 import { DashboardSkeleton } from "@/components/ui/Skeleton";
-import { linkClass } from "@/components/ui/styles";
+import { ICON_STROKE, linkClass } from "@/components/ui/styles";
 import MonthlySpendPanel from "@/components/dashboard/overview/MonthlySpendPanel";
 import RankedList, { type RankedItem } from "@/components/dashboard/overview/RankedList";
 import LatestEntries from "@/components/dashboard/overview/LatestEntries";
@@ -137,7 +137,7 @@ export default function DashboardPage() {
     pocket,
     "Other people",
     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sunk text-ink-3">
-      <Users aria-hidden="true" size={14} strokeWidth={1.75} />
+      <Users aria-hidden="true" size={14} strokeWidth={ICON_STROKE} />
     </span>
   );
 

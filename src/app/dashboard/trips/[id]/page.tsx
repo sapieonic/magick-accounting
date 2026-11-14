@@ -22,7 +22,7 @@ import {
 import { api } from "@/lib/api";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
-import { getPaymentBreakdown } from "@/lib/expense";
+import { getPaymentBreakdown, payerShare } from "@/lib/expense";
 import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, withViewerStatus } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -53,9 +53,7 @@ const SUGGESTIONS = 3;
 
 /**
  * The server summary minus expenses still inside their undo window, so the
- * stats move the moment an expense is deleted. A "several people paid"
- * expense can't be split per payer client-side; the refresh after the delete
- * corrects that row.
+ * stats move the moment an expense is deleted.
  */
 function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[]): TripDetailSummary {
   if (removed.length === 0) return summary;
@@ -76,13 +74,12 @@ function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[])
       typeRow.total = roundMoney(typeRow.total - base);
       typeRow.count -= 1;
     }
-    if (expense.paymentSource !== "multiple") {
-      const payer = next.byPayer.find((row) => row.user._id === expense.createdBy?._id);
-      if (payer) {
-        payer.totalSpend = roundMoney(payer.totalSpend - base);
-        payer.pocketSpend = roundMoney(payer.pocketSpend - pocket);
-        payer.companySpend = roundMoney(payer.companySpend - company);
-      }
+    // Each payer's own part, as the server credits it (several payers for a shared bill).
+    for (const payer of next.byPayer) {
+      const share = payerShare(expense, payer.user._id);
+      payer.pocketSpend = roundMoney(payer.pocketSpend - share.pocket);
+      payer.companySpend = roundMoney(payer.companySpend - share.company);
+      payer.totalSpend = roundMoney(payer.totalSpend - share.pocket - share.company);
     }
   }
   // Keep the server's order (largest first, untyped last) now the totals moved.

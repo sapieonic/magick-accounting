@@ -125,13 +125,17 @@ describe("ExpenseRow", () => {
     expect(toolbar).not.toHaveClass("sm:flex");
   });
 
-  it("puts the hover toolbar over the amount, which hides meanwhile, wide enough for its buttons", () => {
+  it("stacks the hover toolbar over the amount, which hides meanwhile, in a cell sized to the wider", () => {
     renderRow({ onDelete: vi.fn(), onRemoveFromTrip: vi.fn() });
     const toolbar = screen.getByTestId("row-actions");
     const amount = screen.getByText("$100.00").parentElement!;
-    // Same cell: the toolbar never reaches over the category or title columns.
+    // One grid area of one cell: the cell grows to fit the toolbar, so it never
+    // reaches over the category or title columns.
     expect(toolbar.parentElement).toBe(amount.parentElement);
-    expect(toolbar.parentElement).toHaveClass("relative", "sm:[@media(hover:hover)]:min-w-[130px]");
+    expect(toolbar.parentElement).toHaveClass("grid", "justify-items-end");
+    expect(toolbar).toHaveClass("[grid-area:1/1]");
+    expect(amount).toHaveClass("[grid-area:1/1]");
+    expect(toolbar).not.toHaveClass("absolute");
     expect(amount).toHaveClass("sm:[@media(hover:hover)]:group-hover:invisible");
   });
 

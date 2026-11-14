@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import {
+  afterCursorFilter,
   buildExpenseFilter,
+  EXPENSE_LIST_SORT,
   expensePagination,
   getExpenseSummary,
   parseExpensePageParams,
@@ -40,7 +42,8 @@ export async function GET(req: NextRequest) {
   await connectDB();
   const { searchParams } = new URL(req.url);
   const pageParams = parseExpensePageParams(searchParams);
-  const { skip, limit } = pageParams;
+  if (!pageParams) return NextResponse.json({ error: "Page cursor is invalid" }, { status: 400 });
+  const { cursor, limit } = pageParams;
   const includeSummary = searchParams.get("includeSummary") === "true";
   const filter = buildExpenseFilter(searchParams, authResult);
   const summaryPromise = includeSummary
@@ -49,32 +52,32 @@ export async function GET(req: NextRequest) {
 
   if (searchParams.get("groupTrips") === "true") {
     // Each trip is one item (its expenses never split across pages), so
-    // page/limit/offset count items rather than expenses.
+    // limit, total and the cursor count items rather than expenses.
     const [grouped, summary] = await Promise.all([
-      getGroupedExpensePage(filter, skip, limit, authResult),
+      getGroupedExpensePage(filter, pageParams, authResult),
       summaryPromise,
     ]);
     return NextResponse.json({
       expenses: grouped.expenses,
       trips: grouped.trips,
-      pagination: expensePagination(pageParams, grouped.count, grouped.total),
+      pagination: grouped.pagination,
       ...(summary ? { summary } : {}),
     });
   }
 
-  const [expenses, total, summary] = await Promise.all([
-    populateExpenseRefs(Expense.find(filter))
-      .sort({ date: -1 })
-      .skip(skip)
-      .limit(limit)
+  const [rows, total, summary] = await Promise.all([
+    populateExpenseRefs(Expense.find(cursor ? { $and: [filter, afterCursorFilter(cursor)] } : filter))
+      .sort(EXPENSE_LIST_SORT)
+      .limit(limit + 1)
       .lean(),
     Expense.countDocuments(filter),
     summaryPromise,
   ]);
+  const { page, pagination } = expensePagination(rows, limit, total);
 
   return NextResponse.json({
-    expenses: await withLinkedAssetCounts(expenses),
-    pagination: expensePagination(pageParams, expenses.length, total),
+    expenses: await withLinkedAssetCounts(page),
+    pagination,
     ...(summary ? { summary } : {}),
   });
 }

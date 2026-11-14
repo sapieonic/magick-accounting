@@ -112,14 +112,19 @@ let listedItemTotal: number | null = null;
 const DEFAULT_SUMMARY = { totalAmount: 5678.76, totalExpenses: 1, companyAmount: 5678.76, pocketAmount: 0 };
 let listedSummary: Record<string, unknown> = DEFAULT_SUMMARY;
 
-/** Answers `/api/expenses` page requests by their `offset`, like the server. */
-function mockExpensePages(pages: Record<number, Record<string, unknown>>) {
+/** Answers `/api/expenses` page requests by their `cursor` ("" for the first page), like the server. */
+function mockExpensePages(pages: Record<string, Record<string, unknown>>) {
   const defaultGet = vi.mocked(api.get).getMockImplementation()!;
   vi.mocked(api.get).mockImplementation((url: string) => {
     if (!url.startsWith("/api/expenses")) return defaultGet(url);
-    const offset = Number(new URL(url, "http://localhost").searchParams.get("offset"));
-    return Promise.resolve({ summary: listedSummary, ...pages[offset] });
+    const cursor = new URL(url, "http://localhost").searchParams.get("cursor") ?? "";
+    return Promise.resolve({ summary: listedSummary, ...pages[cursor] });
   });
+}
+
+/** The `cursor` the last `/api/expenses` request continued from. */
+function lastCursor(): string | null {
+  return new URL(expenseRequests().at(-1)!, "http://localhost").searchParams.get("cursor");
 }
 
 /** The figure of the totals band's stat labelled `label`. */
@@ -169,10 +174,9 @@ describe("ExpensesPage", () => {
           expenses: listedExpenses,
           ...(grouped ? { trips: listedTrips } : {}),
           pagination: {
-            page: 1,
-            limit: 25,
             total: grouped && listedItemTotal !== null ? listedItemTotal : listedExpenses.length,
-            pages: 1,
+            hasMore: false,
+            nextCursor: null,
           },
           summary: listedSummary,
         });
@@ -394,24 +398,24 @@ describe("ExpensesPage", () => {
   it("names the department and category filter lists", async () => {
     render(<ExpensesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Department" }));
+    fireEvent.click(await screen.findByRole("combobox", { name: "Department" }));
     expect(screen.getByRole("listbox", { name: "Filter by department" })).toBeInTheDocument();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Category" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
     expect(screen.getByRole("listbox", { name: "Filter by category" })).toBeInTheDocument();
   });
 
-  it("continues the flat list from the server offset, less committed deletes", async () => {
+  it("continues the flat list from the server cursor after a committed delete", async () => {
     window.history.replaceState(null, "", "/dashboard/expenses?view=flat");
     mockExpensePages({
-      0: { expenses: [expense, splitExpense], pagination: { total: 3, nextOffset: 2, hasMore: true } },
-      // After the first expense is gone, the third one is at offset 1.
-      1: { expenses: [hotelExpense], pagination: { total: 2, nextOffset: 2, hasMore: false } },
+      "": { expenses: [expense, splitExpense], pagination: { total: 3, hasMore: true, nextCursor: "after-split" } },
+      "after-split": { expenses: [hotelExpense], pagination: { total: 2, hasMore: false, nextCursor: null } },
     });
     render(<ExpensesPage />);
 
     expect(await screen.findByText("Showing 2 of 3 expenses")).toBeInTheDocument();
+    expect(lastCursor()).toBeNull();
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Delete AWS India Cloud Services" }));
     await lapseUndoWindow();
@@ -421,17 +425,18 @@ describe("ExpensesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     expect(await screen.findByText("Beach hotel")).toBeInTheDocument();
-    expect(new URL(expenseRequests().at(-1)!, "http://localhost").searchParams.get("offset")).toBe("1");
+    // The cursor names the last row loaded, so the delete doesn't move it.
+    expect(lastCursor()).toBe("after-split");
     expect(screen.getByText("Showing 2 of 2 expenses")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
-  it("keeps the offset for a delete that can still be undone", async () => {
+  it("keeps a delete that can still be undone out of the count while loading more", async () => {
     window.history.replaceState(null, "", "/dashboard/expenses?view=flat");
     mockExpensePages({
-      0: { expenses: [expense, splitExpense], pagination: { total: 3, nextOffset: 2, hasMore: true } },
+      "": { expenses: [expense, splitExpense], pagination: { total: 3, hasMore: true, nextCursor: "after-split" } },
       // Not deleted on the server yet, so the server still counts it.
-      2: { expenses: [hotelExpense], pagination: { total: 3, nextOffset: 3, hasMore: false } },
+      "after-split": { expenses: [hotelExpense], pagination: { total: 3, hasMore: false, nextCursor: null } },
     });
     render(<ExpensesPage />);
 
@@ -440,7 +445,7 @@ describe("ExpensesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     expect(await screen.findByText("Beach hotel")).toBeInTheDocument();
-    expect(new URL(expenseRequests().at(-1)!, "http://localhost").searchParams.get("offset")).toBe("2");
+    expect(lastCursor()).toBe("after-split");
     expect(screen.getByText("Showing 2 of 2 expenses")).toBeInTheDocument();
     expect(api.delete).not.toHaveBeenCalled();
   });
@@ -643,12 +648,12 @@ describe("ExpensesPage", () => {
     it("counts a trip the viewer can't open as one item, and still offers the rest", async () => {
       // The trip's expenses come back as plain rows, but the server counts the trip once.
       mockExpensePages({
-        0: {
+        "": {
           expenses: [flightExpense, hotelExpense, expense],
           trips: {},
-          pagination: { total: 3, nextOffset: 2, hasMore: true },
+          pagination: { total: 3, hasMore: true, nextCursor: "after-aws" },
         },
-        2: { expenses: [splitExpense], trips: {}, pagination: { total: 3, nextOffset: 3, hasMore: false } },
+        "after-aws": { expenses: [splitExpense], trips: {}, pagination: { total: 3, hasMore: false, nextCursor: null } },
       });
       render(<ExpensesPage />);
 
@@ -660,20 +665,20 @@ describe("ExpensesPage", () => {
 
       expect(await screen.findByText("Team offsite hotel")).toBeInTheDocument();
       const lastRequest = new URL(expenseRequests().at(-1)!, "http://localhost").searchParams;
-      expect(lastRequest.get("offset")).toBe("2");
+      expect(lastRequest.get("cursor")).toBe("after-aws");
       expect(lastRequest.get("groupTrips")).toBe("true");
       expect(screen.getByText("Showing 3 of 3 items · each trip counts as one")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
     });
 
-    it("moves the offset only once a trip's last expense is deleted", async () => {
+    it("counts a trip out only once its last expense is deleted, and continues after it", async () => {
       mockExpensePages({
-        0: {
+        "": {
           expenses: [flightExpense, hotelExpense, expense],
           trips: { "trip-1": goaTrip },
-          pagination: { total: 3, nextOffset: 2, hasMore: true },
+          pagination: { total: 3, hasMore: true, nextCursor: "after-aws" },
         },
-        1: { expenses: [splitExpense], trips: {}, pagination: { total: 2, nextOffset: 2, hasMore: false } },
+        "after-aws": { expenses: [splitExpense], trips: {}, pagination: { total: 2, hasMore: false, nextCursor: null } },
       });
       render(<ExpensesPage />);
 
@@ -681,16 +686,18 @@ describe("ExpensesPage", () => {
       vi.useFakeTimers();
       fireEvent.click(screen.getByRole("button", { name: "Delete Flight to Goa" }));
       await lapseUndoWindow();
-      // The hotel keeps the trip item on the server.
+      // The hotel keeps the trip item listed and counted.
+      expect(screen.getByText("Showing 2 of 3 items · each trip counts as one")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Delete Beach hotel" }));
       await lapseUndoWindow();
       expect(api.delete).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
+      expect(screen.getByText("Showing 1 of 2 items · each trip counts as one")).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
       expect(await screen.findByText("Team offsite hotel")).toBeInTheDocument();
-      expect(new URL(expenseRequests().at(-1)!, "http://localhost").searchParams.get("offset")).toBe("1");
+      expect(lastCursor()).toBe("after-aws");
       expect(screen.getByText("Showing 2 of 2 items · each trip counts as one")).toBeInTheDocument();
     });
 

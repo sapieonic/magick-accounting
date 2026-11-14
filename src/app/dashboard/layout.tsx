@@ -48,16 +48,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             on the scroller: sticky offsets are measured from the scroller's padding
             edge, so padding on <main> would push sticky footers and side panels off
             their intended positions. Bottom padding clears the mobile tab bar
-            (--tabbar-h, 0 from lg up); on phones, pages without a FormFooter get
-            extra room so a toast at the end of the page doesn't cover its last
-            control (e.g. "Load more"). Scroll padding keeps a focused field clear
-            of the tab bar and a sticky FormFooter (WCAG 2.4.11). */}
+            (--tabbar-h, 0 from lg up); pages without a FormFooter get
+            --toast-room instead, so a toast at the end of the page doesn't cover
+            its last control (e.g. "Load more"). Scroll padding keeps a focused
+            field clear of the tab bar and a sticky FormFooter (WCAG 2.4.11). */}
         <main
           id="main"
           tabIndex={-1}
           className="min-h-0 flex-1 scroll-pb-[calc(var(--tabbar-h)+var(--form-footer-h,0px)+16px)] scroll-pt-6 overflow-y-auto focus:outline-none"
         >
-          <div className="px-[var(--pad)] pb-[calc(var(--tabbar-h)+40px)] pt-6 max-lg:[&:not(:has([data-form-footer]))]:pb-[calc(var(--tabbar-h)+88px)]">
+          <div className="px-[var(--pad)] pb-[calc(var(--tabbar-h)+40px)] pt-6 [&:not(:has([data-form-footer]))]:pb-[calc(var(--tabbar-h)+var(--toast-room))]">
             {children}
           </div>
         </main>

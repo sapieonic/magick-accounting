@@ -1,13 +1,9 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Modal, { ModalFooter } from "@/components/ui/Modal";
 
 describe("Modal", () => {
-  afterEach(() => {
-    document.body.style.overflow = "";
-  });
-
   it("renders nothing when isOpen is false", () => {
     const { container } = render(
       <Modal isOpen={false} onClose={vi.fn()} title="My Modal">
@@ -88,50 +84,20 @@ describe("Modal", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('sets body overflow to "hidden" when open and restores it on close (no #main scroller)', () => {
+  it("marks the page aria-modal only while open (globals.css locks #main's scrolling on it)", () => {
     const { rerender } = render(
       <Modal isOpen onClose={vi.fn()} title="My Modal">
         <p>Body</p>
       </Modal>
     );
-    expect(document.body.style.overflow).toBe("hidden");
+    expect(document.querySelector('[aria-modal="true"]')).toBe(screen.getByRole("dialog"));
 
     rerender(
       <Modal isOpen={false} onClose={vi.fn()} title="My Modal">
         <p>Body</p>
       </Modal>
     );
-    expect(document.body.style.overflow).toBe("");
-  });
-
-  it("locks the dashboard's #main scroller (not the body) while open", () => {
-    function Shell({ open }: { open: boolean }) {
-      return (
-        <main id="main" tabIndex={-1}>
-          <Modal isOpen={open} onClose={vi.fn()} title="My Modal">
-            <p>Body</p>
-          </Modal>
-        </main>
-      );
-    }
-    const { rerender } = render(<Shell open />);
-    const main = document.getElementById("main")!;
-    expect(main.style.overflow).toBe("hidden");
-    expect(document.body.style.overflow).toBe("");
-
-    rerender(<Shell open={false} />);
-    expect(main.style.overflow).toBe("");
-  });
-
-  it("restores body overflow on unmount", () => {
-    const { unmount } = render(
-      <Modal isOpen onClose={vi.fn()} title="My Modal">
-        <p>Body</p>
-      </Modal>
-    );
-    expect(document.body.style.overflow).toBe("hidden");
-    unmount();
-    expect(document.body.style.overflow).toBe("");
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
   });
 
   it("moves focus into the dialog and traps Tab inside it", async () => {

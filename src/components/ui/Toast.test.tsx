@@ -106,8 +106,8 @@ describe("Toast", () => {
     const region = screen.getByTestId("toast-region");
     // --tabbar-h is 0 from lg up; --form-footer-h is published by a mounted FormFooter.
     expect(region).toHaveClass("bottom-[calc(var(--tabbar-h)+var(--form-footer-h,0px)+12px)]");
-    // Desktop: also clear of a list's bottom "Load more" strip.
-    expect(region).toHaveClass("lg:bottom-[max(calc(var(--form-footer-h,0px)+12px),112px)]");
+    // One formula at every width: no desktop override.
+    expect(region.className).not.toMatch(/\blg:bottom-/);
     expect(region.className).not.toMatch(/(^|\s|:)top-/);
   });
 });

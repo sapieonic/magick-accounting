@@ -3,8 +3,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, ReactNode } from "react";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
-export { THEME_STORAGE_KEY };
-
 export type Theme = "light" | "dark";
 
 interface ThemeContextType {

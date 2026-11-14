@@ -2,9 +2,11 @@ import { format } from "date-fns";
 import { getPaymentBreakdown, PaymentSplitFields } from "@/lib/expense";
 import { travelTypeLabel, type TravelType } from "@/lib/trip";
 
+/** One payer's entry of a listed expense: `paidBy` populated (`null` for a deleted user). */
 export interface ExpensePaymentEntry {
-  paidBy?: { name?: string; email?: string } | null;
+  paidBy?: { _id?: string; name?: string; email?: string } | null;
   amount: number;
+  amountInBaseCurrency?: number;
   source: string;
 }
 

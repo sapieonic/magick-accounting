@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ThemeToggle from "@/components/ui/ThemeToggle";
-import { ThemeProvider, THEME_STORAGE_KEY, applyStoredTheme } from "@/contexts/ThemeContext";
+import { ThemeProvider, applyStoredTheme } from "@/contexts/ThemeContext";
+import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 function renderToggle() {
   return render(

@@ -65,7 +65,8 @@ export default function Panel({
             </div>
           )}
           {(meta || actions) && (
-            // Bare action links get a 24px minimum target (WCAG 2.5.8).
+            // Bare action links get `target24` (24px, WCAG 2.5.8), spelled out
+            // under the [&>a] variant since Tailwind needs literal classes.
             <div className="ml-auto flex flex-wrap items-baseline gap-3 text-[13px] text-ink-3 [&>a]:inline-flex [&>a]:min-h-6 [&>a]:items-center">
               {meta && <span className="text-xs">{meta}</span>}
               {actions}

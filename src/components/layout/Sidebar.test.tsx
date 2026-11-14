@@ -179,28 +179,59 @@ describe("Sidebar", () => {
     expect(backdrop?.className).toMatch(/\bbg-overlay\/45\b/);
   });
 
-  it("closes the drawer once the lg rail takes over", () => {
-    const listeners = new Set<() => void>();
+  describe("at the lg breakpoint", () => {
     let wide = false;
-    vi.stubGlobal(
-      "matchMedia",
-      (query: string) =>
-        ({
-          get matches() {
-            return query === "(min-width: 1024px)" && wide;
-          },
-          media: query,
-          addEventListener: (_: string, fn: () => void) => listeners.add(fn),
-          removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
-        }) as unknown as MediaQueryList
-    );
-    const onClose = vi.fn();
-    render(<Sidebar open onClose={onClose} />);
-    expect(onClose).not.toHaveBeenCalled();
+    const listeners = new Set<() => void>();
+    beforeEach(() => {
+      wide = false;
+      listeners.clear();
+      vi.stubGlobal(
+        "matchMedia",
+        (query: string) =>
+          ({
+            get matches() {
+              return query === "(min-width: 1024px)" && wide;
+            },
+            media: query,
+            addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+            removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+          }) as unknown as MediaQueryList
+      );
+    });
 
-    wide = true;
-    act(() => listeners.forEach((fn) => fn()));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    it("closes the drawer once the lg rail takes over, and stops watching", () => {
+      const onClose = vi.fn();
+      const { rerender } = render(<Sidebar open onClose={onClose} />);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(listeners.size).toBe(1);
+
+      wide = true;
+      act(() => listeners.forEach((fn) => fn()));
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      rerender(<Sidebar open={false} onClose={onClose} />);
+      expect(listeners.size).toBe(0);
+    });
+
+    it("closes a drawer opened while already at lg", () => {
+      wide = true;
+      const onClose = vi.fn();
+      render(<Sidebar open onClose={onClose} />);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(listeners.size).toBe(0);
+    });
+
+    it("doesn't watch the viewport while the drawer is closed", () => {
+      render(<Sidebar open={false} onClose={() => {}} />);
+      expect(listeners.size).toBe(0);
+    });
+  });
+
+  it("is aria-modal only while the drawer is open (the scroll lock keys off it)", () => {
+    const { rerender } = render(<Sidebar open={false} onClose={() => {}} />);
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    rerender(<Sidebar open onClose={() => {}} />);
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toHaveAttribute("aria-modal", "true");
   });
 
   it("shows the role and Profile in full on the rail instead of truncating them", () => {

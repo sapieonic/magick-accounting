@@ -4,7 +4,13 @@ import {
   compactSelectClass,
   inlineLinkClass,
   inputClass,
+  ledgerPad,
   linkClass,
+  panelPadL,
+  panelPadX,
+  peerFocusRing,
+  focusRing,
+  target24,
   selectClass,
   textButtonClass,
   textareaClass,
@@ -56,6 +62,25 @@ describe("link classes", () => {
   });
 
   it("inlineLinkClass gives small links a 24px target", () => {
-    expect(classes(inlineLinkClass)).toEqual(expect.arrayContaining([...classes(linkClass), "inline-flex", "min-h-6", "items-center"]));
+    expect(classes(target24)).toEqual(["inline-flex", "min-h-6", "items-center"]);
+    expect(classes(inlineLinkClass)).toEqual(expect.arrayContaining([...classes(linkClass), ...classes(target24)]));
+  });
+});
+
+describe("focus rings", () => {
+  it("peerFocusRing is focusRing keyed off an sr-only peer input", () => {
+    expect(classes(peerFocusRing)).toEqual(classes(focusRing).map((c) => c.replace(/^focus-visible:/, "peer-focus-visible:")));
+  });
+});
+
+describe("panel padding", () => {
+  it("reads the --panel-pad-x token", () => {
+    expect(panelPadX).toBe("px-[var(--panel-pad-x)]");
+    expect(panelPadL).toBe("pl-[var(--panel-pad-x)]");
+  });
+
+  it("ledgerPad indents nested (trip) rows 22px more on the left only", () => {
+    expect(ledgerPad()).toBe(panelPadX);
+    expect(classes(ledgerPad(true))).toEqual(["pl-[calc(var(--panel-pad-x)+22px)]", "pr-[var(--panel-pad-x)]"]);
   });
 });

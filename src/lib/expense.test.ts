@@ -12,6 +12,7 @@ import {
   normalizeGstAmount,
   normalizePaymentSplit,
   paidByFilter,
+  payerShare,
   payerSpendPipeline,
   pocketAmountInBase,
   pocketBaseExpr,
@@ -444,5 +445,60 @@ describe("paidByFilter", () => {
       (row) => row._id === person
     );
     expect(ownShare).toEqual({ ...spendRow, _id: null });
+  });
+});
+
+describe("payerShare", () => {
+  const asha = { _id: "asha", name: "Asha" };
+  const ravi = { _id: "ravi", name: "Ravi" };
+
+  it("credits each payer of a shared bill their own entries", () => {
+    const shared = {
+      amount: 100,
+      amountInBaseCurrency: 8300,
+      paymentSource: "multiple",
+      pocketAmount: 60,
+      pocketAmountInBaseCurrency: 4980,
+      createdBy: asha,
+      payments: [
+        { paidBy: asha, amount: 60, amountInBaseCurrency: 4980, source: "pocket" },
+        { paidBy: ravi, amount: 30, amountInBaseCurrency: 2490, source: "company" },
+        { paidBy: ravi, amount: 10, amountInBaseCurrency: 830, source: "pocket" },
+      ],
+    };
+
+    expect(payerShare(shared, "asha")).toEqual({ pocket: 4980, company: 0 });
+    expect(payerShare(shared, "ravi")).toEqual({ pocket: 830, company: 2490 });
+    expect(payerShare(shared, "someone-else")).toEqual({ pocket: 0, company: 0 });
+  });
+
+  it("credits anything else wholly to its submitter", () => {
+    const split = {
+      amount: 100,
+      amountInBaseCurrency: 100,
+      paymentSource: "split",
+      pocketAmount: 30,
+      pocketAmountInBaseCurrency: 30,
+      createdBy: asha,
+    };
+
+    expect(payerShare(split, "asha")).toEqual({ pocket: 30, company: 70 });
+    expect(payerShare(split, "ravi")).toEqual({ pocket: 0, company: 0 });
+    // A "multiple" bill without entries falls back to the submitter, like the pipeline.
+    expect(payerShare({ ...split, paymentSource: "multiple", payments: [] }, "asha")).toEqual({ pocket: 30, company: 70 });
+  });
+
+  it("skips entries whose payer was deleted", () => {
+    const shared = {
+      amount: 10,
+      paymentSource: "multiple",
+      createdBy: asha,
+      payments: [
+        { paidBy: null, amount: 4, amountInBaseCurrency: 4, source: "pocket" },
+        { paidBy: asha, amount: 6, amountInBaseCurrency: 6, source: "company" },
+      ],
+    };
+
+    expect(payerShare(shared, "asha")).toEqual({ pocket: 0, company: 6 });
   });
 });

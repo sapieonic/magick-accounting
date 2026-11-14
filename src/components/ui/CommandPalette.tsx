@@ -49,7 +49,6 @@ export default function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
-  const optionId = (i: number) => `${listboxId}-${i}`;
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
@@ -76,16 +75,15 @@ export default function CommandPalette() {
     }
   }, [open]);
 
-  // Focus the input, trap Tab, lock the page scroll, Escape closes only when
-  // topmost, focus back to the opener.
+  // Focus the input, trap Tab, Escape closes only when topmost, focus back to
+  // the opener. (aria-modal locks the page scroll, in globals.css.)
   useDialogLayer(open, panelRef, close, { initialFocus: inputRef });
 
   // Focus stays in the input (aria-activedescendant), so keep the active option in view.
   useEffect(() => {
     if (!open) return;
-    document.getElementById(optionId(activeIndex))?.scrollIntoView?.({ block: "nearest" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeIndex]);
+    document.getElementById(`${listboxId}-${activeIndex}`)?.scrollIntoView?.({ block: "nearest" });
+  }, [open, activeIndex, listboxId]);
 
   const trimmed = query.trim();
 
@@ -164,7 +162,7 @@ export default function CommandPalette() {
             aria-expanded="true"
             aria-controls={listboxId}
             aria-autocomplete="list"
-            aria-activedescendant={results[activeIndex] ? optionId(activeIndex) : undefined}
+            aria-activedescendant={results[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
           />
           <kbd className="num hidden shrink-0 rounded border border-rule bg-sunk px-1.5 py-0.5 text-[11px] text-ink-3 sm:block">
             Esc
@@ -183,14 +181,14 @@ export default function CommandPalette() {
           {results.map((item, i) => (
             <li
               key={item.id}
-              id={optionId(i)}
+              id={`${listboxId}-${i}`}
               role="option"
               aria-selected={i === activeIndex}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => run(item.href)}
               onMouseMove={() => setActiveIndex(i)}
               className={cn(
-                "flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left text-sm transition-colors duration-140",
+                "flex min-h-11 cursor-pointer items-center gap-3 rounded-control px-3 text-sm transition-colors duration-140",
                 i === activeIndex
                   ? "bg-accent-soft text-accent shadow-[inset_3px_0_0_rgb(var(--accent))]"
                   : "text-ink-2"

@@ -38,8 +38,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   const overlayRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Focus in + trapped, page scroll locked, Escape closes only the topmost
-  // layer, focus back to the opener.
+  // Focus in + trapped, Escape closes only the topmost layer, focus back to
+  // the opener. (aria-modal locks the page scroll, in globals.css.)
   useDialogLayer(isOpen, contentRef, onClose);
 
   if (!isOpen) return null;

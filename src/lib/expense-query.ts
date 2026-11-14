@@ -159,11 +159,78 @@ export async function getExpenseSummary(
   };
 }
 
+/**
+ * Where a page of the expense list continues: the sort key of the last item
+ * already sent. Both lists sort newest first by date, then entry time, then
+ * id, which orders every item exactly; the next page starts strictly after
+ * this key, so deleting loaded rows never makes it skip one.
+ */
+export interface ExpenseCursor {
+  date: Date;
+  /** `null` for documents without an entry time (they sort last within their day). */
+  createdAt: Date | null;
+  id: mongoose.Types.ObjectId;
+}
+
+/** The sort shared by the flat list (on expenses) and the grouped one (on items). */
+export const EXPENSE_LIST_SORT = { date: -1, createdAt: -1, _id: -1 } as const;
+
+/** The fields of an expense (or grouped item) its cursor is made from. */
+interface CursorKey {
+  /** Required on expenses; optional here only because lean query results don't type it. */
+  date?: unknown;
+  createdAt?: unknown;
+  _id: unknown;
+}
+
+const OBJECT_ID = /^[0-9a-f]{24}$/i;
+
+export function encodeExpenseCursor(key: CursorKey): string {
+  const createdAt = key.createdAt ? new Date(key.createdAt as string | Date).toISOString() : null;
+  const payload = [new Date(key.date as string | Date).toISOString(), createdAt, String(key._id)];
+  return Buffer.from(JSON.stringify(payload)).toString("base64url");
+}
+
+/** The cursor a client sent back, or `null` when it isn't one this API made. */
+export function decodeExpenseCursor(value: string): ExpenseCursor | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 3) return null;
+  const [date, createdAt, id] = parsed;
+  if (typeof date !== "string" || (createdAt !== null && typeof createdAt !== "string")) return null;
+  if (typeof id !== "string" || !OBJECT_ID.test(id)) return null;
+  const cursor: ExpenseCursor = {
+    date: new Date(date),
+    createdAt: createdAt === null ? null : new Date(createdAt),
+    id: new mongoose.Types.ObjectId(id),
+  };
+  const invalid = (d: Date | null) => d !== null && Number.isNaN(d.getTime());
+  return invalid(cursor.date) || invalid(cursor.createdAt) ? null : cursor;
+}
+
+/**
+ * Query for the expenses (or grouped items) sorting after `cursor` in
+ * `EXPENSE_LIST_SORT` order. A missing entry time sorts lowest, and query
+ * comparisons don't match across types, so it is matched explicitly.
+ */
+export function afterCursorFilter({ date, createdAt, id }: ExpenseCursor): Record<string, unknown> {
+  return {
+    $or: [
+      { date: { $lt: date } },
+      ...(createdAt ? [{ date, createdAt: { $lt: createdAt } }, { date, createdAt: null }] : []),
+      { date, createdAt, _id: { $lt: id } },
+    ],
+  };
+}
+
 export interface ExpensePageParams {
-  page: number;
   limit: number;
-  /** Items to skip: `offset` when given, else the pages before `page`. */
-  skip: number;
+  /** Continue after this item; `null` for the first page. */
+  cursor: ExpenseCursor | null;
 }
 
 /** A whole number of at least `min` from a query param, else null. */
@@ -173,45 +240,50 @@ function intParam(value: string | null, min: number): number | null {
 }
 
 /**
- * `page` / `limit` of the expense list, or `offset` / `limit`. A client that
- * deletes rows between pages asks by `offset` (the items it has loaded, less
- * the ones it deleted), since every later item has moved up by then.
+ * `limit` (default 20) and `cursor` of the expense list. `null` when a cursor
+ * is given but malformed, so the caller can refuse it rather than restart.
  */
-export function parseExpensePageParams(searchParams: URLSearchParams): ExpensePageParams {
-  const page = intParam(searchParams.get("page"), 1) ?? 1;
+export function parseExpensePageParams(searchParams: URLSearchParams): ExpensePageParams | null {
   const limit = intParam(searchParams.get("limit"), 1) ?? 20;
-  const skip = intParam(searchParams.get("offset"), 0) ?? (page - 1) * limit;
-  return { page, limit, skip };
+  const rawCursor = searchParams.get("cursor");
+  if (!rawCursor) return { limit, cursor: null };
+  const cursor = decodeExpenseCursor(rawCursor);
+  return cursor ? { limit, cursor } : null;
 }
 
 /**
- * The `pagination` block of the expense list: `nextOffset` is where the next
- * page starts and `hasMore` whether there is one, both counted in items (a
- * trip is one item in the grouped list, however many rows it shows as).
+ * The `pagination` block of the expense list. Pages are fetched one row over
+ * `limit`, so `rows` may hold one more than is sent: that extra row only says
+ * there is a next page. `nextCursor` (sent back as `cursor`) continues after
+ * the last row sent. `total` counts items (a trip is one in the grouped list).
  */
-export function expensePagination({ page, limit, skip }: ExpensePageParams, count: number, total: number) {
+export function expensePagination<T extends CursorKey>(rows: T[], limit: number, total: number) {
+  const page = rows.slice(0, limit);
+  const hasMore = rows.length > limit;
+  const last = page[page.length - 1];
   return {
     page,
-    limit,
-    total,
-    pages: Math.ceil(total / limit),
-    offset: skip,
-    nextOffset: skip + count,
-    hasMore: skip + count < total,
+    pagination: {
+      total,
+      hasMore,
+      nextCursor: hasMore && last ? encodeExpenseCursor(last) : null,
+    },
   };
 }
 
 /**
  * Pipeline paginating the expenses matching `filter` as list *items*: every
  * trip's matching expenses form one item, every other expense is its own.
- * Items are ordered by their latest expense date, newest first. Returns one
- * document `{ items: [{ _id, ids }], total: [{ count }] }`, where `ids` are
- * the item's expense ids. A trip item's `_id` is the trip id, any other
- * item's the expense id; a trip's expenses therefore always share a page.
+ * Items are ordered like the flat list (`EXPENSE_LIST_SORT`) by their latest
+ * expense. Returns one document `{ items: [{ _id, ids, date, createdAt }],
+ * total: [{ count }] }`: up to `limit + 1` items after `cursor` (the extra
+ * one says there is a next page), and the count of all items. `ids` are the
+ * item's expense ids; a trip item's `_id` is the trip id, any other item's
+ * the expense id, so a trip's expenses always share a page.
  */
 export function groupedExpensePagePipeline(
   filter: Record<string, unknown>,
-  skip: number,
+  cursor: ExpenseCursor | null,
   limit: number
 ) {
   return [
@@ -220,15 +292,18 @@ export function groupedExpensePagePipeline(
       $group: {
         // Missing or null `trip` falls back to the expense's own id.
         _id: { $ifNull: ["$trip", "$_id"] },
-        latestDate: { $max: "$date" },
-        latestCreatedAt: { $max: "$createdAt" },
+        date: { $max: "$date" },
+        createdAt: { $max: "$createdAt" },
         ids: { $push: "$_id" },
       },
     },
-    { $sort: { latestDate: -1, latestCreatedAt: -1, _id: -1 } },
+    { $sort: EXPENSE_LIST_SORT },
     {
       $facet: {
-        items: [{ $skip: skip }, { $limit: limit }, { $project: { ids: 1 } }],
+        items: [
+          ...(cursor ? [{ $match: afterCursorFilter(cursor) }] : []),
+          { $limit: limit + 1 },
+        ],
         total: [{ $count: "count" }],
       },
     },

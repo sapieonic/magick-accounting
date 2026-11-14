@@ -7,7 +7,8 @@ export default function NotFound() {
   return (
     <StatusPage
       top={<BrandLogo />}
-      eyebrow={<p className="num text-sm font-medium text-accent">404</p>}
+      eyebrow="404"
+      tone="accent"
       title="Page not found"
     >
       <p className="text-sm text-ink-3">The page you&apos;re looking for doesn&apos;t exist or may have been moved.</p>

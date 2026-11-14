@@ -1,4 +1,5 @@
 import { moneyToCents, roundMoney } from "@/lib/asset";
+import type { ExpensePaymentEntry } from "@/lib/expense-csv";
 
 // Kept here (not in the model) so client code can import it without mongoose.
 export type PaymentSource = "pocket" | "company" | "split" | "multiple";
@@ -380,4 +381,32 @@ export function getPaymentBreakdown(expense: PaymentSplitFields): PaymentBreakdo
     pocketBase,
     companyBase: roundMoney(baseTotal - pocketBase),
   };
+}
+
+/**
+ * The part of a listed expense credited to `payerId` in base currency, by the
+ * server's rule (`payerShareStages`): a "several people" expense credits each
+ * payer's own entries, anything else counts wholly to its submitter.
+ */
+export function payerShare(
+  expense: PaymentSplitFields & {
+    payments?: ExpensePaymentEntry[];
+    createdBy?: { _id?: string } | null;
+  },
+  payerId: string
+): { pocket: number; company: number } {
+  const payments = expense.paymentSource === "multiple" ? expense.payments ?? [] : [];
+  if (payments.length > 0) {
+    const share = { pocket: 0, company: 0 };
+    for (const entry of payments) {
+      if (entry.paidBy?._id !== payerId) continue;
+      const base = entry.amountInBaseCurrency ?? 0;
+      if (entry.source === "pocket") share.pocket += base;
+      else if (entry.source === "company") share.company += base;
+    }
+    return share;
+  }
+  if (expense.createdBy?._id !== payerId) return { pocket: 0, company: 0 };
+  const { pocketBase, companyBase } = getPaymentBreakdown(expense);
+  return { pocket: pocketBase, company: companyBase };
 }

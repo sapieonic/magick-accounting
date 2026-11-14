@@ -11,8 +11,12 @@ export interface SettingsSection {
   icon: LucideIcon;
 }
 
-/** Keeps a section's heading clear of the sticky phone nav when jumped to. */
-export const settingsSectionClass = "scroll-mt-20 xl:scroll-mt-6";
+/**
+ * Keeps a section's heading clear of the sticky phone nav when jumped to. The
+ * dashboard scroller already adds 24px of scroll padding, so this is only the
+ * nav's height on top of that (nothing from xl, where the nav sits beside).
+ */
+export const settingsSectionClass = "scroll-mt-14 xl:scroll-mt-0";
 
 /** Nearest ancestor that scrolls vertically (the dashboard's <main>), else the page. */
 function scrollParent(el: HTMLElement | null): HTMLElement | null {
@@ -57,11 +61,14 @@ export function pickActiveSection(
 
 /**
  * The horizontal scroll position that brings `link` fully into view inside
- * `strip` (a 16px margin keeps it off the edge), or null when it already fits
+ * `strip` (`STRIP_MARGIN` keeps it off the edge), or null when it already fits
  * or the strip doesn't scroll. Sets scrollLeft rather than calling
  * scrollIntoView, which would also scroll the page's vertical scroller.
  */
-export function stripScrollLeftFor(strip: HTMLElement, link: HTMLElement, margin = 16): number | null {
+const STRIP_MARGIN = 16;
+
+export function stripScrollLeftFor(strip: HTMLElement, link: HTMLElement): number | null {
+  const margin = STRIP_MARGIN;
   if (strip.scrollWidth <= strip.clientWidth) return null;
   const stripRect = strip.getBoundingClientRect();
   const linkRect = link.getBoundingClientRect();
@@ -115,9 +122,8 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
     };
     // Dragging the scroller's own scrollbar scrolls by hand too; a press on
     // the page's content (its target is a descendant) doesn't count.
-    const scrollbarTarget: HTMLElement = scroller ?? document.documentElement;
     const releaseOnScrollbar = (e: PointerEvent) => {
-      if (e.target === scrollbarTarget) release();
+      if (e.target === (scroller ?? document.documentElement)) release();
     };
 
     const target: HTMLElement | Window = scroller ?? window;
@@ -126,7 +132,7 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
     window.addEventListener("wheel", release, { passive: true });
     window.addEventListener("touchmove", release, { passive: true });
     window.addEventListener("keydown", release);
-    scrollbarTarget.addEventListener("pointerdown", releaseOnScrollbar);
+    window.addEventListener("pointerdown", releaseOnScrollbar);
     update();
     return () => {
       if (frame) cancelAnimationFrame(frame);
@@ -135,7 +141,7 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
       window.removeEventListener("wheel", release);
       window.removeEventListener("touchmove", release);
       window.removeEventListener("keydown", release);
-      scrollbarTarget.removeEventListener("pointerdown", releaseOnScrollbar);
+      window.removeEventListener("pointerdown", releaseOnScrollbar);
     };
   }, [sections]);
 
@@ -154,7 +160,8 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
       aria-label="Settings sections"
       className={cn(
         "sticky top-0 z-10 -mx-[var(--pad)] border-b border-rule bg-background px-[var(--pad)]",
-        // From xl it sits beside the sections: line its top up with their scroll-mt-6.
+        // From xl it sits beside the sections: line its top up with where a jumped-to
+        // section lands (the scroller's 24px scroll padding).
         "xl:top-6 xl:mx-0 xl:w-[200px] xl:shrink-0 xl:border-0 xl:bg-transparent xl:px-0"
       )}
     >

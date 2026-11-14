@@ -31,5 +31,7 @@ describe("GlobalError", () => {
     expect(head).toContain("<script>");
     expect(head).toContain(`localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})`);
     expect(html).toContain("Something went wrong");
+    // StatusPage renders the eyebrow in the requested tone.
+    expect(html).toContain('<p class="text-sm font-medium text-danger">Error</p>');
   });
 });

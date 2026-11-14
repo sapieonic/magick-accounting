@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, act } from "@testing-library/react";
-import { FormFooter, FORM_FOOTER_HEIGHT_VAR } from "@/components/ui/FormSection";
+import { FormFooter } from "@/components/ui/FormSection";
 
-const footerHeight = () => document.documentElement.style.getPropertyValue(FORM_FOOTER_HEIGHT_VAR);
+const footerHeight = () => document.documentElement.style.getPropertyValue("--form-footer-h");
 
 describe("FormFooter", () => {
   afterEach(() => {
@@ -15,6 +15,11 @@ describe("FormFooter", () => {
     const footer = container.firstElementChild as HTMLElement;
     expect(footer).toHaveClass("sticky", "bottom-[var(--tabbar-h)]");
     expect(footer.className).not.toMatch(/55px/);
+  });
+
+  it("marks itself data-form-footer, which the dashboard layout's page-end padding checks with :has()", () => {
+    const { container } = render(<FormFooter>Save</FormFooter>);
+    expect(container.querySelector("[data-form-footer]")).toBe(container.firstElementChild);
   });
 
   it("publishes its measured height on <html> while mounted and tracks resizes", () => {

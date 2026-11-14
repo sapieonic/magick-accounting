@@ -7,6 +7,7 @@ import Checkbox from "@/components/ui/Checkbox";
 import Modal from "@/components/ui/Modal";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import Spinner from "@/components/ui/Spinner";
+import { peerFocusRing } from "@/components/ui/styles";
 
 const SKIP_UPLOAD_MODAL_KEY = "expense-upload-modal-skip";
 
@@ -71,10 +72,7 @@ export default function ReceiptUploadModal({ isOpen, extracting, onFile, onClose
                 onChange={(e) => setDontShowAgain(e.target.checked)}
                 className="peer sr-only"
               />
-              <Checkbox
-                checked={dontShowAgain}
-                className="peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
-              />
+              <Checkbox checked={dontShowAgain} className={peerFocusRing} />
               Don&apos;t show this automatically again
             </label>
             <Button variant="ghost" size="sm" onClick={skip}>

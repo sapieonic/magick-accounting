@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import { target24 } from "@/components/ui/styles";
 
 export interface Crumb {
   label: string;
@@ -40,7 +41,7 @@ export default function PageHeader({ title, eyebrow, breadcrumb, meta, actions, 
                     {crumb.href ? (
                       <Link
                         href={crumb.href}
-                        className="inline-flex min-h-6 items-center text-ink-3 transition-colors duration-140 hover:text-accent"
+                        className={cn(target24, "text-ink-3 transition-colors duration-140 hover:text-accent")}
                       >
                         {crumb.label}
                       </Link>

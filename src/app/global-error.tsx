@@ -32,7 +32,7 @@ export default function GlobalError({
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-dvh font-sans antialiased">
-        <StatusPage eyebrow={<p className="text-sm font-medium text-danger">Error</p>} title="Something went wrong">
+        <StatusPage eyebrow="Error" tone="danger" title="Something went wrong">
           <p className="text-sm text-ink-3">
             An unexpected error occurred. Please try again — if the problem persists, contact your administrator.
           </p>
