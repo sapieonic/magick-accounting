@@ -18,10 +18,11 @@ import { format, endOfMonth } from "date-fns";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
+import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { getPaymentBreakdown, payerShare } from "@/lib/expense";
+import { MAX_EXPENSE_PAGE, getPaymentBreakdown, payerShare } from "@/lib/expense";
 import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
@@ -63,8 +64,8 @@ interface ExpenseSummary {
 
 const CUSTOM_DATE_PRESET = "custom";
 const PAGE_SIZE = 25;
-const EXPORT_LIMIT = 10000;
-const UNDO_WINDOW_MS = 5000;
+/** Export requests at most, a guard against a server that never says it's done. */
+const MAX_EXPORT_PAGES = 50;
 /** Wide enough for the ledger plus the detail side panel. */
 const SIDE_PANEL_QUERY = "(min-width: 1280px)";
 const DETAIL_PANEL_ID = "expense-detail-panel";
@@ -108,11 +109,7 @@ function resolveDateRange(
   return { from: "", to: "" };
 }
 
-/** A delete still inside its undo window (it leaves the map once committed). */
-interface PendingDelete {
-  expense: Expense;
-  timer: ReturnType<typeof setTimeout>;
-}
+const deleteExpense = (id: string) => api.delete(`/api/expenses/${id}`);
 
 /** On/off switch for the "Group trips" view. */
 function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
@@ -191,9 +188,14 @@ export default function ExpensesPage() {
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
-  const pendingDeletes = useRef(new Map<string, PendingDelete>());
+  const { schedule: scheduleDelete, undo: undoDelete, flush: flushPendingDeletes } = usePendingDeletes(deleteExpense);
   /** The server's cursor for the page after the loaded ones. */
   const nextCursor = useRef<string | null>(null);
+  /**
+   * Bumped when a reload starts and when it lands: a Load more begun under an
+   * earlier generation belongs to another query (or cursor) and is dropped.
+   */
+  const listGeneration = useRef(0);
   const expensesRef = useRef<Expense[]>([]);
   expensesRef.current = expenses;
 
@@ -353,29 +355,13 @@ export default function ExpensesPage() {
     [buildFilterParams]
   );
 
-  // Commit any deletes still inside their undo window. Called before reloading
-  // the list (so the server result matches the UI) and on unmount.
-  // (Deletes already committing finish on their own.)
-  const flushPendingDeletes = useCallback(async () => {
-    const entries = Array.from(pendingDeletes.current.values());
-    entries.forEach((entry) => {
-      clearTimeout(entry.timer);
-      pendingDeletes.current.delete(entry.expense._id);
-    });
-    await Promise.allSettled(entries.map((entry) => api.delete(`/api/expenses/${entry.expense._id}`)));
-  }, []);
-
-  useEffect(() => {
-    const flush = flushPendingDeletes;
-    return () => {
-      void flush();
-    };
-  }, [flushPendingDeletes]);
-
   useEffect(() => {
     if (!urlSynced) return;
     let active = true;
     const initialLoad = !hasLoadedExpenses.current;
+    // A Load more still in flight is for the previous list.
+    listGeneration.current += 1;
+    setLoadingMore(false);
 
     async function loadExpenses() {
       if (initialLoad) {
@@ -385,6 +371,7 @@ export default function ExpensesPage() {
       }
 
       try {
+        // Commit deletes still in their undo window first, so the server result matches the UI.
         await flushPendingDeletes();
         const params = buildQueryParams(null, PAGE_SIZE, true);
         if (groupTrips) params.set("groupTrips", "true");
@@ -416,6 +403,9 @@ export default function ExpensesPage() {
         }
       } finally {
         if (!active) return;
+        // Also drops a Load more begun while this reload ran (it used the old cursor).
+        listGeneration.current += 1;
+        setLoadingMore(false);
 
         if (initialLoad) {
           setLoadingExpenses(false);
@@ -438,11 +428,15 @@ export default function ExpensesPage() {
   // Continues after the last item loaded (a cursor, not a position), so
   // deletes since the last page can't make it skip one.
   const loadMore = async () => {
+    const generation = listGeneration.current;
+    const isCurrent = () => generation === listGeneration.current;
     setLoadingMore(true);
     try {
       const params = buildQueryParams(nextCursor.current, PAGE_SIZE, false);
       if (groupTrips) params.set("groupTrips", "true");
       const data = await api.get(`/api/expenses?${params.toString()}`);
+      // The filters or view changed meanwhile: this page isn't part of the list now.
+      if (!isCurrent()) return;
       if (groupTrips && data.trips) setTrips((prev) => ({ ...prev, ...data.trips }));
       // A trip whose latest expense was deleted can sort after the cursor
       // and come again: keep only the expenses not listed yet.
@@ -453,18 +447,30 @@ export default function ExpensesPage() {
       nextCursor.current = data.pagination?.nextCursor ?? null;
       setHasMore(Boolean(data.pagination?.hasMore));
     } catch {
-      toast("Failed to load more expenses", "error");
+      if (isCurrent()) toast("Failed to load more expenses", "error");
     } finally {
-      setLoadingMore(false);
+      if (isCurrent()) setLoadingMore(false);
     }
   };
 
   const handleExport = async () => {
     setExporting(true);
     try {
-      const params = buildQueryParams(null, EXPORT_LIMIT, false);
-      const data = await api.get(`/api/expenses?${params.toString()}`);
-      const rows = (data.expenses as Expense[]).map(expenseCsvRow);
+      // A request returns at most MAX_EXPENSE_PAGE rows: follow the cursor until the list ends.
+      const exported: Expense[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; ; page++) {
+        if (page === MAX_EXPORT_PAGES) throw new Error("Export has too many pages");
+        const params = buildQueryParams(cursor, MAX_EXPENSE_PAGE, false);
+        const data = await api.get(`/api/expenses?${params.toString()}`);
+        exported.push(...(data.expenses as Expense[]));
+        const next: string | null = data.pagination?.nextCursor ?? null;
+        if (!data.pagination?.hasMore) break;
+        // Never stop short silently, nor repeat a page forever.
+        if (!next || next === cursor) throw new Error("Export cursor did not advance");
+        cursor = next;
+      }
+      const rows = exported.map(expenseCsvRow);
       const csv = buildCsv(EXPENSE_CSV_HEADERS, rows);
       downloadCsv(`expenses-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
       toast(`Exported ${rows.length} expense${rows.length !== 1 ? "s" : ""}`);
@@ -541,32 +547,17 @@ export default function ExpensesPage() {
       if (itemReappears) setTotalCount((prev) => prev + 1);
     };
 
-    // Leaving the map ends the undo window (and keeps a flush from repeating the request).
-    const commit = async () => {
-      if (!pendingDeletes.current.delete(expense._id)) return;
-      try {
-        await api.delete(`/api/expenses/${expense._id}`);
-      } catch {
+    scheduleDelete(expense._id, {
+      onUndo: restore,
+      onFailed: () => {
         restore();
         toast("Failed to delete expense", "error");
-      }
-    };
-
-    const timer = setTimeout(() => void commit(), UNDO_WINDOW_MS);
-    pendingDeletes.current.set(expense._id, { expense, timer });
+      },
+    });
 
     toast(`Deleted "${expense.title}"`, "info", {
       durationMs: UNDO_WINDOW_MS,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          const pending = pendingDeletes.current.get(expense._id);
-          if (!pending) return;
-          clearTimeout(pending.timer);
-          pendingDeletes.current.delete(expense._id);
-          restore();
-        },
-      },
+      action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
     });
   };
 

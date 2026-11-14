@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
-import { getPaymentBreakdown } from "@/lib/expense";
+import { getPaymentBreakdown, storedRateToBase } from "@/lib/expense";
 import { payerName, paymentSourceLabel } from "@/lib/expense-csv";
 import { dayKey } from "@/lib/trip";
 import type { ExpenseListItem } from "@/types/expense";
@@ -17,11 +17,15 @@ export function isForeign(
   return Boolean(expense.currency && !expense.currency.isBase && expense.amountInBaseCurrency != null);
 }
 
-/** "= ₹2,782.08 at ₹96.00 per USD, fixed on entry" for foreign amounts. */
+/**
+ * "= ₹2,782.08 at ₹96.00 per USD, fixed on entry" for foreign amounts, at the
+ * rate stored on entry (the base amount is rounded, so dividing it back out
+ * drifts on small amounts).
+ */
 export function conversionNote(expense: ExpenseListItem): string | null {
   if (!isForeign(expense) || !expense.amount) return null;
   const base = expense.amountInBaseCurrency!;
-  const rate = base / expense.amount;
+  const rate = storedRateToBase(expense)!;
   return `= ${formatBaseCurrency(base)} at ${formatBaseCurrency(rate)} per ${expense.currency!.code}, fixed on entry`;
 }
 

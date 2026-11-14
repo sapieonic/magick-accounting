@@ -40,6 +40,7 @@ import {
   type ExpenseLookups,
 } from "@/components/expenses/form/types";
 import { formatCurrency } from "@/lib/currency";
+import { storedRateToBase } from "@/lib/expense";
 import { isTravelType } from "@/lib/trip";
 
 interface StoredPayment {
@@ -56,12 +57,6 @@ interface LinkedAsset {
 }
 
 const DEFAULT_RETURN_TO = "/dashboard/expenses";
-
-/** The rate the expense was converted at, as `PUT /api/expenses/:id` derives it. */
-function storedRate(exp: { exchangeRateToBase?: number | null; amount: number; amountInBaseCurrency?: number | null }) {
-  if (exp.exchangeRateToBase) return exp.exchangeRateToBase;
-  return exp.amount > 0 && exp.amountInBaseCurrency != null ? exp.amountInBaseCurrency / exp.amount : null;
-}
 
 /** `?returnTo=` if it's a dashboard path; anything else (other sites included) is ignored. */
 function readReturnTo(): string | null {
@@ -247,7 +242,7 @@ export default function EditExpensePage() {
         if (storedCurrency && !currencies.some((c) => c._id === storedCurrency._id)) {
           currencies.push(storedCurrency);
         }
-        const rate = storedRate(exp);
+        const rate = storedRateToBase(exp);
         setSavedRate(storedCurrency && rate ? { currencyId: storedCurrency._id, rateToBase: rate } : null);
         setLookups({
           departments: lookupData.departments,

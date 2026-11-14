@@ -26,6 +26,7 @@ import { getPaymentBreakdown, payerShare } from "@/lib/expense";
 import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, withViewerStatus } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
+import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
 import { useToast } from "@/components/ui/Toast";
 import Avatar from "@/components/ui/Avatar";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -47,7 +48,6 @@ import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
 
-const UNDO_WINDOW_MS = 5000;
 /** Suggestions shown in the "Might belong here" panel. */
 const SUGGESTIONS = 3;
 
@@ -121,10 +121,7 @@ function MetaItem({ icon: Icon, children }: { icon: LucideIcon; children: ReactN
   );
 }
 
-interface PendingDelete {
-  expense: ExpenseListItem;
-  timer: ReturnType<typeof setTimeout>;
-}
+const deleteExpense = (id: string) => api.delete(`/api/expenses/${id}`);
 
 export default function TripDetailPage() {
   const params = useParams<{ id: string }>();
@@ -146,13 +143,11 @@ export default function TripDetailPage() {
   // Bumped each time a trip load lands, so the suggestions refresh once per reload.
   const [loadCount, setLoadCount] = useState(0);
   const [adding, setAdding] = useState<string | null>(null);
-  const pendingDeletes = useRef(new Map<string, PendingDelete>());
-  const [pendingIds, setPendingIds] = useState<string[]>([]);
+  // Expenses deleted but still listed in `data`: in their undo window or committing.
+  const { hiddenIds, schedule: scheduleDelete, undo: undoDelete } = usePendingDeletes(deleteExpense);
   // Only the latest load may apply: an earlier, slower GET mustn't overwrite a newer one.
   const loadSeq = useRef(0);
   useTitle(data?.trip.name || "Trip");
-
-  const syncPending = useCallback(() => setPendingIds([...pendingDeletes.current.keys()]), []);
 
   const load = useCallback(
     async (quiet: boolean) => {
@@ -201,20 +196,7 @@ export default function TripDetailPage() {
     };
   }, [loadCount, tripId]);
 
-  // Commit deletes still inside their undo window when leaving the page.
-  useEffect(() => {
-    const pending = pendingDeletes.current;
-    return () => {
-      const entries = [...pending.values()];
-      pending.clear();
-      entries.forEach((entry) => {
-        clearTimeout(entry.timer);
-        void api.delete(`/api/expenses/${entry.expense._id}`).catch(() => undefined);
-      });
-    };
-  }, []);
-
-  const pendingSet = useMemo(() => new Set(pendingIds), [pendingIds]);
+  const pendingSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const expenses = useMemo(
     () => (data ? data.expenses.filter((e) => !pendingSet.has(e._id)) : []),
     [data, pendingSet]
@@ -230,13 +212,10 @@ export default function TripDetailPage() {
         toast("Linked asset purchases cannot be deleted from Expenses", "error");
         return;
       }
-      if (pendingDeletes.current.has(expense._id)) return;
-
-      const timer = setTimeout(async () => {
-        if (!pendingDeletes.current.has(expense._id)) return;
-        try {
-          await api.delete(`/api/expenses/${expense._id}`);
-          // Drop it from the loaded data before un-hiding, then refresh the totals.
+      // Hidden (via `hiddenIds`) until it is undone, deleted or fails.
+      const scheduled = scheduleDelete(expense._id, {
+        onDeleted: () => {
+          // Drop it from the loaded data as it stops being hidden, then refresh the totals.
           setData((prev) =>
             prev
               ? {
@@ -246,34 +225,18 @@ export default function TripDetailPage() {
                 }
               : prev
           );
-          pendingDeletes.current.delete(expense._id);
-          syncPending();
           void load(true);
-        } catch {
-          pendingDeletes.current.delete(expense._id);
-          syncPending();
-          toast("Failed to delete expense", "error");
-        }
-      }, UNDO_WINDOW_MS);
-
-      pendingDeletes.current.set(expense._id, { expense, timer });
-      syncPending();
+        },
+        onFailed: () => toast("Failed to delete expense", "error"),
+      });
+      if (!scheduled) return;
 
       toast(`Deleted "${expense.title}"`, "info", {
         durationMs: UNDO_WINDOW_MS,
-        action: {
-          label: "Undo",
-          onClick: () => {
-            const pending = pendingDeletes.current.get(expense._id);
-            if (!pending) return;
-            clearTimeout(pending.timer);
-            pendingDeletes.current.delete(expense._id);
-            syncPending();
-          },
-        },
+        action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
       });
     },
-    [load, syncPending, toast]
+    [load, scheduleDelete, undoDelete, toast]
   );
 
   const handleRemoveFromTrip = useCallback(

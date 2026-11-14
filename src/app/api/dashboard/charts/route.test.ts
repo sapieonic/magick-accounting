@@ -4,6 +4,7 @@ import { GET } from "./route";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
+import { baseTotalExpr } from "@/lib/expense";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -77,6 +78,10 @@ describe("GET /api/dashboard/charts", () => {
     ]);
     // The company/pocket split comes from /api/dashboard/stats (the expense summary).
     expect(responseData).not.toHaveProperty("paymentSources");
+    // Every chart sums the shared base-currency total (legacy docs fall back to `amount`).
+    for (const [pipeline] of vi.mocked(Expense.aggregate).mock.calls as any[]) {
+      expect(pipeline[1].$group.total).toEqual({ $sum: baseTotalExpr });
+    }
   });
 
   it("intersects monthly trend aggregation with active date filters", async () => {

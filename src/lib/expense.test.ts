@@ -17,6 +17,7 @@ import {
   pocketAmountInBase,
   pocketBaseExpr,
   spendByPayerPipeline,
+  storedRateToBase,
 } from "@/lib/expense";
 
 describe("normalizeGstAmount", () => {
@@ -500,5 +501,21 @@ describe("payerShare", () => {
     };
 
     expect(payerShare(shared, "asha")).toEqual({ pocket: 0, company: 6 });
+  });
+});
+
+describe("storedRateToBase", () => {
+  it("uses the rate stored on entry over the rounded base amount", () => {
+    expect(storedRateToBase({ amount: 0.07, amountInBaseCurrency: 5.84, exchangeRateToBase: 83.4567 })).toBe(83.4567);
+  });
+
+  it("derives the rate of older documents from their base amount", () => {
+    expect(storedRateToBase({ amount: 100, amountInBaseCurrency: 8350 })).toBe(83.5);
+    expect(storedRateToBase({ amount: 100, amountInBaseCurrency: 8350, exchangeRateToBase: null })).toBe(83.5);
+  });
+
+  it("is null when the rate can't be known", () => {
+    expect(storedRateToBase({ amount: 0, amountInBaseCurrency: 0 })).toBeNull();
+    expect(storedRateToBase({ amount: 100, amountInBaseCurrency: null })).toBeNull();
   });
 });

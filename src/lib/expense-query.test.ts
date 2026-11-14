@@ -20,7 +20,7 @@ import {
   parseExpensePageParams,
   parsePaidByParam,
 } from "@/lib/expense-query";
-import { paidByFilter, payerSpendPipeline } from "@/lib/expense";
+import { MAX_EXPENSE_PAGE, paidByFilter, payerSpendPipeline } from "@/lib/expense";
 import Expense from "@/models/Expense";
 
 const USER_ID = "507f1f77bcf86cd799439011";
@@ -450,15 +450,19 @@ describe("groupedExpensePagePipeline", () => {
     expect(total).toEqual([{ count: 5 }]);
   });
 
-  it("continues strictly after the cursor item, still counting all items", () => {
+  it("continues strictly after the cursor item, without recounting all items", () => {
     // After the second item (Goa, whose latest expense is the 5 Jan hotel).
     const cursor = decodeExpenseCursor(encodeExpenseCursor({ ...goaHotel, _id: goa }))!;
-    const [{ items, total }] = runPipeline(groupedExpensePagePipeline({}, cursor, 2), docs);
+    const pipeline = groupedExpensePagePipeline({}, cursor, 2);
+    const [result] = runPipeline(pipeline, docs);
 
-    expect(items.map((item: { _id: unknown }) => String(item._id))).toEqual(
+    expect(result.items.map((item: { _id: unknown }) => String(item._id))).toEqual(
       [lunch._id, pune, taxi._id].map(String)
     );
-    expect(total).toEqual([{ count: 5 }]);
+    // Only the first page reports a total, so later pages don't count.
+    const facet = pipeline.find((stage) => "$facet" in stage) as { $facet: Record<string, unknown> };
+    expect(Object.keys(facet.$facet)).toEqual(["items"]);
+    expect(result).not.toHaveProperty("total");
   });
 
   it("doesn't skip an item when the one before the cursor was deleted", () => {
@@ -558,6 +562,13 @@ describe("parseExpensePageParams", () => {
     expect(parseExpensePageParams(params("limit=2.5"))).toEqual({ limit: 20, cursor: null });
   });
 
+  it("caps the limit at the largest page (the CSV export's)", () => {
+    expect(MAX_EXPENSE_PAGE).toBe(10000);
+    expect(parseExpensePageParams(params("limit=10000"))).toEqual({ limit: 10000, cursor: null });
+    expect(parseExpensePageParams(params("limit=10001"))).toEqual({ limit: 10000, cursor: null });
+    expect(parseExpensePageParams(params("limit=999999999"))).toEqual({ limit: 10000, cursor: null });
+  });
+
   it("refuses a malformed cursor rather than starting over", () => {
     expect(parseExpensePageParams(params("cursor=nope"))).toBeNull();
   });
@@ -585,5 +596,14 @@ describe("expensePagination", () => {
       pagination: { total: 2, hasMore: false, nextCursor: null },
     });
     expect(expensePagination([], 3, 0).pagination).toEqual({ total: 0, hasMore: false, nextCursor: null });
+  });
+
+  it("passes on a missing total (pages after a cursor aren't counted)", () => {
+    const rows = [row(5), row(4)];
+    expect(expensePagination(rows, 1, null).pagination).toEqual({
+      total: null,
+      hasMore: true,
+      nextCursor: encodeExpenseCursor(rows[0]),
+    });
   });
 });

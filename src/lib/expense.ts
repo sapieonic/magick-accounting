@@ -263,6 +263,12 @@ export function buildPaymentFields(
 // Mongo aggregation expressions for the base-currency split of each expense.
 // Legacy docs have no pocketAmountInBaseCurrency: anything not paid by the
 // company counts wholly as pocket, matching how they were bucketed before.
+/**
+ * Most expenses one `GET /api/expenses` page returns (`limit` is capped to
+ * it); the CSV export fetches pages of this size.
+ */
+export const MAX_EXPENSE_PAGE = 10000;
+
 export const baseTotalExpr = { $ifNull: ["$amountInBaseCurrency", "$amount"] };
 
 export const pocketBaseExpr = {
@@ -351,6 +357,22 @@ export function paidByFilter(payerId: unknown): Record<string, unknown> {
       { createdBy: payerId, $nor: [shared] },
     ],
   };
+}
+
+/**
+ * The rate an expense's amount was converted to base currency at: the stored
+ * `exchangeRateToBase`, else (older documents) base amount / amount, as
+ * `PUT /api/expenses/:id` derives it. `null` when neither is known.
+ */
+export function storedRateToBase(expense: {
+  exchangeRateToBase?: number | null;
+  amount: number;
+  amountInBaseCurrency?: number | null;
+}): number | null {
+  if (expense.exchangeRateToBase) return expense.exchangeRateToBase;
+  return expense.amount > 0 && expense.amountInBaseCurrency != null
+    ? expense.amountInBaseCurrency / expense.amount
+    : null;
 }
 
 export interface PaymentSplitFields {

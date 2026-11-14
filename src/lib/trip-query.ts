@@ -310,7 +310,8 @@ interface GroupedItem {
  * One page of the expense list where each trip is one item, continuing after
  * `cursor`. Returns the page's expenses flat, in item order (a trip's own
  * expenses oldest first), the trips that appear on the page, and the
- * `pagination` block (`expensePagination`), counted in items.
+ * `pagination` block (`expensePagination`), counted in items (`total` only on
+ * the first page).
  */
 export async function getGroupedExpensePage(
   filter: Record<string, unknown>,
@@ -323,7 +324,7 @@ export async function getGroupedExpensePage(
   const { page: items, pagination } = expensePagination<GroupedItem>(
     result?.items ?? [],
     limit,
-    result?.total?.[0]?.count ?? 0
+    cursor ? null : (result?.total?.[0]?.count ?? 0)
   );
 
   const allIds = items.flatMap((item) => item.ids);

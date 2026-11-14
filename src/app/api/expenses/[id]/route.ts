@@ -10,6 +10,7 @@ import {
   normalizeGstAmount,
   normalizePaymentSplit,
   paymentEntriesEqual,
+  storedRateToBase,
 } from "@/lib/expense";
 import { assertPayersExist, storedPaymentEntries } from "@/lib/expense-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
@@ -202,11 +203,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         : (expense.travelType ?? null);
     const newTravelType = newTrip ? requestedTravelType : null;
 
-    let effectiveRateToBase = expense.exchangeRateToBase;
-    if (!effectiveRateToBase && expense.amount > 0 && expense.amountInBaseCurrency != null) {
-      effectiveRateToBase = expense.amountInBaseCurrency / expense.amount;
-    }
-    if (!effectiveRateToBase || newCurrencyId !== currentCurrencyId) {
+    // Keep the rate fixed on entry unless the currency changes (or none is known).
+    const savedRate = storedRateToBase(expense);
+    let effectiveRateToBase: number;
+    if (savedRate && newCurrencyId === currentCurrencyId) {
+      effectiveRateToBase = savedRate;
+    } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const curr: any = await Currency.findById(newCurrencyId).lean();
       if (!curr) throw new Error("Currency is invalid");

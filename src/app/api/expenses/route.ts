@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
   if (searchParams.get("groupTrips") === "true") {
     // Each trip is one item (its expenses never split across pages), so
-    // limit, total and the cursor count items rather than expenses.
+    // limit, total (first page only) and the cursor count items rather than expenses.
     const [grouped, summary] = await Promise.all([
       getGroupedExpensePage(filter, pageParams, authResult),
       summaryPromise,
@@ -70,7 +70,8 @@ export async function GET(req: NextRequest) {
       .sort(EXPENSE_LIST_SORT)
       .limit(limit + 1)
       .lean(),
-    Expense.countDocuments(filter),
+    // Only the first page reports a total; later pages skip the count.
+    cursor ? Promise.resolve(null) : Expense.countDocuments(filter),
     summaryPromise,
   ]);
   const { page, pagination } = expensePagination(rows, limit, total);

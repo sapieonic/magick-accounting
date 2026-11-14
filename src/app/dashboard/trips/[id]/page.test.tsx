@@ -558,6 +558,55 @@ describe("TripDetailPage", () => {
     expect(candidateCalls()).toBe(2);
   });
 
+  it("sends a delete once, and keeps it hidden, when Undo or leaving the page comes while it is in flight", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    let finishDelete!: () => void;
+    vi.mocked(api.delete).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDelete = () => resolve({ message: "ok" });
+        })
+    );
+    const { unmount } = render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(api.delete).toHaveBeenCalledTimes(1);
+
+    // Undo once the request is out: it can't stop the delete, so the expense stays hidden.
+    const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "IndiGo BOM"')?.[2];
+    act(() => options.action.onClick());
+    expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
+    expect(screen.queryByText(formatBaseCurrency(12500))).not.toBeInTheDocument();
+
+    // Leaving the page doesn't send it again.
+    unmount();
+    await act(async () => finishDelete());
+    expect(api.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits a delete still in its undo window when leaving the page", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { unmount } = render(<TripDetailPage />);
+    await screen.findByTestId("trip-timeline");
+
+    await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+    expect(api.delete).not.toHaveBeenCalled();
+    unmount();
+    expect(api.delete).toHaveBeenCalledWith(`/api/expenses/${flight._id}`);
+    await act(async () => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(api.delete).toHaveBeenCalledTimes(1);
+  });
+
   it("restores an expense when the delete is undone", async () => {
     // Swap the Date-only fake clock for one that also controls timers.
     vi.useRealTimers();

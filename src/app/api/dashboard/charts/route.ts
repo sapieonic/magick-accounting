@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
+import { baseTotalExpr } from "@/lib/expense";
 import { buildExpenseFilter } from "@/lib/expense-query";
 import Expense from "@/models/Expense";
 import "@/models/Category";
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: { y: { $year: "$date" }, m: { $month: "$date" } },
-          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          total: { $sum: baseTotalExpr },
           count: { $sum: 1 },
         },
       },
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: "$category",
-          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          total: { $sum: baseTotalExpr },
           count: { $sum: 1 },
         },
       },
@@ -113,7 +114,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: "$department",
-          total: { $sum: { $ifNull: ["$amountInBaseCurrency", "$amount"] } },
+          total: { $sum: baseTotalExpr },
           count: { $sum: 1 },
         },
       },

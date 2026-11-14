@@ -508,7 +508,11 @@ describe("GET /api/expenses", () => {
     const next = await (await get(`?groupTrips=true&limit=2&cursor=${first.pagination.nextCursor}`)).json();
 
     expect(titles(next)).toEqual(["Books", "Orphan"]);
-    expect(next.pagination).toEqual({ total: 3, hasMore: false, nextCursor: null });
+    // Only the first page counts the items; later pages don't recount them.
+    expect(next.pagination).toEqual({ total: null, hasMore: false, nextCursor: null });
+    const pipeline = vi.mocked(Expense.aggregate).mock.calls[1][0] as unknown as Record<string, unknown>[];
+    const facet = pipeline.find((stage) => "$facet" in stage) as { $facet: Record<string, unknown> };
+    expect(Object.keys(facet.$facet)).toEqual(["items"]);
   });
 
   it("continues a flat page after the cursor, even once earlier rows are deleted", async () => {
@@ -524,14 +528,24 @@ describe("GET /api/expenses", () => {
     // Hotel is deleted: Cab (same day, entered earlier) still comes next.
     vi.mocked(Expense.find).mockImplementation(((filter: Record<string, unknown>) =>
       findChain(filter, docs.filter((d) => d !== hotel))) as never);
-    vi.mocked(Expense.countDocuments).mockResolvedValue(5 as never);
     const next = await (await get(`?limit=2&cursor=${first.pagination.nextCursor}`)).json();
     expect(titles(next)).toEqual(["Cab", "Books"]);
-    expect(next.pagination).toEqual({ total: 5, hasMore: true, nextCursor: encodeExpenseCursor(books) });
+    // Only the first page counts; pages after a cursor don't recount.
+    expect(next.pagination).toEqual({ total: null, hasMore: true, nextCursor: encodeExpenseCursor(books) });
 
     const last = await (await get(`?limit=2&cursor=${next.pagination.nextCursor}`)).json();
     expect(titles(last)).toEqual(["Orphan", "Flight"]);
-    expect(last.pagination).toEqual({ total: 5, hasMore: false, nextCursor: null });
+    expect(last.pagination).toEqual({ total: null, hasMore: false, nextCursor: null });
+    expect(Expense.countDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps an oversized limit at the largest page", async () => {
+    vi.mocked(Expense.countDocuments).mockResolvedValue(6 as never);
+
+    await get("?limit=1000000");
+
+    const query = vi.mocked(Expense.find).mock.results[0].value;
+    expect(query.limit).toHaveBeenCalledWith(10001);
   });
 
   it("refuses a malformed cursor", async () => {

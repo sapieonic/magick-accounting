@@ -379,7 +379,7 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 |----------|---------------------------|--------------|------------------------------------|
 | `POST`   | `/api/auth/verify`        | Public       | Verify token, create user if new   |
 | `GET`    | `/api/auth/me`            | Authenticated| Get current user                   |
-| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `limit` + `cursor` keyset paging; `groupTrips=true` pages by trip) |
+| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `limit` (max 10000) + `cursor` keyset paging; `groupTrips=true` pages by trip) |
 | `POST`   | `/api/expenses`           | Authenticated| Create expense                     |
 | `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID                  |
 | `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense                     |

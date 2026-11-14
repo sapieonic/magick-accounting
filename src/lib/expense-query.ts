@@ -1,7 +1,14 @@
 import mongoose from "mongoose";
 import Expense from "@/models/Expense";
 import type { AuthUser } from "./auth";
-import { baseTotalExpr, companyBaseExpr, paidByFilter, payerSpendPipeline, pocketBaseExpr } from "./expense";
+import {
+  baseTotalExpr,
+  companyBaseExpr,
+  MAX_EXPENSE_PAGE,
+  paidByFilter,
+  payerSpendPipeline,
+  pocketBaseExpr,
+} from "./expense";
 
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -240,11 +247,12 @@ function intParam(value: string | null, min: number): number | null {
 }
 
 /**
- * `limit` (default 20) and `cursor` of the expense list. `null` when a cursor
- * is given but malformed, so the caller can refuse it rather than restart.
+ * `limit` (default 20, at most `MAX_EXPENSE_PAGE`) and `cursor` of the expense
+ * list. `null` when a cursor is given but malformed, so the caller can refuse
+ * it rather than restart.
  */
 export function parseExpensePageParams(searchParams: URLSearchParams): ExpensePageParams | null {
-  const limit = intParam(searchParams.get("limit"), 1) ?? 20;
+  const limit = Math.min(intParam(searchParams.get("limit"), 1) ?? 20, MAX_EXPENSE_PAGE);
   const rawCursor = searchParams.get("cursor");
   if (!rawCursor) return { limit, cursor: null };
   const cursor = decodeExpenseCursor(rawCursor);
@@ -255,9 +263,10 @@ export function parseExpensePageParams(searchParams: URLSearchParams): ExpensePa
  * The `pagination` block of the expense list. Pages are fetched one row over
  * `limit`, so `rows` may hold one more than is sent: that extra row only says
  * there is a next page. `nextCursor` (sent back as `cursor`) continues after
- * the last row sent. `total` counts items (a trip is one in the grouped list).
+ * the last row sent. `total` counts items (a trip is one in the grouped list);
+ * only the first page counts them, so it is `null` on pages after a cursor.
  */
-export function expensePagination<T extends CursorKey>(rows: T[], limit: number, total: number) {
+export function expensePagination<T extends CursorKey>(rows: T[], limit: number, total: number | null) {
   const page = rows.slice(0, limit);
   const hasMore = rows.length > limit;
   const last = page[page.length - 1];
@@ -277,7 +286,8 @@ export function expensePagination<T extends CursorKey>(rows: T[], limit: number,
  * Items are ordered like the flat list (`EXPENSE_LIST_SORT`) by their latest
  * expense. Returns one document `{ items: [{ _id, ids, date, createdAt }],
  * total: [{ count }] }`: up to `limit + 1` items after `cursor` (the extra
- * one says there is a next page), and the count of all items. `ids` are the
+ * one says there is a next page), and, on the first page only (no `cursor`),
+ * the count of all items. `ids` are the
  * item's expense ids; a trip item's `_id` is the trip id, any other item's
  * the expense id, so a trip's expenses always share a page.
  */
@@ -304,7 +314,8 @@ export function groupedExpensePagePipeline(
           ...(cursor ? [{ $match: afterCursorFilter(cursor) }] : []),
           { $limit: limit + 1 },
         ],
-        total: [{ $count: "count" }],
+        // Only the first page reports a total, so later pages skip counting.
+        ...(cursor ? {} : { total: [{ $count: "count" }] }),
       },
     },
   ];

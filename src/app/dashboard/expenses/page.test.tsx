@@ -497,6 +497,85 @@ describe("ExpensesPage", () => {
     expect(exportUrl).not.toContain("groupTrips");
   });
 
+  it("exports every page of a list longer than one export request", async () => {
+    mockExpensePages({
+      "": { expenses: [expense], pagination: { total: 2, hasMore: true, nextCursor: "after-aws" } },
+      "after-aws": { expenses: [splitExpense], pagination: { hasMore: false, nextCursor: null } },
+    });
+    render(<ExpensesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
+
+    const exportUrls = expenseRequests().filter((url) => url.includes("limit=10000"));
+    expect(exportUrls).toHaveLength(2);
+    expect(new URL(exportUrls[0], "http://localhost").searchParams.get("cursor")).toBeNull();
+    expect(new URL(exportUrls[1], "http://localhost").searchParams.get("cursor")).toBe("after-aws");
+    const lines = vi.mocked(downloadCsv).mock.calls[0][1].split("\r\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain("AWS India Cloud Services");
+    expect(lines[2]).toContain("Team offsite hotel");
+    expect(toastMock).toHaveBeenCalledWith("Exported 2 expenses");
+  });
+
+  it("fails the export rather than cut it short when the server gives no cursor to continue from", async () => {
+    mockExpensePages({
+      "": { expenses: [expense], pagination: { total: 2, hasMore: true, nextCursor: null } },
+    });
+    render(<ExpensesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith("Failed to export expenses", "error"));
+    expect(downloadCsv).not.toHaveBeenCalled();
+  });
+
+  it("drops a Load more page that lands after the view changed", async () => {
+    window.history.replaceState(null, "", "/dashboard/expenses?view=flat");
+    let releaseMore!: () => void;
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (!url.startsWith("/api/expenses")) return defaultGet(url);
+      const params = new URL(url, "http://localhost").searchParams;
+      if (params.get("cursor") === "after-aws") {
+        // The flat list's second page, held until the grouped list has loaded.
+        return new Promise((resolve) => {
+          releaseMore = () =>
+            resolve({ expenses: [hotelExpense], pagination: { hasMore: true, nextCursor: "after-hotel" } });
+        });
+      }
+      if (params.get("groupTrips") === "true") {
+        return Promise.resolve({
+          expenses: [splitExpense],
+          trips: {},
+          pagination: { total: 1, hasMore: false, nextCursor: null },
+          summary: listedSummary,
+        });
+      }
+      return Promise.resolve({
+        expenses: [expense],
+        pagination: { total: 2, hasMore: true, nextCursor: "after-aws" },
+        summary: listedSummary,
+      });
+    });
+    render(<ExpensesPage />);
+
+    expect(await screen.findByText("Showing 1 of 2 expenses")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(lastCursor()).toBe("after-aws"));
+
+    fireEvent.click(screen.getByRole("switch", { name: /group trips/i }));
+    expect(await screen.findByText("Team offsite hotel")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
+
+    await act(async () => releaseMore());
+
+    // The flat list's page isn't appended, nor do its cursor and "more" carry over.
+    expect(screen.queryByText("Beach hotel")).not.toBeInTheDocument();
+    expect(screen.queryByText("AWS India Cloud Services")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /load more|loading/i })).not.toBeInTheDocument();
+  });
+
   it("filters by payer and shows that person's own share", async () => {
     const defaultGet = vi.mocked(api.get).getMockImplementation()!;
     vi.mocked(api.get).mockImplementation((url: string) => {
