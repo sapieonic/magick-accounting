@@ -54,8 +54,24 @@ describe("ExpenseDetail receipt preview", () => {
 
     const preview = await screen.findByTitle("Receipt for Team dinner");
     expect(preview).toHaveClass("h-[min(500px,60dvh)]", "w-full");
-    expect(preview).not.toHaveClass("h-[min(48dvh,640px)]");
+    expect(preview).not.toHaveClass("h-[min(72dvh,840px)]");
     const fields = screen.getByText("Submitted by");
     expect(fields.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("gives a side-panel PDF a tall frame so the viewer scales to the panel width", async () => {
+    render(
+      <ExpenseDetail
+        expense={{ ...expense, receiptFilename: "bill.pdf", receiptKey: "receipts/u1/bill.pdf" }}
+        editHref="/edit"
+        showHeader
+      />
+    );
+
+    const preview = await screen.findByTitle("Receipt for Team dinner");
+    expect(preview).toHaveClass("h-[min(72dvh,840px)]", "w-full");
+    const receipt = screen.getByRole("region", { name: "Receipt" });
+    const fields = screen.getByText("Submitted by");
+    expect(receipt.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

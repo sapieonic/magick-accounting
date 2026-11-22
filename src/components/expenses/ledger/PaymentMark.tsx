@@ -27,9 +27,10 @@ function paymentMark(expense: ExpenseListItem): { kind: Kind; label: string } {
 /**
  * The payment-source mark: a building for the company account, a wallet for
  * pocket, and both when the bill is split. Same icons as the expense form,
- * small enough to sit in a ledger sub-line.
+ * small enough to sit in a ledger sub-line. The ring keeps the company chip
+ * visible on a selected row, which uses the same soft accent fill.
  */
-export default function PaymentDot({
+export default function PaymentMark({
   expense,
   decorative = false,
   className,
@@ -47,10 +48,10 @@ export default function PaymentDot({
       aria-hidden={decorative ? true : undefined}
       title={label}
       className={cn(
-        "inline-flex h-4 shrink-0 items-center justify-center rounded-full",
-        kind === "both" ? "gap-0.5 bg-sunk px-1" : "w-4",
-        kind === "company" && "bg-accent-soft text-accent",
-        kind === "pocket" && "bg-amber-soft text-amber",
+        "inline-flex h-4 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
+        kind === "both" ? "gap-0.5 bg-sunk px-1 ring-rule" : "w-4",
+        kind === "company" && "bg-accent-soft text-accent ring-accent-line",
+        kind === "pocket" && "bg-amber-soft text-amber ring-pocket",
         className
       )}
     >

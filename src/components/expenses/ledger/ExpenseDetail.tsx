@@ -32,7 +32,7 @@ import CategoryGlyph, { CategoryDot } from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
 import { linkClass } from "@/components/ui/styles";
 import DetailList, { type DetailItem } from "@/components/ui/DetailList";
-import PaymentDot from "@/components/expenses/ledger/PaymentDot";
+import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import { conversionNote, expenseDate, isImageFile, paymentSourceDetail } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 
@@ -151,7 +151,7 @@ function PaidFrom({ expense }: { expense: ExpenseListItem }) {
       <ul className="flex flex-col items-end gap-1">
         {expense.payments.map((entry, index) => (
           <li key={index} className="flex items-center gap-1.5">
-            <PaymentDot
+            <PaymentMark
               expense={{ ...expense, paymentSource: entry.source === "company" ? "company" : "pocket" }}
             />
             <span>{payerName(entry)}</span>
@@ -163,7 +163,7 @@ function PaidFrom({ expense }: { expense: ExpenseListItem }) {
   }
   return (
     <span className="inline-flex items-center gap-2">
-      <PaymentDot expense={expense} decorative />
+      <PaymentMark expense={expense} decorative />
       <span>{paymentSourceDetail(expense)}</span>
     </span>
   );

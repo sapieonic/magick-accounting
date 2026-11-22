@@ -81,4 +81,21 @@ describe("ExpenseDetailPanel", () => {
     renderPanel();
     expect(separator()).toHaveAttribute("aria-valuenow", String(DETAIL_PANEL_PREFERRED));
   });
+
+  it("clamps a stored width once the row is measured", () => {
+    localStorage.setItem(DETAIL_PANEL_WIDTH_KEY, "2000");
+    const proto = HTMLElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "clientWidth");
+    Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => 800 });
+    try {
+      renderPanel();
+      // 800px row keeps 280px for the ledger and 20px of gap, so the panel stops at 500.
+      expect(separator()).toHaveAttribute("aria-valuenow", "500");
+      expect(separator()).toHaveAttribute("aria-valuemax", "500");
+      // Measuring does not rewrite the saved choice; a wider row can use it again.
+      expect(localStorage.getItem(DETAIL_PANEL_WIDTH_KEY)).toBe("2000");
+    } finally {
+      if (descriptor) Object.defineProperty(proto, "clientWidth", descriptor);
+    }
+  });
 });

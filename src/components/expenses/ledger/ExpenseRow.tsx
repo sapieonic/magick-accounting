@@ -10,7 +10,7 @@ import { cn } from "@/components/ui/cn";
 import { ledgerPad, rowClass, rowSelectedClass, target24, transition } from "@/components/ui/styles";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ExpenseDetail, { type ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
-import PaymentDot from "@/components/expenses/ledger/PaymentDot";
+import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import { expenseDate, expensePayerSummary, isForeign } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 
@@ -76,8 +76,9 @@ interface ExpenseRowProps extends ExpenseActions {
 
 /**
  * One dense ledger row: glyph chip, title (with receipt and asset marks),
- * a muted sub-line with a payment dot, and the amount with its INR
- * equivalent. The title button covers the row; quick actions appear on hover.
+ * a sub-line with the payer and a payment-source chip, and the amount with
+ * its INR equivalent. The title button covers the row; the chip sits above
+ * that layer so its name can be read on hover. Quick actions appear on hover.
  */
 export default function ExpenseRow({
   expense,
@@ -167,7 +168,11 @@ export default function ExpenseRow({
             )}
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3">
-            <PaymentDot expense={expense} />
+            {/* Above the title button's row-wide layer, so the chip's name shows
+                on hover. A click here still opens the row. */}
+            <span className="relative z-10 inline-flex shrink-0 cursor-pointer" onClick={onSelect}>
+              <PaymentMark expense={expense} />
+            </span>
             <span className={cn("ell", layout.narrow)}>{narrowSub}</span>
             <span className={cn("ell", layout.wide)}>{wideSub}</span>
           </span>
