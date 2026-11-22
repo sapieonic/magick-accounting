@@ -112,8 +112,83 @@ describe("ExpenseRow", () => {
 
   it("names the category in the narrow sub-line, where the glyph stands in for the column", () => {
     renderRow();
-    // The narrow layout's sub-line (the wide one shows payer · source instead).
+    // The narrow layout's sub-line (the wide one shows the payer; the source is the icon).
     expect(screen.getByText("Meals & Entertainment · 13 Oct · Asha Rao")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Company account" })).toBeInTheDocument();
+    expect(screen.queryByText("Company account")).not.toBeInTheDocument();
+  });
+
+  it("marks pocket, company and split bills with an icon instead of the source words", () => {
+    const { rerender } = renderRow({ expense: makeExpense({ paymentSource: "pocket" }) });
+    expect(screen.getByRole("img", { name: "Pocket" })).toHaveClass("ring-pocket");
+
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({ paymentSource: "split", pocketAmount: 40, pocketAmountInBaseCurrency: 40 })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByRole("img", { name: "Split" })).toBeInTheDocument();
+
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({
+          paymentSource: "multiple",
+          payments: [
+            { paidBy: { name: "Asha Rao" }, amount: 60, source: "pocket" },
+            { paidBy: { name: "Ravi Iyer" }, amount: 40, source: "company" },
+          ],
+        })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByRole("img", { name: "Company and pocket" })).toBeInTheDocument();
+  });
+
+  it("reads a several-people bill as pocket or company when every payer used the same source", () => {
+    const { rerender } = renderRow({
+      expense: makeExpense({
+        paymentSource: "multiple",
+        payments: [
+          { paidBy: { name: "Asha Rao" }, amount: 60, source: "pocket" },
+          { paidBy: { name: "Ravi Iyer" }, amount: 40, source: "pocket" },
+        ],
+      }),
+    });
+    expect(screen.getByRole("img", { name: "Pocket" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Company and pocket" })).not.toBeInTheDocument();
+
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({
+          paymentSource: "multiple",
+          payments: [
+            { paidBy: { name: "Asha Rao" }, amount: 60, source: "company" },
+            { paidBy: { name: "Ravi Iyer" }, amount: 40, source: "company" },
+          ],
+        })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByRole("img", { name: "Company account" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Company and pocket" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the payment chip above the row click target, and a click on it still opens the row", () => {
+    const { onSelect } = renderRow();
+    const chip = screen.getByRole("img", { name: "Company account" });
+    // The selected row uses the same soft accent fill, so the ring is what keeps the chip a chip.
+    expect(chip).toHaveAttribute("title", "Company account");
+    expect(chip).toHaveClass("ring-inset", "ring-accent-line");
+    expect(chip.parentElement).toHaveClass("relative", "z-10");
+    fireEvent.click(chip);
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the hover toolbar out of reach until it shows, and off hover-less screens", () => {

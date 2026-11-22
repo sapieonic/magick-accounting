@@ -39,6 +39,7 @@ import SplitBar from "@/components/ui/SplitBar";
 import { cn } from "@/components/ui/cn";
 import { focusRing, panelClass, panelPadX, transition } from "@/components/ui/styles";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
+import ExpenseDetailPanel from "@/components/expenses/ledger/ExpenseDetailPanel";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
 import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
 import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
@@ -756,10 +757,17 @@ export default function ExpensesPage() {
         )}
       </StatBand>
 
-      <div className="flex flex-wrap items-start gap-5">
+      <div className={cn("flex items-start gap-5", sidePanel ? "flex-nowrap" : "flex-wrap")}>
         <section
           aria-label="Expense ledger"
-          className={cn(panelClass, LEDGER_CONTAINER, "min-w-0 grow-[999] basis-[520px] overflow-hidden")}
+          className={cn(
+            panelClass,
+            LEDGER_CONTAINER,
+            "min-w-0 overflow-hidden",
+            // With the detail panel open, the ledger takes whatever width the
+            // panel doesn't (`w-0` so the panel's explicit width wins).
+            sidePanel ? "w-0 flex-1" : "grow-[999] basis-[520px]"
+          )}
         >
           {listItems.length === 0 ? (
             <EmptyState
@@ -823,16 +831,7 @@ export default function ExpensesPage() {
         </section>
 
         {sidePanel && (
-          <aside
-            id={DETAIL_PANEL_ID}
-            aria-label="Selected expense"
-            className={cn(
-              panelClass,
-              // <main> scrolls below the 4rem top bar, so the panel fits in
-              // 100dvh minus the bar and a 1rem gap above and below.
-              "sticky top-4 flex max-h-[calc(100dvh-6rem)] min-w-0 grow basis-[340px] flex-col overflow-y-auto"
-            )}
-          >
+          <ExpenseDetailPanel id={DETAIL_PANEL_ID}>
             {selectedExpense ? (
               <ExpenseDetail
                 key={selectedExpense._id}
@@ -850,7 +849,7 @@ export default function ExpensesPage() {
                 description="Pick a row to see its receipt, who paid and what you can do with it."
               />
             )}
-          </aside>
+          </ExpenseDetailPanel>
         )}
       </div>
     </div>

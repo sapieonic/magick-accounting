@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Luggage, Package, Paperclip, Pencil, Trash2, Unlink } from "lucide-react";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
-import { paymentSourceLabel } from "@/lib/expense-csv";
 import { travelTypeLabel } from "@/lib/trip";
 import { IconButton } from "@/components/ui/Button";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
@@ -11,7 +10,7 @@ import { cn } from "@/components/ui/cn";
 import { ledgerPad, rowClass, rowSelectedClass, target24, transition } from "@/components/ui/styles";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ExpenseDetail, { type ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
-import PaymentDot from "@/components/expenses/ledger/PaymentDot";
+import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import { expenseDate, expensePayerSummary, isForeign } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 
@@ -77,8 +76,9 @@ interface ExpenseRowProps extends ExpenseActions {
 
 /**
  * One dense ledger row: glyph chip, title (with receipt and asset marks),
- * a muted sub-line with a payment dot, and the amount with its INR
- * equivalent. The title button covers the row; quick actions appear on hover.
+ * a sub-line with the payer and a payment-source chip, and the amount with
+ * its INR equivalent. The title button covers the row; the chip sits above
+ * that layer so its name can be read on hover. Quick actions appear on hover.
  */
 export default function ExpenseRow({
   expense,
@@ -98,7 +98,6 @@ export default function ExpenseRow({
   const isTrip = variant === "trip";
   const code = expense.currency?.code;
   const payer = expensePayerSummary(expense);
-  const source = paymentSourceLabel(expense.paymentSource);
   const date = expenseDate(expense);
   const typeLabel = travelTypeLabel(expense.travelType);
   // An untagged trip expense is named by its category instead of "Untagged".
@@ -112,7 +111,7 @@ export default function ExpenseRow({
   const narrowSub = isTrip
     ? [kindLabel, showDate && date, payer].filter(Boolean).join(" · ")
     : [expense.category?.name, date, payer].filter(Boolean).join(" · ");
-  const wideSub = [payer, source, isTrip && showDate && date].filter(Boolean).join(" · ");
+  const wideSub = [payer, isTrip && showDate && date].filter(Boolean).join(" · ");
 
   return (
     <div className={cn(selected && inlineDetail && "border-b border-rule-2")}>
@@ -169,7 +168,11 @@ export default function ExpenseRow({
             )}
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3">
-            <PaymentDot expense={expense} />
+            {/* Above the title button's row-wide layer, so the chip's name shows
+                on hover. A click here still opens the row. */}
+            <span className="relative z-10 inline-flex shrink-0 cursor-pointer" onClick={onSelect}>
+              <PaymentMark expense={expense} />
+            </span>
             <span className={cn("ell", layout.narrow)}>{narrowSub}</span>
             <span className={cn("ell", layout.wide)}>{wideSub}</span>
           </span>
