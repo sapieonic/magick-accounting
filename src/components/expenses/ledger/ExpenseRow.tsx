@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Luggage, Package, Paperclip, Pencil, Trash2, Unlink } from "lucide-react";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
-import { paymentSourceLabel } from "@/lib/expense-csv";
 import { travelTypeLabel } from "@/lib/trip";
 import { IconButton } from "@/components/ui/Button";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
@@ -98,7 +97,6 @@ export default function ExpenseRow({
   const isTrip = variant === "trip";
   const code = expense.currency?.code;
   const payer = expensePayerSummary(expense);
-  const source = paymentSourceLabel(expense.paymentSource);
   const date = expenseDate(expense);
   const typeLabel = travelTypeLabel(expense.travelType);
   // An untagged trip expense is named by its category instead of "Untagged".
@@ -112,7 +110,7 @@ export default function ExpenseRow({
   const narrowSub = isTrip
     ? [kindLabel, showDate && date, payer].filter(Boolean).join(" · ")
     : [expense.category?.name, date, payer].filter(Boolean).join(" · ");
-  const wideSub = [payer, source, isTrip && showDate && date].filter(Boolean).join(" · ");
+  const wideSub = [payer, isTrip && showDate && date].filter(Boolean).join(" · ");
 
   return (
     <div className={cn(selected && inlineDetail && "border-b border-rule-2")}>

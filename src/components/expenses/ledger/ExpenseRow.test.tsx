@@ -112,8 +112,41 @@ describe("ExpenseRow", () => {
 
   it("names the category in the narrow sub-line, where the glyph stands in for the column", () => {
     renderRow();
-    // The narrow layout's sub-line (the wide one shows payer · source instead).
+    // The narrow layout's sub-line (the wide one shows the payer; the source is the icon).
     expect(screen.getByText("Meals & Entertainment · 13 Oct · Asha Rao")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Company account" })).toBeInTheDocument();
+    expect(screen.queryByText("Company account")).not.toBeInTheDocument();
+  });
+
+  it("marks pocket, company and split bills with an icon instead of the source words", () => {
+    const { rerender } = renderRow({ expense: makeExpense({ paymentSource: "pocket" }) });
+    expect(screen.getByRole("img", { name: "Pocket" })).toBeInTheDocument();
+
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({ paymentSource: "split", pocketAmount: 40, pocketAmountInBaseCurrency: 40 })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByRole("img", { name: "Split" })).toBeInTheDocument();
+
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({
+          paymentSource: "multiple",
+          payments: [
+            { paidBy: { name: "Asha Rao" }, amount: 60, source: "pocket" },
+            { paidBy: { name: "Ravi Iyer" }, amount: 40, source: "company" },
+          ],
+        })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByRole("img", { name: "Company and pocket" })).toBeInTheDocument();
   });
 
   it("keeps the hover toolbar out of reach until it shows, and off hover-less screens", () => {

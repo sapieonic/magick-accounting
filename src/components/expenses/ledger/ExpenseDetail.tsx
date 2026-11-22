@@ -28,7 +28,6 @@ import { travelTypeLabel } from "@/lib/trip";
 import { useToast } from "@/components/ui/Toast";
 import Spinner from "@/components/ui/Spinner";
 import Button, { IconButton } from "@/components/ui/Button";
-import { Dot } from "@/components/ui/Badge";
 import CategoryGlyph, { CategoryDot } from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
 import { linkClass } from "@/components/ui/styles";
@@ -151,11 +150,12 @@ function PaidFrom({ expense }: { expense: ExpenseListItem }) {
     return (
       <ul className="flex flex-col items-end gap-1">
         {expense.payments.map((entry, index) => (
-          <li key={index} className="flex items-center gap-2">
-            <Dot tone={entry.source === "company" ? "accent" : "amber"} />
+          <li key={index} className="flex items-center gap-1.5">
+            <PaymentDot
+              expense={{ ...expense, paymentSource: entry.source === "company" ? "company" : "pocket" }}
+            />
             <span>{payerName(entry)}</span>
             <span className="num">{formatCurrency(entry.amount, expense.currency?.code)}</span>
-            <span className="text-xs text-ink-3">{entry.source === "company" ? "company" : "pocket"}</span>
           </li>
         ))}
       </ul>
@@ -163,7 +163,7 @@ function PaidFrom({ expense }: { expense: ExpenseListItem }) {
   }
   return (
     <span className="inline-flex items-center gap-2">
-      <PaymentDot expense={expense} />
+      <PaymentDot expense={expense} decorative />
       <span>{paymentSourceDetail(expense)}</span>
     </span>
   );
