@@ -243,6 +243,10 @@ describe("ExpensesPage", () => {
 
       const panel = await screen.findByRole("complementary", { name: "Selected expense" });
       expect(within(panel).getByText("No expense selected")).toBeInTheDocument();
+      expect(within(panel).getByRole("separator", { name: "Resize expense details" })).toHaveAttribute(
+        "aria-orientation",
+        "vertical"
+      );
 
       const row = screen.getByRole("button", { name: "Team offsite hotel" });
       fireEvent.click(row);

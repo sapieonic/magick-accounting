@@ -87,10 +87,19 @@ function useReceiptUrl(receiptKey?: string) {
   return state.key === receiptKey ? state : { url: null, failed: false };
 }
 
-function Receipt({ expense }: { expense: ExpenseListItem }) {
+/**
+ * A document in the side panel. An image uses the full panel width at its own
+ * aspect ratio (a fixed short frame would letterbox a portrait receipt down to
+ * a thumbnail). A PDF fills a tall frame so its viewer scales to that width.
+ * Inline details under a row keep the shorter frame.
+ */
+const PROMINENT_DOCUMENT = "h-[min(72dvh,840px)] w-full";
+
+function Receipt({ expense, prominent = false }: { expense: ExpenseListItem; prominent?: boolean }) {
   const { url, failed } = useReceiptUrl(expense.receiptKey);
   const isImage = isImageFile(expense.receiptFilename);
   const FileIcon = isImage ? ImageIcon : FileText;
+  const frame = prominent ? PROMINENT_DOCUMENT : "h-[min(500px,60dvh)] w-full";
 
   return (
     <section aria-label="Receipt" className="flex flex-col gap-2">
@@ -111,20 +120,24 @@ function Receipt({ expense }: { expense: ExpenseListItem }) {
           </Button>
         )}
       </div>
-      <div className="overflow-hidden rounded-control border border-rule bg-surface">
+      <div className={cn("overflow-hidden rounded-control border border-rule", prominent ? "bg-sunk" : "bg-surface")}>
         {url ? (
           isImage ? (
-            <img src={url} alt={`Receipt for ${expense.title}`} className="max-h-[min(500px,60dvh)] w-full object-contain" />
+            <img
+              src={url}
+              alt={`Receipt for ${expense.title}`}
+              className={prominent ? "h-auto w-full" : "max-h-[min(500px,60dvh)] w-full object-contain"}
+            />
           ) : (
-            <iframe src={url} title={`Receipt for ${expense.title}`} className="h-[min(500px,60dvh)] w-full" />
+            <iframe src={url} title={`Receipt for ${expense.title}`} className={frame} />
           )
         ) : failed ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-ink-3">
+          <div className={cn("flex flex-col items-center justify-center gap-2 text-ink-3", prominent ? "min-h-48" : "py-10")}>
             <FileText aria-hidden="true" size={28} strokeWidth={1.5} />
             <p className="text-sm">Could not load receipt preview</p>
           </div>
         ) : (
-          <div className="flex items-center justify-center py-14">
+          <div className={cn("flex items-center justify-center", prominent ? "min-h-48" : "py-14")}>
             <Spinner size="md" />
           </div>
         )}
@@ -245,6 +258,8 @@ export default function ExpenseDetail({
         </div>
       )}
 
+      {showHeader && expense.receiptKey && <Receipt expense={expense} prominent />}
+
       <DetailList items={items} />
 
       {expense.description && (
@@ -254,7 +269,7 @@ export default function ExpenseDetail({
         </div>
       )}
 
-      {expense.receiptKey && <Receipt expense={expense} />}
+      {!showHeader && expense.receiptKey && <Receipt expense={expense} />}
 
       <div className="flex flex-wrap gap-2 border-t border-rule-2 pt-4">
         <Button href={editHref} icon={Pencil} className="grow basis-[100px]">
