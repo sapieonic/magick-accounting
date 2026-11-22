@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/sapieonic/magick-accounting/compare/v1.14.0...v1.15.0) (2026-11-22)
+
+
+### Features
+
+* resize the expense detail panel and mark company vs pocket ([#32](https://github.com/sapieonic/magick-accounting/issues/32)) ([579cafb](https://github.com/sapieonic/magick-accounting/commit/579cafbab564ef6cc12a77141aee74f4d02bd344))
+
 # [1.14.0](https://github.com/sapieonic/magick-accounting/compare/v1.13.1...v1.14.0) (2026-11-14)
 
 
