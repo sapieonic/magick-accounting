@@ -27,11 +27,21 @@ Single-tenant by design — one organization per deployment.
 - Search and filter by department, category, or keyword
 - Responsive table view (desktop) and card view (mobile)
 
+### Expense Approvals
+- Expenses added by people with the **User** role are submitted for approval; admins' own entries are approved as they're added
+- Only approved expenses count in totals (overview, Expenses summary, trips, spend by person). Expenses awaiting approval or rejected stay visible in lists, marked with their status, and the totals say how much is waiting
+- Admins review in **Approvals** (`/dashboard/approvals`): the queue shows what's waiting and for how long, the nav shows a count, and an expense can be approved, or rejected with a reason the submitter sees. Several can be approved or rejected at once, and keyboard shortcuts (J/K, A, R, X, ? for the list) can be switched off in the shortcuts dialog. Each decision can be undone for a few seconds
+- Admins can't approve or reject their own expenses; another admin has to
+- An admin can **move an approved or rejected expense back to review** to correct a decision, unless assets are registered against it
+- A submitter fixes a rejected expense and saves it, or resubmits it as is with a note; changing the amount, GST, date, currency, category, department, payment or receipt of an approved expense sends it back for approval too
+- Every step is kept in the expense's approval history, and submitters with a linked Telegram account get a message when their expense is approved, rejected or moved back to review
+- CSV export with **All statuses** selected exports approved expenses only; pick a Status to export those instead
+
 ### Add Expenses from Telegram
 - An admin connects the organization's Telegram bot once in **Settings → Telegram bot** (bot token from [@BotFather](https://t.me/BotFather) plus the app's public https URL). See [Set up the Telegram bot](#7-set-up-the-telegram-bot-optional)
 - Each person links their own Telegram account from **Profile** (the user block at the foot of the sidebar rail; on phones, in the **More** drawer): the one-time link expires after 15 minutes, and the bot asks them to confirm which account they're linking
 - Send the bot a receipt photo, an invoice/receipt file (PDF, JPEG, PNG, WebP up to 10MB) or a forwarded message; AI reads it into a draft
-- The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save**, with the file attached as its receipt. Reply to the expense card with a number to correct the amount; other details can be edited in the app after saving
+- The bot asks for anything missing (amount, category, department), lets you switch who paid (you or the company), and saves the expense once you tap **Save** (**Submit for approval** for the User role, whose expenses wait for an admin like ones added in the app), with the file attached as its receipt. Reply to the expense card with a number to correct the amount; other details can be edited in the app after saving
 - Expenses left unfinished for 7 days, or when someone unlinks, are discarded along with their uploaded receipt
 - Commands: `/help`, `/cancel` (discard the expense you're adding), `/unlink`. Only private chats are accepted
 
@@ -90,8 +100,8 @@ Single-tenant by design — one organization per deployment.
 - **Domain whitelisting** — only users with approved email domains can sign in (e.g. `@magickvoice.com`)
 - **Three roles:**
   - **Master Admin** — full access, can promote/demote other users
-  - **Admin** — can manage departments, categories, domains, and view all expenses
-  - **User** — can manage their own expenses
+  - **Admin** — can manage departments, categories, domains, and view all expenses; approves or rejects other people's expenses and can move a decided one back to review
+  - **User** — can manage their own expenses, which wait for an admin's approval; resubmits a rejected expense after fixing it
 - Admins can add or remove allowed email domains from the Settings page
 
 ### Dashboard
@@ -233,7 +243,7 @@ Send the bot one of:
 - a PDF, JPEG, PNG or WebP file (max 10MB)
 - a forwarded payment or booking message
 
-The bot reads it, asks for anything missing (amount, category, department), and saves it when you tap **✅ Save expense**. The file is attached as the receipt. The bot only works in private chats, never in groups.
+The bot reads it, asks for anything missing (amount, category, department), and saves it when you tap **✅ Save expense**. For people with the User role the button reads **📨 Submit for approval**: the expense is saved as awaiting approval, the same as one added in the app. The file is attached as the receipt. The bot only works in private chats, never in groups.
 
 #### Trying it locally
 
@@ -278,6 +288,7 @@ src/
 │   │   │   ├── page.tsx                  # Expense list with search/filter
 │   │   │   ├── new/page.tsx              # Create expense form
 │   │   │   └── [id]/edit/page.tsx        # Edit expense form
+│   │   ├── approvals/page.tsx            # Admin review queue: approve / reject, bulk, shortcuts
 │   │   ├── trips/
 │   │   │   ├── page.tsx                  # Trips: ongoing, upcoming, past
 │   │   │   └── [id]/page.tsx             # Trip detail: totals, who paid, timeline
@@ -296,7 +307,9 @@ src/
 │       │   └── me/route.ts              # Get current user
 │       ├── expenses/
 │       │   ├── route.ts                  # GET (list) / POST (create)
-│       │   └── [id]/route.ts            # GET / PUT / DELETE
+│       │   ├── [id]/route.ts            # GET / PUT / DELETE
+│       │   ├── [id]/approval/route.ts   # POST approve / reject / reopen (admin), resubmit (submitter)
+│       │   └── approvals/route.ts       # GET pending count / POST bulk approve or reject (admin)
 │       ├── trips/
 │       │   ├── route.ts                  # GET (list) / POST (create)
 │       │   ├── [id]/route.ts            # GET (detail + summary) / PUT / DELETE
@@ -334,6 +347,9 @@ src/
 │   ├── auth.ts                           # Token verification + role guards
 │   ├── api.ts                            # Client-side fetch wrapper with auth
 │   ├── currency.ts                       # Currency formatting (Intl.NumberFormat)
+│   ├── approval.ts                       # Approval statuses, labels, spend matchers, edit rules (client-safe)
+│   ├── approval-server.ts                # Approval writes (conditional updates), pending count
+│   ├── approval-notify.ts                # Telegram notices to submitters after a review
 │   ├── trip.ts                           # Trip validation, travel types, day grouping (client-safe)
 │   ├── trip-server.ts                    # Trip access rules
 │   ├── trip-query.ts                     # Trip queries, summaries, grouped expense list
@@ -345,7 +361,7 @@ src/
 ├── models/
 │   ├── User.ts                           # email, name, role, firebaseUid, telegram link
 │   ├── Department.ts                     # name, description, isDefault
-│   ├── Expense.ts                        # title, amount, currency, amountInBaseCurrency, receipt, trip, travelType
+│   ├── Expense.ts                        # title, amount, currency, amountInBaseCurrency, receipt, trip, travelType, approval status + history
 │   ├── Trip.ts                           # name, destinations, dates, travelers, department, budget
 │   ├── Currency.ts                       # code, name, symbol, rateToBase, isBase
 │   ├── Category.ts                       # name, isDefault + DEFAULT_CATEGORIES list
@@ -358,16 +374,22 @@ src/
 │   │                                     #   Badge/Chip, Avatar, CategoryGlyph, SplitBar, RankedBar, Modal, Toast, ...
 │   ├── layout/                           # Side rail + drawer, top bar, mobile tab bar, nav config
 │   ├── dashboard/overview/               # Overview panels
-│   ├── expenses/                         # Ledger rows + detail panel, shared ExpenseForm, payment/trip fields
+│   ├── expenses/                         # Ledger rows + detail panel, shared ExpenseForm, payment/trip fields, ApprovalBadge
+│   ├── approvals/                        # Approve / reject / reopen / resubmit dialogs, bulk bar, shortcuts
 │   ├── trips/                            # Trip clusters, timeline, trip form and pickers
 │   ├── assets/                           # Asset rows, history, purchase section
 │   ├── org/                              # Shared departments/categories list, user spend panels
 │   ├── settings/                         # Settings sections incl. TelegramBotSettings
 │   ├── profile/                          # TelegramLinkCard
 │   └── invoice/                          # PDF documents + invoice builder UI
-├── hooks/                                # useMediaQuery, useDialogLayer, useTitle
+├── hooks/
+│   ├── useApprovalActions.tsx            # Approve / reject (with Undo), reopen, resubmit for any expense list
+│   ├── usePendingCommits.ts              # Deferred requests with an undo window (approvals, deletes)
+│   ├── usePendingDeletes.ts              # Undoable deletes, built on usePendingCommits
+│   └── ...                               # useMediaQuery, useDialogLayer, useStoredFlag, useTitle
 └── contexts/
     ├── AuthContext.tsx                    # Auth state, sign-in/out, role helpers
+    ├── ApprovalCountContext.tsx           # Pending-approval count for the nav (admins)
     └── ThemeContext.tsx                   # Light/dark theme
 ```
 
@@ -379,11 +401,14 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 |----------|---------------------------|--------------|------------------------------------|
 | `POST`   | `/api/auth/verify`        | Public       | Verify token, create user if new   |
 | `GET`    | `/api/auth/me`            | Authenticated| Get current user                   |
-| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `limit` (max 10000) + `cursor` keyset paging; `groupTrips=true` pages by trip) |
-| `POST`   | `/api/expenses`           | Authenticated| Create expense                     |
-| `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID                  |
-| `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense                     |
-| `DELETE` | `/api/expenses/:id`       | Authenticated| Delete expense                     |
+| `GET`    | `/api/expenses`           | Authenticated| List expenses (filtered by role; `limit` (max 10000) + `cursor` keyset paging; `groupTrips=true` pages by trip; `approval=pending\|approved\|rejected\|all`) |
+| `POST`   | `/api/expenses`           | Authenticated| Create expense (a User's is submitted for approval) |
+| `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID, with its approval history |
+| `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense; optional `revision` (409 `stale` if it changed since) |
+| `DELETE` | `/api/expenses/:id`       | Authenticated| Delete expense (409 `asset_linked` / `stale`) |
+| `POST`   | `/api/expenses/:id/approval` | Admin / Submitter | `approve`, `reject` (reason required) or `reopen` (admins, not their own expense); `resubmit` a rejection (its submitter). Body carries the `revision` the client saw |
+| `GET`    | `/api/expenses/approvals` | Admin        | Pending count, amount and oldest wait |
+| `POST`   | `/api/expenses/approvals` | Admin        | Approve or reject up to 100 expenses; reports which failed and why |
 | `GET`    | `/api/trips`              | Authenticated| List visible trips with totals     |
 | `POST`   | `/api/trips`              | Authenticated| Create trip                        |
 | `GET`    | `/api/trips/:id`          | Traveler/Creator/Admin | Trip, summary and expenses |
@@ -455,6 +480,8 @@ The app can be deployed to any platform that supports Next.js:
 - **Docker** — add a Dockerfile with `node:18-alpine`, build, and serve
 
 Set all environment variables from `.env.example` in your deployment platform.
+
+Expense approvals need no migration: expenses saved before approvals existed have no status and count as approved. The Expense model declares a new index for the status filter (`approvalStatus`, then the list's sort keys); Mongoose builds it on startup while `autoIndex` is on (the default). If your deployment turns `autoIndex` off, create it yourself, e.g. `db.expenses.createIndex({ approvalStatus: 1, date: -1, createdAt: -1, _id: -1 })`.
 
 If you use the Telegram bot, connect it from the deployed app (see [Set up the Telegram bot](#7-set-up-the-telegram-bot-optional)), and use a separate bot for each environment.
 
