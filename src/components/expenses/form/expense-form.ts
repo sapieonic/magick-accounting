@@ -61,6 +61,44 @@ export function toExpensePayload(values: ExpenseFormValues) {
   };
 }
 
+/**
+ * The accounting fields of a form, normalised the way `PUT /api/expenses/:id`
+ * compares them (amounts in cents, payer rows order-free). Title, description
+ * and trip are left out: changing them never needs re-approval.
+ */
+function accountingSnapshot(values: ExpenseFormValues): string {
+  const payments =
+    paymentDraftsToPayload(values.paymentSource, values.payments)
+      ?.map((entry) => `${entry.paidBy.trim().toLowerCase()}:${entry.source}:${moneyToCents(entry.amount)}`)
+      .sort() ?? [];
+  return JSON.stringify([
+    moneyToCents(values.amount),
+    values.gstAmount === "" ? null : moneyToCents(values.gstAmount),
+    values.currency,
+    values.date,
+    values.category,
+    values.department,
+    values.paymentSource,
+    values.paymentSource === "split" ? moneyToCents(values.pocketAmount) : null,
+    payments,
+  ]);
+}
+
+/**
+ * Whether saving `current` over `initial` changes an accounting field: amount,
+ * GST, currency, date, category, department, who paid (source, pocket share,
+ * payers) or the receipt (`receiptChanged`). Client mirror of the server's
+ * protected-field check, which sends an approved expense its submitter edits
+ * back for approval.
+ */
+export function accountingFieldsChanged(
+  initial: ExpenseFormValues,
+  current: ExpenseFormValues,
+  receiptChanged = false
+): boolean {
+  return receiptChanged || accountingSnapshot(initial) !== accountingSnapshot(current);
+}
+
 /** Asks the browser to confirm a full page unload while `active`. */
 export function useUnsavedChangesWarning(active: boolean) {
   useEffect(() => {

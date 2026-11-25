@@ -70,6 +70,27 @@ describe("TripTimeline", () => {
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
   });
 
+  it("totals each day from approved expenses and names what's awaiting approval beside it", () => {
+    render(
+      <TripTimeline
+        trip={trip}
+        expenses={[
+          makeExpense({ _id: "cab", title: "Airport cab", amount: 600, amountInBaseCurrency: 600, date: "2026-10-13T00:00:00.000Z" }),
+          makeExpense({ _id: "lunch", title: "Team lunch", amount: 1400, amountInBaseCurrency: 1400, date: "2026-10-13T00:00:00.000Z", approvalStatus: "pending" }),
+          makeExpense({ _id: "bar", title: "Bar tab", amount: 900, amountInBaseCurrency: 900, date: "2026-10-13T00:00:00.000Z", approvalStatus: "rejected" }),
+          makeExpense({ _id: "taxi", title: "Taxi home", amount: 300, amountInBaseCurrency: 300, date: "2026-10-16T00:00:00.000Z" }),
+        ]}
+      />
+    );
+
+    const [day, after] = screen.getAllByRole("listitem");
+    // Every expense is listed, rejected ones too.
+    expect(day).toHaveTextContent("3 expenses");
+    const total = day.querySelector("[title^='Section total']")!;
+    expect(total).toHaveTextContent("₹600.00 · ₹1,400.00 pending approval, not in the total");
+    expect(after.querySelector("[title^='Section total']")).toHaveTextContent(/^₹300\.00$/);
+  });
+
   it("opens one expense at a time and fetches its receipt lazily", async () => {
     render(<TripTimeline trip={trip} expenses={expenses} initialExpandedId="cab" />);
 

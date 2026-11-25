@@ -39,28 +39,48 @@ export function TravelerAvatars({ travelers, max = 4 }: { travelers: TripPerson[
 
 /**
  * How much of a trip budget is spent: indigo, amber above 80%, red once over.
+ * `pending` (awaiting approval, not in `spent`) shows as a hatched segment
+ * after it, so a budget about to be used up isn't a surprise.
  * Only meaningful for totals covering the whole trip (admins).
  */
-export function BudgetMeter({ spent, budget, className }: { spent: number; budget: number; className?: string }) {
+export function BudgetMeter({
+  spent,
+  budget,
+  pending = 0,
+  className,
+}: {
+  spent: number;
+  budget: number;
+  pending?: number;
+  className?: string;
+}) {
   const ratio = budget > 0 ? spent / budget : spent > 0 ? Infinity : 0;
   const percent = Number.isFinite(ratio) ? Math.round(ratio * 100) : 100;
   const over = ratio > 1;
   const warn = !over && ratio > 0.8;
   const remaining = roundMoney(budget - spent);
+  const spentWidth = Math.min(percent, 100);
+  const hasPending = pending > 0.004;
+  // The pending segment fills what's left of the track at most.
+  const pendingWidth = hasPending && budget > 0 ? Math.min((pending / budget) * 100, 100 - spentWidth) : 0;
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div
-        className="h-1.5 overflow-hidden rounded-[3px] bg-sunk"
+        className="flex h-1.5 overflow-hidden rounded-[3px] bg-sunk"
         role="progressbar"
         aria-label="Budget used"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.min(percent, 100)}
+        aria-valuenow={spentWidth}
+        aria-valuetext={`${percent}%${hasPending ? `, plus ${formatBaseCurrency(pending)} awaiting approval` : ""}`}
       >
         <div
-          className={cn("h-full rounded-[3px]", over ? "bg-danger" : warn ? "bg-pocket" : "bg-ramp")}
-          style={{ width: `${Math.min(percent, 100)}%` }}
+          className={cn("h-full shrink-0 rounded-[3px]", over ? "bg-danger" : warn ? "bg-pocket" : "bg-ramp")}
+          style={{ width: `${spentWidth}%` }}
         />
+        {pendingWidth > 0 && (
+          <div data-testid="budget-pending" className="bg-hatch h-full shrink-0" style={{ width: `${pendingWidth}%` }} />
+        )}
       </div>
       <div className="flex flex-wrap justify-between gap-x-3 text-xs text-ink-3">
         <span className={cn("num font-medium", over ? "text-danger" : warn ? "text-amber" : "text-ink-2")}>{percent}%</span>
@@ -70,6 +90,14 @@ export function BudgetMeter({ spent, budget, className }: { spent: number; budge
             : `${formatBaseCurrency(remaining)} left of ${formatBaseCurrency(budget)}`}
         </span>
       </div>
+      {hasPending && (
+        <span className="flex items-center gap-1.5 text-xs text-ink-3">
+          <span aria-hidden="true" className="bg-hatch inline-block h-2 w-3 shrink-0 rounded-[2px] border border-rule" />
+          <span>
+            <span className="num">{formatBaseCurrency(pending)}</span> awaiting approval, not counted yet
+          </span>
+        </span>
+      )}
     </div>
   );
 }

@@ -5,6 +5,17 @@ import EditExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
+/** The Notice (a polite status region) whose text includes `text`. */
+async function findNotice(text: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const notice = screen
+      .queryAllByRole("status")
+      .find((region) => region.textContent?.includes(text));
+    if (!notice) throw new Error(`No notice containing "${text}"`);
+    return notice;
+  });
+}
+
 const toastMock = vi.fn();
 // Stable reference: the page reloads the expense whenever the router changes.
 const router = { push: vi.fn() };
@@ -509,5 +520,140 @@ describe("EditExpensePage pocket credit wording", () => {
     render(<EditExpensePage />);
 
     expect(await screen.findByText("The full ₹1,000.00 is credited to you for reimbursement.")).toBeInTheDocument();
+  });
+});
+
+describe("EditExpensePage approval", () => {
+  const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
+  const priya = { _id: "66c1884c0853f8a76a4da209", name: "Priya", email: "priya@example.com" };
+  const ownExpense = { ...splitExpense, paymentSource: "company", pocketAmount: 0, createdBy: asha };
+  const rejected = {
+    ...ownExpense,
+    approvalStatus: "rejected",
+    reviewedBy: priya,
+    reviewedAt: "2026-11-12T10:00:00.000Z",
+    rejectionReason: "Receipt missing",
+    approvalHistory: [
+      { action: "submitted", by: asha, at: "2026-11-10T09:00:00.000Z", note: null },
+      { action: "rejected", by: priya, at: "2026-11-12T10:00:00.000Z", note: "Receipt missing" },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: false } as any);
+    vi.mocked(api.put).mockResolvedValue({ expense: { approvalStatus: "pending" } });
+  });
+
+  function submitButton(name: string | RegExp) {
+    return screen.getByRole("button", { name });
+  }
+
+  it("tells the submitter who rejected it, why, and what to do, and resubmits on save", async () => {
+    const user = userEvent.setup();
+    mockExpense(rejected);
+    render(<EditExpensePage />);
+
+    const notice = await findNotice("Rejected by Priya");
+    expect(notice).toHaveTextContent("Rejected by Priya · 12 Nov 2026");
+    expect(within(notice).getByText("Receipt missing")).toBeInTheDocument();
+    expect(notice).toHaveTextContent("What next: fix the details below and resubmit it, or delete it if it was a mistake.");
+
+    await user.click(submitButton("Resubmit for approval"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(toastMock).toHaveBeenCalledWith("Resubmitted. An admin will review it again.");
+  });
+
+  it("lists the approval history, read-only", async () => {
+    mockExpense(rejected);
+    render(<EditExpensePage />);
+
+    const history = await screen.findByRole("region", { name: "Approval history" });
+    const items = within(history).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("Submitted · Asha · 10 Nov 2026");
+    expect(items[1]).toHaveTextContent("Rejected · Priya · 12 Nov 2026");
+    expect(items[1]).toHaveTextContent("“Receipt missing”");
+    expect(within(history).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("switches to 'Save & resubmit' only while an accounting field differs on an approved expense", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...ownExpense, approvalStatus: "approved" });
+    render(<EditExpensePage />);
+
+    expect(await screen.findByText("This expense is approved")).toBeInTheDocument();
+    expect(submitButton("Save changes")).toBeInTheDocument();
+
+    // A title isn't an accounting field.
+    await user.type(screen.getByLabelText(/^title/i), " with client");
+    expect(submitButton("Save changes")).toBeInTheDocument();
+
+    const amount = screen.getByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "1200");
+    expect(submitButton("Save & resubmit")).toBeInTheDocument();
+    expect(screen.getByText(/saving sends this expense back to an admin/i)).toBeInTheDocument();
+
+    // Back to the stored amount: nothing to re-approve.
+    await user.clear(amount);
+    await user.type(amount, "1000");
+    expect(submitButton("Save changes")).toBeInTheDocument();
+
+    await user.clear(amount);
+    await user.type(amount, "1200");
+    await user.click(submitButton("Save & resubmit"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(toastMock).toHaveBeenCalledWith("Saved and sent back for approval. An admin will review your changes.");
+  });
+
+  it("counts a new receipt as an accounting change", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...ownExpense, receiptKey: "receipts/r.png", receiptFilename: "r.png" });
+    render(<EditExpensePage />);
+
+    await user.click(await screen.findByRole("button", { name: "Remove receipt" }));
+    expect(submitButton("Save & resubmit")).toBeInTheDocument();
+  });
+
+  it("keeps a pending expense pending and says so", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...ownExpense, approvalStatus: "pending" });
+    render(<EditExpensePage />);
+
+    const notice = (await screen.findByText("Awaiting approval")).closest("[role=status]")!;
+    expect(notice).toHaveTextContent("Your changes will be reviewed along with it.");
+
+    const amount = screen.getByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "1200");
+    await user.click(submitButton("Save changes"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(toastMock).toHaveBeenCalledWith("Changes saved. It's still awaiting approval.");
+  });
+
+  it("explains that assets wait for approval instead of offering to create them", async () => {
+    mockExpense({ ...ownExpense, approvalStatus: "pending" });
+    render(<EditExpensePage />);
+
+    expect(await screen.findByText("You can register assets for this purchase once it's approved.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /create assets/i })).not.toBeInTheDocument();
+  });
+
+  it("never relabels an admin's save, which doesn't change the status", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useAuth).mockReturnValue({ user: priya, isAdmin: true } as any);
+    vi.mocked(api.put).mockResolvedValue({ expense: { approvalStatus: "rejected" } });
+    mockExpense(rejected);
+    render(<EditExpensePage />);
+
+    const notice = await findNotice("Saving changes doesn");
+    expect(notice).toHaveTextContent("Saving changes doesn't change its status. Asha can fix and resubmit it.");
+    const amount = screen.getByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "1200");
+    await user.click(submitButton("Save changes"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(toastMock).toHaveBeenCalledWith("Expense updated");
   });
 });

@@ -5,6 +5,9 @@ import {
   Building2,
   Calendar,
   ChevronDown,
+  CircleX,
+  ClipboardCheck,
+  Clock3,
   Download,
   Luggage,
   MousePointerClick,
@@ -15,7 +18,9 @@ import {
   Wallet,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
+import Link from "next/link";
 import { api } from "@/lib/api";
+import { APPROVAL_LABEL, effectiveApprovalStatus, parseApprovalFilter, type ApprovalStatus } from "@/lib/approval";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
@@ -37,7 +42,7 @@ import { RemovableChip } from "@/components/ui/Badge";
 import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
 import SplitBar from "@/components/ui/SplitBar";
 import { cn } from "@/components/ui/cn";
-import { focusRing, panelClass, panelPadX, transition } from "@/components/ui/styles";
+import { focusRing, panelClass, panelPadX, textButtonClass, transition } from "@/components/ui/styles";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseDetailPanel from "@/components/expenses/ledger/ExpenseDetailPanel";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
@@ -61,7 +66,23 @@ interface ExpenseSummary {
   pocketAmount?: number;
   /** The "Paid by" person's own share of the listed expenses. */
   payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
+  /** The figures above count approved expenses only; these describe the rest. */
+  pendingCount?: number;
+  pendingAmount?: number;
+  rejectedCount?: number;
 }
+
+/** The Status filter: "" is every status. */
+type ApprovalFilter = ApprovalStatus | "";
+
+const APPROVAL_FILTER_OPTIONS: { value: ApprovalFilter; label: string }[] = [
+  { value: "", label: "All statuses" },
+  { value: "approved", label: APPROVAL_LABEL.approved },
+  { value: "pending", label: APPROVAL_LABEL.pending },
+  { value: "rejected", label: APPROVAL_LABEL.rejected },
+];
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count !== 1 ? "s" : ""}`;
 
 const CUSTOM_DATE_PRESET = "custom";
 const PAGE_SIZE = 25;
@@ -174,6 +195,7 @@ export default function ExpensesPage() {
   const [customTo, setCustomTo] = useState("");
   const [filterUser, setFilterUser] = useState("");
   const [filterPayer, setFilterPayer] = useState("");
+  const [filterApproval, setFilterApproval] = useState<ApprovalFilter>("");
   const [urlSynced, setUrlSynced] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -209,7 +231,8 @@ export default function ExpensesPage() {
     filterCats.length > 0 ||
     hasDateFilter ||
     Boolean(filterUser) ||
-    Boolean(filterPayer);
+    Boolean(filterPayer) ||
+    Boolean(filterApproval);
 
   // Restore filter state from the URL on first mount so filtered views are
   // shareable and survive refresh / back navigation.
@@ -225,6 +248,7 @@ export default function ExpensesPage() {
     setFilterCats(cats);
     setFilterUser(params.get("createdBy") ?? "");
     setFilterPayer(params.get("paidBy") ?? "");
+    setFilterApproval(parseApprovalFilter(params.get("approval")) ?? "");
 
     const month = params.get("month") ?? "";
     const from = params.get("from") ?? "";
@@ -259,6 +283,7 @@ export default function ExpensesPage() {
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
     if (filterPayer) params.set("paidBy", filterPayer);
+    if (filterApproval) params.set("approval", filterApproval);
     if (datePreset === CUSTOM_DATE_PRESET) {
       params.set("month", CUSTOM_DATE_PRESET);
       if (customFrom) params.set("from", customFrom);
@@ -272,7 +297,19 @@ export default function ExpensesPage() {
     const query = params.toString();
     const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(null, "", url);
-  }, [urlSynced, filterDepts, filterCats, filterUser, filterPayer, datePreset, customFrom, customTo, search, groupTrips]);
+  }, [
+    urlSynced,
+    filterDepts,
+    filterCats,
+    filterUser,
+    filterPayer,
+    filterApproval,
+    datePreset,
+    customFrom,
+    customTo,
+    search,
+    groupTrips,
+  ]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -336,6 +373,7 @@ export default function ExpensesPage() {
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
     if (filterPayer) params.set("paidBy", filterPayer);
+    if (filterApproval) params.set("approval", filterApproval);
     if (search) params.set("search", search);
 
     const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
@@ -343,7 +381,7 @@ export default function ExpensesPage() {
     if (to) params.set("to", to);
 
     return params;
-  }, [filterDepts, filterCats, filterUser, filterPayer, search, datePreset, customFrom, customTo]);
+  }, [filterDepts, filterCats, filterUser, filterPayer, filterApproval, search, datePreset, customFrom, customTo]);
 
   const buildQueryParams = useCallback(
     (cursor: string | null, limit: number, includeSummary: boolean) => {
@@ -490,8 +528,28 @@ export default function ExpensesPage() {
   const loadedItemCount = useMemo(() => new Set(expenses.map(itemKey)).size, [expenses, itemKey]);
 
   // Moves an expense's amounts in or out of the totals band (delete / undo),
-  // including the "Paid by" person's share when that filter is on.
+  // including the "Paid by" person's share when that filter is on. Only an
+  // approved expense is in the totals; the others move their own counts.
   const adjustTotals = (expense: Expense, sign: 1 | -1) => {
+    const status = effectiveApprovalStatus(expense);
+    if (status === "pending") {
+      setSummary((prev) =>
+        prev.pendingCount == null && prev.pendingAmount == null
+          ? prev
+          : {
+              ...prev,
+              pendingAmount: roundMoney((prev.pendingAmount ?? 0) + sign * baseAmount(expense)),
+              pendingCount: Math.max(0, (prev.pendingCount ?? 0) + sign),
+            }
+      );
+      return;
+    }
+    if (status === "rejected") {
+      setSummary((prev) =>
+        prev.rejectedCount == null ? prev : { ...prev, rejectedCount: Math.max(0, prev.rejectedCount + sign) }
+      );
+      return;
+    }
     const { pocketBase, companyBase } = getPaymentBreakdown(expense);
     const share = filterPayer ? payerShare(expense, filterPayer) : null;
     setSummary((prev) => ({
@@ -594,6 +652,8 @@ export default function ExpensesPage() {
       ? `${customFrom || "…"} → ${customTo || "…"}`
       : datePresetOptions.find((o) => o.value === datePreset)?.label ?? "All time";
   const userName = (id: string) => users.find((u) => u._id === id)?.name;
+  const pendingCount = summary.pendingCount ?? 0;
+  const rejectedCount = summary.rejectedCount ?? 0;
   const payerLabel = userName(filterPayer) ?? "this person";
 
   return (
@@ -691,6 +751,18 @@ export default function ExpensesPage() {
               </select>
             </Field>
           )}
+          <Field label="Status" icon={ClipboardCheck} className="flex-[1_1_150px]">
+            <select
+              value={filterApproval}
+              onChange={(e) => setFilterApproval(parseApprovalFilter(e.target.value) ?? "")}
+              className={selectClass}
+              title="Approval status. Only approved expenses count in the totals."
+            >
+              {APPROVAL_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
           {isAdmin && (
             <Field label="Paid by" icon={Wallet} className="flex-[1_1_150px]">
               <select
@@ -725,6 +797,9 @@ export default function ExpensesPage() {
             ))}
             {filterUser && <RemovableChip onRemove={() => setFilterUser("")}>Submitted by {userName(filterUser)}</RemovableChip>}
             {filterPayer && <RemovableChip onRemove={() => setFilterPayer("")}>Paid by {userName(filterPayer)}</RemovableChip>}
+            {filterApproval && (
+              <RemovableChip onRemove={() => setFilterApproval("")}>Status: {APPROVAL_LABEL[filterApproval]}</RemovableChip>
+            )}
           </div>
         )}
       </div>
@@ -734,8 +809,54 @@ export default function ExpensesPage() {
           headline
           label={`${periodLabel} total`}
           value={formatBaseCurrency(summary.totalAmount)}
-          sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}`}
+          sub={
+            filterApproval === "pending" || filterApproval === "rejected"
+              ? `${plural(summary.totalExpenses, "approved expense")} · ${
+                  filterApproval === "pending" ? "expenses awaiting approval" : "rejected expenses"
+                } aren't in totals`
+              : plural(summary.totalExpenses, "approved expense")
+          }
+          action={
+            !isAdmin && rejectedCount > 0 && filterApproval !== "rejected" ? (
+              <button
+                type="button"
+                onClick={() => setFilterApproval("rejected")}
+                className={cn(
+                  "inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-control text-[13px] font-medium text-danger hover:text-ink",
+                  transition,
+                  focusRing
+                )}
+              >
+                <CircleX aria-hidden="true" size={14} strokeWidth={1.75} />
+                {rejectedCount} rejected — see why
+              </button>
+            ) : undefined
+          }
         />
+        {pendingCount > 0 && (
+          <Stat
+            label={APPROVAL_LABEL.pending}
+            icon={Clock3}
+            value={formatBaseCurrency(summary.pendingAmount ?? 0)}
+            sub={`${plural(pendingCount, "expense")} · not in total`}
+            action={
+              isAdmin ? (
+                <Link href="/dashboard/approvals" aria-label="Review expenses awaiting approval" className={textButtonClass}>
+                  Review
+                </Link>
+              ) : filterApproval !== "pending" ? (
+                <button
+                  type="button"
+                  onClick={() => setFilterApproval("pending")}
+                  aria-label="Show them: expenses awaiting approval"
+                  className={cn(textButtonClass, "cursor-pointer")}
+                >
+                  Show them
+                </button>
+              ) : undefined
+            }
+          />
+        )}
         <BandCell label="Company · pocket">
           {summary.companyAmount != null && summary.pocketAmount != null ? (
             <SplitBar company={summary.companyAmount} pocket={summary.pocketAmount} />
@@ -772,7 +893,15 @@ export default function ExpensesPage() {
           {listItems.length === 0 ? (
             <EmptyState
               icon={<Receipt />}
-              title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
+              title={
+                refreshingExpenses
+                  ? "Updating expenses..."
+                  : filterApproval === "pending"
+                    ? "Nothing awaiting approval"
+                    : filterApproval === "rejected"
+                      ? "No rejected expenses"
+                      : "No expenses found"
+              }
               description={isFiltered ? "Try adjusting your filters." : "Create your first expense to get started."}
               action={
                 !isFiltered ? (

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Upload } from "lucide-react";
+import { PackagePlus, Sparkles, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { moneyToCents } from "@/lib/asset";
 import { useTitle } from "@/hooks/useTitle";
@@ -41,6 +41,10 @@ interface UserOption {
   email: string;
 }
 
+/** What a user (not an admin) sees after submitting: their expense now waits for review. */
+const SUBMITTED_FOR_APPROVAL_TOAST =
+  "Submitted for approval. You'll see it marked 'Awaiting approval' until an admin reviews it.";
+
 // File types the AI auto-fill can read (images + PDF).
 const EXTRACTABLE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
@@ -62,6 +66,8 @@ export default function NewExpensePage() {
   const router = useRouter();
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
+  // A user's expense waits for an admin before it counts; an admin's is approved on save.
+  const needsApproval = !isAdmin;
   const [lookups, setLookups] = useState<ExpenseLookups>(EMPTY_LOOKUPS);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [assets, setAssets] = useState<AssetDraft[]>([]);
@@ -347,15 +353,29 @@ export default function NewExpensePage() {
         receiptData = { receiptKey: uploaded.key, receiptFilename: uploaded.filename };
       }
 
-      await api.post("/api/expenses", {
+      const created: { expense?: { _id?: string } } | undefined = await api.post("/api/expenses", {
         ...toExpensePayload(form),
-        assets: assets.map(({ id: _id, ...asset }) => asset),
+        // Assets are registered once an admin approves a user's expense.
+        ...(needsApproval ? {} : { assets: assets.map(({ id: _id, ...asset }) => asset) }),
         ...receiptData,
       });
+      const createdId = created?.expense?._id;
 
-      toast(assets.length > 0 ? "Expense and company assets created" : "Expense created");
       // Land on the trip the expense went into, else the one the form was opened from.
       const tripId = form.trip || openedFromTrip;
+      if (needsApproval) {
+        toast(SUBMITTED_FOR_APPROVAL_TOAST, "success");
+        // Open it in the list, where its "Awaiting approval" badge shows.
+        router.push(
+          tripId
+            ? `/dashboard/trips/${tripId}${createdId ? `?expand=${createdId}` : ""}`
+            : createdId
+              ? `/dashboard/expenses?expand=${createdId}`
+              : "/dashboard/expenses"
+        );
+        return;
+      }
+      toast(assets.length > 0 ? "Expense and company assets created" : "Expense created");
       router.push(
         tripId ? `/dashboard/trips/${tripId}` : assets.length > 0 ? "/dashboard/assets" : "/dashboard/expenses"
       );
@@ -428,20 +448,35 @@ export default function NewExpensePage() {
           />
         }
         onSubmit={handleSubmit}
-        submitLabel={assets.length > 0 ? "Save expense & assets" : "Save expense"}
-        busyLabel={uploadingReceipt ? "Uploading…" : "Saving…"}
+        submitLabel={
+          needsApproval ? "Submit for approval" : assets.length > 0 ? "Save expense & assets" : "Save expense"
+        }
+        busyLabel={uploadingReceipt ? "Uploading…" : needsApproval ? "Submitting…" : "Saving…"}
         busy={submitting || uploadingReceipt}
         submitDisabled={extracting}
+        footerNote={
+          needsApproval ? "An admin reviews new expenses before they count in company totals." : undefined
+        }
       >
-        <AssetPurchaseSection
-          assets={assets}
-          onChange={setAssets}
-          purchaseDate={form.date}
-          currencySymbol={currencySymbol}
-          users={users}
-          canAssignOthers={isAdmin}
-          currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
-        />
+        {needsApproval ? (
+          <p className="flex items-start gap-3 text-[13px] text-ink-3 [text-wrap:pretty]">
+            <PackagePlus aria-hidden="true" size={18} strokeWidth={1.5} className="mt-px shrink-0" />
+            <span>
+              <span className="font-medium text-ink-2">Bought company equipment?</span> You can register assets for
+              this purchase once it&apos;s approved.
+            </span>
+          </p>
+        ) : (
+          <AssetPurchaseSection
+            assets={assets}
+            onChange={setAssets}
+            purchaseDate={form.date}
+            currencySymbol={currencySymbol}
+            users={users}
+            canAssignOthers={isAdmin}
+            currentUser={user ? { _id: user._id, name: user.name, email: user.email } : null}
+          />
+        )}
       </ExpenseForm>
     </>
   );

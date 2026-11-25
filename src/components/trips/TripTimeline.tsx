@@ -100,8 +100,15 @@ export default function TripTimeline({
                   </span>
                 </span>
               </h3>
-              <span className="num shrink-0 text-[13px] text-ink-2" title="Section total">
+              <span className="num shrink-0 text-[13px] text-ink-2" title="Section total: approved expenses">
                 {formatBaseCurrency(section.total)}
+                {(section.pendingTotal ?? 0) > 0 && (
+                  <span className="text-ink-3">
+                    {" · "}
+                    {formatBaseCurrency(section.pendingTotal!)} pending
+                    <span className="sr-only"> approval, not in the total</span>
+                  </span>
+                )}
               </span>
             </div>
             <div>

@@ -626,4 +626,82 @@ describe("TripDetailPage", () => {
     });
     expect(api.delete).not.toHaveBeenCalled();
   });
+  describe("approval", () => {
+    const cab = makeExpense({
+      _id: "3".repeat(24),
+      title: "Airport cab",
+      amount: 800,
+      amountInBaseCurrency: 800,
+      pocketAmount: 800,
+      pocketAmountInBaseCurrency: 800,
+      travelType: "cab",
+      approvalStatus: "pending",
+    });
+    const dinner = makeExpense({
+      _id: "4".repeat(24),
+      title: "Team dinner",
+      amount: 900,
+      amountInBaseCurrency: 900,
+      travelType: "food",
+      approvalStatus: "rejected",
+    });
+
+    beforeEach(() => {
+      response = detail({
+        expenses: [flight, hotel, cab, dinner],
+        summary: { ...detail().summary, pendingCount: 1, pendingAmount: 800 },
+      });
+    });
+
+    it("says what the total leaves out and shows it on the budget", async () => {
+      render(<TripDetailPage />);
+
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(totals).toHaveTextContent("2 approved expenses ·");
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval (1 expense)`);
+      const meter = within(totals).getByRole("progressbar", { name: "Budget used" });
+      expect(meter).toHaveAttribute("aria-valuenow", "63");
+      expect(meter).toHaveAttribute("aria-valuetext", `63%, plus ${formatBaseCurrency(800)} awaiting approval`);
+      expect(within(totals).getByTestId("budget-pending")).toHaveStyle({ width: "4%" });
+      // Every expense is still listed.
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Airport cab");
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Team dinner");
+    });
+
+    it("says nothing about approval when nothing is waiting", async () => {
+      response = detail();
+      render(<TripDetailPage />);
+
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+      expect(totals).not.toHaveTextContent(/awaiting approval/);
+      expect(totals).toHaveTextContent("2 expenses ·");
+      expect(within(totals).queryByTestId("budget-pending")).not.toBeInTheDocument();
+    });
+
+    it("moves a deleted pending expense out of the pending figure only", async () => {
+      const user = userEvent.setup();
+      render(<TripDetailPage />);
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+
+      await user.click(screen.getByRole("button", { name: "Delete Airport cab" }));
+
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(totals).not.toHaveTextContent(/awaiting approval/);
+      expect(within(totals).getByText(formatBaseCurrency(7000))).toBeInTheDocument(); // pocket unchanged
+      expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7000));
+    });
+
+    it("leaves every total alone when a rejected expense is deleted", async () => {
+      const user = userEvent.setup();
+      render(<TripDetailPage />);
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+
+      await user.click(screen.getByRole("button", { name: "Delete Team dinner" }));
+
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
+      expect(screen.getAllByTestId("type-row")).toHaveLength(2);
+    });
+  });
 });

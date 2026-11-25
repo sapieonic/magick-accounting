@@ -6,6 +6,7 @@ import {
   Briefcase,
   Building2,
   CalendarDays,
+  Clock3,
   Info,
   ListPlus,
   Luggage,
@@ -20,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { effectiveApprovalStatus } from "@/lib/approval";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { getPaymentBreakdown, payerShare } from "@/lib/expense";
@@ -44,6 +46,7 @@ import TripFormModal from "@/components/trips/TripFormModal";
 import AddExistingExpensesModal from "@/components/trips/AddExistingExpensesModal";
 import { BudgetMeter, TripStatusBadge } from "@/components/trips/TripMeta";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
+import ApprovalBadge from "@/components/expenses/ApprovalBadge";
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
@@ -53,7 +56,9 @@ const SUGGESTIONS = 3;
 
 /**
  * The server summary minus expenses still inside their undo window, so the
- * stats move the moment an expense is deleted.
+ * stats move the moment an expense is deleted. As on the server, only an
+ * approved expense is in the totals; a pending one moves the pending figures
+ * and a rejected one is in neither.
  */
 function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[]): TripDetailSummary {
   if (removed.length === 0) return summary;
@@ -64,6 +69,13 @@ function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[])
   };
   for (const expense of removed) {
     const base = baseAmount(expense);
+    const status = effectiveApprovalStatus(expense);
+    if (status === "pending") {
+      if (next.pendingAmount != null) next.pendingAmount = roundMoney(next.pendingAmount - base);
+      if (next.pendingCount != null) next.pendingCount = Math.max(0, next.pendingCount - 1);
+      continue;
+    }
+    if (status === "rejected") continue;
     const { pocketBase: pocket, companyBase: company } = getPaymentBreakdown(expense);
     next.totalAmount = roundMoney(next.totalAmount - base);
     next.pocketAmount = roundMoney(next.pocketAmount - pocket);
@@ -322,6 +334,9 @@ export default function TripDetailPage() {
   // Only an admin's totals cover the whole trip, so only they split it per traveller.
   const perTraveller = isAdmin && trip.travelers.length > 1 ? summary.totalAmount / trip.travelers.length : null;
   const countLabel = `${summary.expenseCount} expense${summary.expenseCount !== 1 ? "s" : ""}`;
+  const pendingAmount = summary.pendingAmount ?? 0;
+  const pendingCount = summary.pendingCount ?? 0;
+  const hasPending = pendingCount > 0 || pendingAmount > 0;
 
   const addButtons = (
     <>
@@ -401,9 +416,20 @@ export default function TripDetailPage() {
           label={isAdmin ? "Trip total" : "Your spend"}
           value={formatBaseCurrency(summary.totalAmount)}
           sub={
-            summary.expenseCount > 0
-              ? `${countLabel} · ≈ ${formatBaseCurrency(perDay)} per day`
-              : `No expenses yet · ${days} day${days !== 1 ? "s" : ""}`
+            <>
+              {summary.expenseCount > 0
+                ? `${hasPending ? `${summary.expenseCount} approved expense${summary.expenseCount !== 1 ? "s" : ""}` : countLabel} · ≈ ${formatBaseCurrency(perDay)} per day`
+                : `${hasPending ? "Nothing approved yet" : "No expenses yet"} · ${days} day${days !== 1 ? "s" : ""}`}
+              {hasPending && (
+                <span className="mt-0.5 flex items-center gap-1.5">
+                  <Clock3 aria-hidden="true" size={13} strokeWidth={1.75} className="shrink-0" />
+                  <span>
+                    Excludes <span className="num">{formatBaseCurrency(pendingAmount)}</span> awaiting approval
+                    {pendingCount > 0 && ` (${pendingCount} expense${pendingCount !== 1 ? "s" : ""})`}
+                  </span>
+                </span>
+              )}
+            </>
           }
         />
         <Stat
@@ -430,7 +456,7 @@ export default function TripDetailPage() {
         {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
         {isAdmin && trip.budget != null && (
           <BandCell label="Budget">
-            <BudgetMeter spent={summary.totalAmount} budget={trip.budget} />
+            <BudgetMeter spent={summary.totalAmount} budget={trip.budget} pending={pendingAmount} />
           </BandCell>
         )}
       </StatBand>
@@ -563,6 +589,7 @@ export default function TripDetailPage() {
                       <span className="line-clamp-2 text-xs text-ink-3">
                         {expenseDate(expense)} · {expense.createdBy?.name}
                       </span>
+                      <ApprovalBadge status={expense.approvalStatus} className="self-start" />
                       <span className="flex items-center justify-between gap-2">
                         <span className="num whitespace-nowrap text-[13px] text-ink">
                           {formatBaseCurrency(baseAmount(expense))}

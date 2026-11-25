@@ -83,6 +83,26 @@ describe("AddExistingExpensesModal", () => {
     expect(props.onAdded).toHaveBeenCalledWith(1);
   });
 
+  it("marks candidates that aren't approved, in the row and its checkbox name", async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      expenses: [
+        cab,
+        makeExpense({ _id: "3".repeat(24), title: "Hotel deposit", approvalStatus: "pending" }),
+        makeExpense({ _id: "4".repeat(24), title: "Bar tab", approvalStatus: "rejected" }),
+      ],
+    });
+    renderModal(true);
+
+    const pendingRow = (await screen.findByText("Hotel deposit")).closest("label")!;
+    expect(within(pendingRow).getByText("Awaiting approval")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Hotel deposit, awaiting approval" })).toBeInTheDocument();
+    const rejectedRow = screen.getByText("Bar tab").closest("label")!;
+    expect(within(rejectedRow).getByText("Rejected")).toBeInTheDocument();
+    const approvedRow = screen.getByText("Airport cab").closest("label")!;
+    expect(within(approvedRow).queryByText(/approv|reject/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Airport cab" })).toBeInTheDocument();
+  });
+
   it("shows the base amount only for foreign-currency expenses", async () => {
     vi.mocked(api.get).mockResolvedValue({
       expenses: [

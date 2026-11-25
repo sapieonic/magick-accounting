@@ -194,7 +194,7 @@ describe("ExpensesPage", () => {
 
     const totals = await screen.findByRole("region", { name: "Totals" });
     expect(within(totals).getByText("All time total")).toBeInTheDocument();
-    expect(within(totals).getByText("1 expense")).toBeInTheDocument();
+    expect(within(totals).getByText("1 approved expense")).toBeInTheDocument();
     // The split comes with the list's summary, so it follows the same filters.
     expect(await within(totals).findByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
     // The total, and all of it company-paid.
@@ -301,7 +301,7 @@ describe("ExpensesPage", () => {
     expect(screen.queryByText("AWS India Cloud Services")).not.toBeInTheDocument();
     // The summary and split stay without it (no refetch puts it back).
     expect(statValue(totals, "All time total")).toBe("₹0.00");
-    expect(within(totals).getByText("0 expenses")).toBeInTheDocument();
+    expect(within(totals).getByText("0 approved expenses")).toBeInTheDocument();
     expect(within(totals).getByRole("img", { name: "Company paid 0.0%, pocket 0.0%" })).toBeInTheDocument();
     // Undo after the commit does nothing.
     const undo = toastMock.mock.calls.find(([message]) => message === 'Deleted "AWS India Cloud Services"')?.[2]?.action;
@@ -323,7 +323,7 @@ describe("ExpensesPage", () => {
     expect(api.delete).toHaveBeenCalledWith("/api/expenses/expense-1");
     expect(toastMock).toHaveBeenCalledWith("Failed to delete expense", "error");
     expect(screen.getByText("AWS India Cloud Services")).toBeInTheDocument();
-    expect(within(totals).getByText("1 expense")).toBeInTheDocument();
+    expect(within(totals).getByText("1 approved expense")).toBeInTheDocument();
     expect(within(totals).getByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
     expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
   });
@@ -340,7 +340,7 @@ describe("ExpensesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete Stamp" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete Envelope" }));
 
-    expect(within(totals).getByText("0 expenses")).toBeInTheDocument();
+    expect(within(totals).getByText("0 approved expenses")).toBeInTheDocument();
     expect(statValue(totals, "All time total")).toBe("₹0.00");
     expect(within(totals).queryByText(/-₹/)).not.toBeInTheDocument();
   });
@@ -488,12 +488,12 @@ describe("ExpensesPage", () => {
 
     const [header, companyRow, splitRow] = vi.mocked(downloadCsv).mock.calls[0][1].split("\r\n");
     expect(header).toBe(
-      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base),Payments,Trip,Travel Type"
+      "Date,Title,Amount,GST,Currency,Amount (Base),Category,Department,Paid From,Submitted By,Description,Pocket (Base),Company (Base),Payments,Trip,Travel Type,Approval status,Rejection reason"
     );
-    expect(companyRow).toMatch(/,0,5678\.76,,,$/);
+    expect(companyRow).toMatch(/,0,5678\.76,,,,Approved,$/);
     expect(companyRow).toContain(",Company account,");
     expect(splitRow).toContain(",USD,8350,");
-    expect(splitRow).toMatch(/,3340,5010,,,$/);
+    expect(splitRow).toMatch(/,3340,5010,,,,Approved,$/);
     expect(splitRow).toContain(",Split,");
     // The export is always the flat filtered list, never trip clusters.
     const exportUrl = expenseRequests().find((url) => url.includes("limit=10000"));
@@ -610,6 +610,165 @@ describe("ExpensesPage", () => {
     expect(screen.getByText(/₹1,000\.00 pocket/)).toBeInTheDocument();
     expect(window.location.search).toContain("paidBy=user-1");
   });
+  describe("approval", () => {
+    const pendingExpense = {
+      ...expense,
+      _id: "pending-1",
+      title: "Taxi to client",
+      amount: 450,
+      amountInBaseCurrency: 450,
+      approvalStatus: "pending",
+    };
+    const rejectedExpense = {
+      ...expense,
+      _id: "rejected-1",
+      title: "Team lunch",
+      amount: 900,
+      amountInBaseCurrency: 900,
+      approvalStatus: "rejected",
+      rejectionReason: "Receipt missing",
+    };
+
+    beforeEach(() => {
+      listedExpenses = [expense, pendingExpense, rejectedExpense];
+      listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 1, pendingAmount: 450, rejectedCount: 1 };
+    });
+
+    it("keeps the headline to approved spend and shows what's awaiting approval beside it", async () => {
+      render(<ExpensesPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(within(totals).getByText("1 approved expense")).toBeInTheDocument();
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+      expect(within(totals).getByText("1 expense · not in total")).toBeInTheDocument();
+      // Admins review them in the queue.
+      expect(within(totals).getByRole("link", { name: "Review expenses awaiting approval" })).toHaveAttribute(
+        "href",
+        "/dashboard/approvals"
+      );
+      // The rejected link is for submitters.
+      expect(within(totals).queryByRole("button", { name: /rejected — see why/ })).not.toBeInTheDocument();
+    });
+
+    it("hides the awaiting-approval stat when nothing is waiting", async () => {
+      listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 0, pendingAmount: 0, rejectedCount: 0 };
+      render(<ExpensesPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+    });
+
+    it("lets a user show their pending expenses, and see why others were rejected", async () => {
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as any);
+      render(<ExpensesPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).queryByRole("link", { name: /review/i })).not.toBeInTheDocument();
+
+      fireEvent.click(within(totals).getByRole("button", { name: "Show them: expenses awaiting approval" }));
+      await waitFor(() => expect(expenseRequests().at(-1)).toContain("approval=pending"));
+      expect(window.location.search).toContain("approval=pending");
+      expect(screen.getByRole("combobox", { name: "Status" })).toHaveValue("pending");
+
+      fireEvent.click(within(totals).getByRole("button", { name: "1 rejected — see why" }));
+      await waitFor(() => expect(expenseRequests().at(-1)).toContain("approval=rejected"));
+      expect(window.location.search).toContain("approval=rejected");
+      expect(screen.getByRole("button", { name: /^Status: Rejected\s*\(remove\)$/ })).toBeInTheDocument();
+      // Already showing them: no link to itself.
+      expect(within(totals).queryByRole("button", { name: /rejected — see why/ })).not.toBeInTheDocument();
+    });
+
+    it("restores the Status filter from ?approval= and sends it with the list and the export", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?approval=rejected");
+      render(<ExpensesPage />);
+
+      const status = await screen.findByRole("combobox", { name: "Status" });
+      expect(status).toHaveValue("rejected");
+      expect(expenseRequests()[0]).toContain("approval=rejected");
+      const totals = screen.getByRole("region", { name: "Totals" });
+      expect(within(totals).getByText("1 approved expense · rejected expenses aren't in totals")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
+      await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
+      expect(expenseRequests().find((url) => url.includes("limit=10000"))).toContain("approval=rejected");
+
+      // Removing the chip shows every status again.
+      fireEvent.click(screen.getByRole("button", { name: /^Status: Rejected\s*\(remove\)$/ }));
+      await waitFor(() => expect(expenseRequests().at(-1)).not.toContain("approval="));
+      expect(status).toHaveValue("");
+      expect(window.location.search).not.toContain("approval");
+    });
+
+    it("ignores an unknown ?approval= value", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?approval=maybe");
+      render(<ExpensesPage />);
+
+      expect(await screen.findByRole("combobox", { name: "Status" })).toHaveValue("");
+      expect(expenseRequests()[0]).not.toContain("approval=");
+    });
+
+    it("filters by status from the select and remembers it in the URL", async () => {
+      render(<ExpensesPage />);
+
+      const status = await screen.findByRole("combobox", { name: "Status" });
+      expect(within(status).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "All statuses",
+        "Approved",
+        "Awaiting approval",
+        "Rejected",
+      ]);
+      fireEvent.change(status, { target: { value: "approved" } });
+      await waitFor(() => expect(expenseRequests().at(-1)).toContain("approval=approved"));
+      expect(window.location.search).toContain("approval=approved");
+    });
+
+    it("moves a deleted pending expense out of the awaiting-approval stat, not the total", async () => {
+      render(<ExpensesPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      fireEvent.click(screen.getByRole("button", { name: "Delete Taxi to client" }));
+
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(within(totals).getByText("1 approved expense")).toBeInTheDocument();
+      expect(within(totals).getByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
+      // The last pending one gone: the stat goes with it.
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+
+      act(() => toastMock.mock.calls.at(-1)?.[2]?.action.onClick());
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+      expect(within(totals).getByText("1 expense · not in total")).toBeInTheDocument();
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+    });
+
+    it("counts a deleted rejected expense out of the rejected link only", async () => {
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as any);
+      render(<ExpensesPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).getByRole("button", { name: "1 rejected — see why" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Delete Team lunch" }));
+
+      expect(within(totals).queryByRole("button", { name: /rejected — see why/ })).not.toBeInTheDocument();
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+
+      act(() => toastMock.mock.calls.at(-1)?.[2]?.action.onClick());
+      expect(within(totals).getByRole("button", { name: "1 rejected — see why" })).toBeInTheDocument();
+    });
+
+    it("still takes an approved expense out of the total", async () => {
+      render(<ExpensesPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      fireEvent.click(screen.getByRole("button", { name: "Delete AWS India Cloud Services" }));
+
+      expect(statValue(totals, "All time total")).toBe("₹0.00");
+      expect(within(totals).getByText("0 approved expenses")).toBeInTheDocument();
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+    });
+  });
+
   describe("trip clusters", () => {
     beforeEach(() => {
       listedExpenses = [flightExpense, hotelExpense, expense];

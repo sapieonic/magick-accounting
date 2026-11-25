@@ -1,12 +1,12 @@
 "use client";
 
 import type { Dispatch, FormEvent, InputHTMLAttributes, ReactNode, SetStateAction } from "react";
-import { Check, ChevronLeft, Sparkles } from "lucide-react";
+import { Check, ChevronLeft, Info, Sparkles } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Field, { aiFilledClass, inputClass, selectClass, textareaClass } from "@/components/ui/Field";
 import PageHeader from "@/components/ui/PageHeader";
 import { cn } from "@/components/ui/cn";
-import { compactSelectClass, panelClass } from "@/components/ui/styles";
+import { ICON_STROKE, compactSelectClass, panelClass, panelPadX } from "@/components/ui/styles";
 import PaymentSourceFields from "@/components/expenses/PaymentSourceFields";
 import TripFields, { type TripOption } from "@/components/expenses/TripFields";
 import { roundMoney } from "@/lib/asset";
@@ -100,8 +100,14 @@ export interface ExpenseFormProps {
   currencyLocked?: boolean;
   /** The receipt column. */
   receipt: ReactNode;
-  /** Extra sections at the end of the form (e.g. company assets). */
+  /** Extra fields at the end of the form, in an untitled section (e.g. company assets). */
   children?: ReactNode;
+  /** Status shown above the form, e.g. why an expense was rejected (a `Notice`). */
+  notice?: ReactNode;
+  /** Whole `FormSection`s after the fields, e.g. a read-only approval history. */
+  extraSections?: ReactNode;
+  /** One quiet line just above the action footer: what saving will do. */
+  footerNote?: ReactNode;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
   submitLabel: string;
   /** Label while `busy`. */
@@ -135,6 +141,9 @@ export default function ExpenseForm({
   currencyLocked = false,
   receipt,
   children,
+  notice,
+  extraSections,
+  footerNote,
   onSubmit,
   submitLabel,
   busyLabel = "Saving…",
@@ -182,6 +191,8 @@ export default function ExpenseForm({
         }
         title={heading}
       />
+
+      {notice}
 
       <div className="flex flex-wrap items-start gap-6 [container-type:inline-size]">
         {/* The receipt sticks only while it sits beside the form: 804px = both flex
@@ -371,7 +382,17 @@ export default function ExpenseForm({
             </FormSection>
 
             {children && <FormSection>{children}</FormSection>}
+            {extraSections}
           </div>
+
+          {footerNote && (
+            <p
+              className={cn("flex items-start gap-2 border-t border-rule-2 py-3 text-[13px] text-ink-2 [text-wrap:pretty]", panelPadX)}
+            >
+              <Info aria-hidden="true" size={15} strokeWidth={ICON_STROKE} className="mt-px shrink-0 text-ink-3" />
+              <span>{footerNote}</span>
+            </p>
+          )}
 
           <FormFooter className="justify-between">
             <span className="text-sm text-ink-2">

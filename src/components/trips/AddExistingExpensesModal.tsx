@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Inbox } from "lucide-react";
 import { api } from "@/lib/api";
+import { APPROVAL_LABEL, effectiveApprovalStatus } from "@/lib/approval";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import type { ExpenseListItem } from "@/types/expense";
 import Modal from "@/components/ui/Modal";
@@ -17,6 +18,7 @@ import { cn } from "@/components/ui/cn";
 import { focusRing, rowClass, rowSelectedClass, transition } from "@/components/ui/styles";
 import { DialogActions } from "@/components/ui/ConfirmDialog";
 import { baseAmount, expenseDate, isForeign } from "@/components/expenses/ledger/format";
+import ApprovalBadge from "@/components/expenses/ApprovalBadge";
 
 interface AddExistingExpensesModalProps {
   tripId: string;
@@ -166,6 +168,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
                 const isSelected = selected.has(expense._id);
                 const code = expense.currency?.code || "INR";
                 const foreign = isForeign(expense);
+                const status = effectiveApprovalStatus(expense);
                 return (
                   <li key={expense._id}>
                     <label
@@ -181,16 +184,19 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
                         className="sr-only"
                         checked={isSelected}
                         onChange={() => toggle(expense)}
-                        aria-label={expense.title}
+                        aria-label={status === "approved" ? expense.title : `${expense.title}, ${APPROVAL_LABEL[status].toLowerCase()}`}
                       />
                       <Checkbox checked={isSelected} />
                       <CategoryGlyph name={expense.category?.name} />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="ell font-medium text-ink">{expense.title}</span>
-                        <span className="ell text-xs text-ink-3">
-                          {expenseDate(expense, "d MMM yyyy")}
-                          {expense.createdBy?.name ? ` · ${expense.createdBy.name}` : ""}
-                          {expense.category?.name ? ` · ${expense.category.name}` : ""}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <ApprovalBadge status={expense.approvalStatus} className="shrink-0" />
+                          <span className="ell text-xs text-ink-3">
+                            {expenseDate(expense, "d MMM yyyy")}
+                            {expense.createdBy?.name ? ` · ${expense.createdBy.name}` : ""}
+                            {expense.category?.name ? ` · ${expense.category.name}` : ""}
+                          </span>
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end">

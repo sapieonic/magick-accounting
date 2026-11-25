@@ -23,8 +23,15 @@ import { useTripOptions } from "@/components/expenses/TripFields";
 import ExpenseForm from "@/components/expenses/form/ExpenseForm";
 import ReceiptPanel from "@/components/expenses/form/ReceiptPanel";
 import {
+  ApprovalHistorySection,
+  EditApprovalNotice,
+  personName,
+  type EditApprovalState,
+} from "@/components/expenses/form/ApprovalFormParts";
+import {
   LOOKUPS_URL,
   MAX_RECEIPT_SIZE,
+  accountingFieldsChanged,
   RECEIPT_TOO_LARGE,
   discardUploadedReceipt,
   getSubmitError,
@@ -39,6 +46,7 @@ import {
   type ExpenseFormValues,
   type ExpenseLookups,
 } from "@/components/expenses/form/types";
+import { effectiveApprovalStatus, type ApprovalStatus } from "@/lib/approval";
 import { formatCurrency } from "@/lib/currency";
 import { storedRateToBase } from "@/lib/expense";
 import { isTravelType } from "@/lib/trip";
@@ -74,19 +82,40 @@ function effectiveValues(values: ExpenseFormValues) {
   return { ...values, payments: paymentDraftsToPayload(values.paymentSource, values.payments) };
 }
 
+/** The toast after a save: what happened to the expense's approval, in plain words. */
+function savedMessage(before: ApprovalStatus, after: ApprovalStatus | null, isReviewer: boolean, accountingChanged: boolean) {
+  if (isReviewer) return "Expense updated";
+  if (before === "rejected") return "Resubmitted. An admin will review it again.";
+  if (before === "pending") return "Changes saved. It's still awaiting approval.";
+  if (after === "pending" || (after === null && accountingChanged)) {
+    return "Saved and sent back for approval. An admin will review your changes.";
+  }
+  return "Expense updated";
+}
+
 /** Company assets bought with this expense, and the way to add more. */
 function LinkedAssetsPanel({
   expenseId,
   assets,
   currencyCode,
   canAddMore,
+  awaitingApprovalNote,
 }: {
   expenseId: string;
   assets: LinkedAsset[];
   currencyCode: string;
   canAddMore: boolean;
+  /** Set while the expense isn't approved: assets can't be registered yet, and this says why. */
+  awaitingApprovalNote?: string;
 }) {
   const createHref = `/dashboard/expenses/${expenseId}/assets/new`;
+  if (assets.length === 0 && awaitingApprovalNote) {
+    return (
+      <Panel title="Company assets">
+        <p className="text-[13px] text-ink-3 [text-wrap:pretty]">{awaitingApprovalNote}</p>
+      </Panel>
+    );
+  }
   if (assets.length === 0) {
     return (
       <Panel title="Company assets">
@@ -156,6 +185,7 @@ export default function EditExpensePage() {
   // The saved conversion, kept by the server while the currency is unchanged.
   const [savedRate, setSavedRate] = useState<{ currencyId: string; rateToBase: number } | null>(null);
   const [submitter, setSubmitter] = useState<{ _id: string; name?: string; email?: string } | null>(null);
+  const [approval, setApproval] = useState<EditApprovalState | null>(null);
 
   const [form, setForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
   const [initialForm, setInitialForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
@@ -174,10 +204,11 @@ export default function EditExpensePage() {
   const [newReceipt, setNewReceipt] = useState<{ file: File; filename: string } | null>(null);
 
   // Warn before discarding unsaved edits on a full page unload.
+  const receiptChanged = newReceipt !== null || (initialHadReceipt && !existingReceipt);
   const isDirty =
-    JSON.stringify(effectiveValues(form)) !== JSON.stringify(effectiveValues(initialForm)) ||
-    newReceipt !== null ||
-    (initialHadReceipt && !existingReceipt && !newReceipt);
+    JSON.stringify(effectiveValues(form)) !== JSON.stringify(effectiveValues(initialForm)) || receiptChanged;
+  // Mirrors the server: these edits send a submitter's approved expense back for approval.
+  const accountingChanged = accountingFieldsChanged(initialForm, form, receiptChanged);
   useUnsavedChangesWarning(isDirty && !submitting);
 
   const handleCancel = () => {
@@ -196,6 +227,16 @@ export default function EditExpensePage() {
         const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
         setSubmitter(exp.createdBy?._id ? exp.createdBy : null);
+        const history: EditApprovalState["history"] = Array.isArray(exp.approvalHistory) ? exp.approvalHistory : [];
+        const lastRejection = [...history].reverse().find((entry) => entry.action === "rejected");
+        setApproval({
+          status: effectiveApprovalStatus(exp),
+          reviewer: exp.reviewedBy || lastRejection ? personName(exp.reviewedBy ?? lastRejection?.by, "an admin") : null,
+          reviewedAt: exp.reviewedAt ?? lastRejection?.at ?? null,
+          reason: exp.rejectionReason ?? lastRejection?.note ?? null,
+          history,
+          submitterName: personName(exp.createdBy, "The submitter"),
+        });
         setCurrencyCode(exp.currency?.code || "INR");
         const storedTripId: string = (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
         const loadedForm: ExpenseFormValues = {
@@ -293,8 +334,12 @@ export default function EditExpensePage() {
         updateData.receiptFilename = null;
       }
 
-      await api.put(`/api/expenses/${params.id}`, updateData);
-      toast("Expense updated");
+      const result: { expense?: { approvalStatus?: ApprovalStatus | null } } | undefined = await api.put(
+        `/api/expenses/${params.id}`,
+        updateData
+      );
+      const after = result?.expense ? effectiveApprovalStatus(result.expense) : null;
+      toast(savedMessage(approval?.status ?? "approved", after, isAdmin, accountingChanged));
       router.push(returnTo);
     } catch (err) {
       await discardUploadedReceipt(uploadedReceiptKey);
@@ -311,6 +356,16 @@ export default function EditExpensePage() {
   // Pocket shares are credited to the submitter, who isn't "you" when an admin edits someone else's expense.
   const submitterName =
     submitter && submitter._id !== user?._id ? submitter.name || submitter.email || "the submitter" : undefined;
+  const status = approval?.status ?? "approved";
+  // A submitter's save that will put the expense (back) in the approval queue.
+  const resubmits = !isAdmin && (status === "rejected" || (status === "approved" && accountingChanged));
+  const submitLabel = isAdmin
+    ? "Save changes"
+    : status === "rejected"
+      ? "Resubmit for approval"
+      : resubmits
+        ? "Save & resubmit"
+        : "Save changes";
 
   return (
     <ExpenseForm
@@ -348,12 +403,31 @@ export default function EditExpensePage() {
             assets={linkedAssets}
             currencyCode={currencyCode}
             canAddMore={isAdmin}
+            awaitingApprovalNote={
+              status === "approved"
+                ? undefined
+                : isAdmin
+                  ? "Approve this expense first, then create its assets."
+                  : "You can register assets for this purchase once it's approved."
+            }
           />
         </>
       }
       onSubmit={handleSubmit}
-      submitLabel="Save changes"
+      submitLabel={submitLabel}
+      busyLabel={resubmits ? "Resubmitting…" : "Saving…"}
       busy={submitting || uploadingReceipt}
+      notice={
+        approval && <EditApprovalNotice approval={approval} isReviewer={isAdmin} accountingLocked={accountingLocked} />
+      }
+      footerNote={
+        resubmits
+          ? status === "rejected"
+            ? "Saving resubmits this expense. An admin will review it again before it counts in company totals."
+            : "You changed an accounting detail, so saving sends this expense back to an admin. It won't count in company totals until it's approved again."
+          : undefined
+      }
+      extraSections={approval && <ApprovalHistorySection history={approval.history} />}
     />
   );
 }
