@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireMasterAdmin, verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Category, { DEFAULT_CATEGORIES } from "@/models/Category";
 import Currency, { DEFAULT_CURRENCIES } from "@/models/Currency";
@@ -7,7 +8,17 @@ import Expense from "@/models/Expense";
 import AllowedDomain from "@/models/AllowedDomain";
 import User from "@/models/User";
 
-export async function POST() {
+/**
+ * Creates the default categories, departments, allowed domain and currencies
+ * if they're missing, and backfills old expenses' currency. Idempotent; the
+ * master admin's first sign-in runs it. Master admin only.
+ */
+export async function POST(req: NextRequest) {
+  const authResult = await verifyAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
+  const denied = requireMasterAdmin(authResult);
+  if (denied) return denied;
+
   try {
     await connectDB();
 
@@ -85,7 +96,16 @@ export async function POST() {
       if (unfilled > 0) {
         await Expense.updateMany(
           { currency: null },
-          [{ $set: { currency: baseCurrency._id, amountInBaseCurrency: "$amount" } }]
+          [
+            {
+              $set: {
+                currency: baseCurrency._id,
+                amountInBaseCurrency: "$amount",
+                // A write like any other: open edit forms and reviews must see it changed.
+                assetAllocationRevision: { $add: [{ $ifNull: ["$assetAllocationRevision", 0] }, 1] },
+              },
+            },
+          ]
         );
       }
     }

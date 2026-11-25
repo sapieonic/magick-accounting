@@ -52,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(data.user);
       setError(null);
 
-      // Run seed after first login
-      if (data.isNew) {
+      // The master admin's first sign-in creates the default data (the route is master-admin only).
+      if (data.isNew && data.user?.role === "master_admin") {
         try {
           const seedToken = await fbUser.getIdToken();
           await fetch("/api/seed", {
