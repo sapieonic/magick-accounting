@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import mongoose from "mongoose";
 import { Aggregator, Query } from "mingo";
 import "mingo/init/system";
 import {
@@ -731,6 +732,15 @@ describe("countPendingApprovals", () => {
 
   it("reports an empty queue", async () => {
     expect(await countPendingApprovals()).toEqual({ pendingCount: 0, pendingAmount: 0, oldestPendingAt: null });
+  });
+
+  it("leaves out the asking admin's own submissions, matching on an ObjectId (aggregations aren't cast)", async () => {
+    await countPendingApprovals(ADMIN._id);
+    const [stage] = vi.mocked(Expense.aggregate).mock.calls[0][0] as { $match: Record<string, unknown> }[];
+    const createdBy = (stage.$match.createdBy as { $ne: unknown }).$ne;
+    expect(createdBy).toBeInstanceOf(mongoose.Types.ObjectId);
+    expect(String(createdBy)).toBe(ADMIN._id);
+    expect(stage.$match.approvalStatus).toBe("pending");
   });
 });
 

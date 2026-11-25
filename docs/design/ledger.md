@@ -305,7 +305,7 @@ back to review from its details." Conflicts come back in words ("This expense ch
 latest version.", "Already approved by another admin.", "Approved 9 of 10. 1 changed and needs another look."; a
 request that never got through: "… 3 couldn't be sent. Check your connection and try again."), the expense is re-read
 and handed to `onUpdated`, and the nav count refreshes. Members: `inFlight`, `approve`, `openReject`, `openResubmit`,
-`resubmit` (no dialog, e.g. from the edit form), `flush`, `handlers`, `dialogs` (render once on the page). Options:
+`resubmit` (no dialog; the edit page posts its unchanged resubmit to the approval route itself), `flush`, `handlers`, `dialogs` (render once on the page). Options:
 `onUpdated`, `onRemoved`, `onScheduled`, `onReturned` (a single review that didn't go through, the expense pending
 again), `shortcuts`. The review queue hides expenses in `inFlight`; Expenses and the trip page show them with the status
 they're heading for and move the totals with them (Undo just drops them from `inFlight`), and on `onUpdated` replace the

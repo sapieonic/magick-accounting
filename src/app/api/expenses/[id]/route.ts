@@ -20,6 +20,7 @@ import {
 } from "@/lib/approval-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
+import type { ApprovalStatus } from "@/lib/approval";
 import { normalizeTravelType } from "@/lib/trip";
 import { resolveTripAssignment } from "@/lib/trip-server";
 import mongoose from "mongoose";
@@ -279,7 +280,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!updated) {
       // Lost the revision check: someone (an admin's review, another edit)
       // changed it after the read above.
-      return NextResponse.json(staleEditConflict(await Expense.findById(id)), { status: 409 });
+      const current = (await Expense.findById(id).select("approvalStatus").lean()) as {
+        approvalStatus?: ApprovalStatus | null;
+      } | null;
+      if (!current) {
+        return NextResponse.json(
+          { error: "This expense no longer exists. It may have been deleted.", code: "not_found" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(staleEditConflict(current), { status: 409 });
     }
 
     if (previousReceiptKey && update.receiptKey !== previousReceiptKey) {

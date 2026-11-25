@@ -9,7 +9,10 @@ import {
 } from "@/lib/approval-server";
 import { notifyReviewOutcome } from "@/lib/approval-notify";
 
-/** The review queue's size: `{ pendingCount, pendingAmount, oldestPendingAt }`. Admins only. */
+/**
+ * What's waiting for this admin: `{ pendingCount, pendingAmount, oldestPendingAt }`,
+ * leaving out their own submissions (another admin has to review those). Admins only.
+ */
 export async function GET(req: NextRequest) {
   const authResult = await verifyAuth(req);
   if (authResult instanceof NextResponse) return authResult;
@@ -17,7 +20,7 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   await connectDB();
-  return NextResponse.json(await countPendingApprovals());
+  return NextResponse.json(await countPendingApprovals(authResult._id));
 }
 
 /**

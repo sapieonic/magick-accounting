@@ -862,6 +862,13 @@ async function saveDraft(
   }
 }
 
+/** The expense `createExpenseFromDraft` saved. */
+export interface SavedDraftExpense {
+  id: mongoose.Types.ObjectId;
+  /** The status it was stored with (pending for role `user`). */
+  approvalStatus: ApprovalStatus;
+}
+
 /**
  * Creates the expense for a completed draft with the same rules as
  * POST /api/expenses: entry-time exchange rate, GST within the total, and the
@@ -869,12 +876,6 @@ async function saveDraft(
  * for the creator's current role (`creationApprovalFields`). Throws DraftSaveError,
  * with a message for the user, when the draft can't be saved as it is.
  */
-export interface SavedDraftExpense {
-  id: mongoose.Types.ObjectId;
-  /** The status it was stored with (pending for role `user`). */
-  approvalStatus: ApprovalStatus;
-}
-
 export async function createExpenseFromDraft(
   draft: ITelegramDraft,
   creator: { _id: mongoose.Types.ObjectId | string; role: Role }

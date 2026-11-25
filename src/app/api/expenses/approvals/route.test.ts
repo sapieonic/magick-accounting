@@ -55,6 +55,8 @@ describe("GET /api/expenses/approvals", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(counts);
+    // Only what this admin can act on: their own submissions are left out.
+    expect(countPendingApprovals).toHaveBeenCalledWith(ADMIN._id);
   });
 
   it("is admin-only", async () => {

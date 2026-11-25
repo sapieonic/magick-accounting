@@ -870,14 +870,35 @@ describe("PUT /api/expenses/:id approval", () => {
       lean: vi.fn().mockResolvedValue(null),
     } as never);
     const stored = mockStoredExpense();
+    const reread = (doc: unknown) =>
+      ({ select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(doc) }) as never;
     vi.mocked(Expense.findById)
       .mockResolvedValueOnce(stored as never)
-      .mockResolvedValueOnce({ ...stored, approvalStatus: "rejected", assetAllocationRevision: 5 } as never);
+      .mockReturnValueOnce(reread({ ...stored, approvalStatus: "rejected", assetAllocationRevision: 5 }));
 
     const response = await put({ amount: 80 });
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: STALE_EDIT, code: "stale", approvalStatus: "rejected" });
+  });
+
+  it("says the expense is gone when it was deleted between the read and the write", async () => {
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue({
+      populate: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as never);
+    const stored = mockStoredExpense();
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce(stored as never)
+      .mockReturnValueOnce({ select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(null) } as never);
+
+    const response = await put({ amount: 80 });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "This expense no longer exists. It may have been deleted.",
+      code: "not_found",
+    });
   });
 
   it("refuses an edit of an older version than the one stored, before validating or writing", async () => {

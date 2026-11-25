@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import type { AuthUser } from "@/lib/auth";
 import {
   canReview,
@@ -506,9 +507,16 @@ const lastSubmittedAtExpr = {
   ],
 };
 
-export async function countPendingApprovals(): Promise<PendingApprovalCount> {
+export async function countPendingApprovals(
+  /** Leave out this person's own submissions: they can't review them, so they aren't waiting on them. */
+  excludeSubmitter?: string
+): Promise<PendingApprovalCount> {
+  const match =
+    excludeSubmitter && mongoose.isValidObjectId(excludeSubmitter)
+      ? { ...PENDING_MATCH, createdBy: { $ne: new mongoose.Types.ObjectId(excludeSubmitter) } }
+      : PENDING_MATCH;
   const [row] = (await Expense.aggregate([
-    { $match: PENDING_MATCH },
+    { $match: match },
     {
       $group: {
         _id: null,
