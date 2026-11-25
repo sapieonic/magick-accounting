@@ -181,3 +181,46 @@ describe("TripTimeline", () => {
     expect(onApprove).toHaveBeenCalledWith(pending);
   });
 });
+
+describe("TripTimeline canModify", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("passes canModify to every row, so a rejected expense has no actions", () => {
+    // Asha may change what she submitted; Ravi's shared bill is read-only to her.
+    const ravisBill = makeExpense({
+      _id: "dinner",
+      title: "Client dinner",
+      amount: 3000,
+      amountInBaseCurrency: 3000,
+      date: "2026-10-13T00:00:00.000Z",
+      createdBy: { _id: "u2", name: "Ravi Iyer", email: "ravi@example.com" },
+    });
+    const canModify = vi.fn((expense: ExpenseListItem) => expense.createdBy?._id === "u1");
+    render(
+      <TripTimeline
+        trip={trip}
+        expenses={[...expenses, ravisBill]}
+        onDelete={vi.fn()}
+        onRemoveFromTrip={vi.fn()}
+        canModify={canModify}
+        initialExpandedId="dinner"
+      />
+    );
+
+    expect(canModify).toHaveBeenCalledWith(expect.objectContaining({ _id: "dinner" }));
+    expect(screen.queryByRole("button", { name: "Delete Client dinner" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove Client dinner from trip" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Edit Client dinner" })).not.toBeInTheDocument();
+    // Its open detail is read-only too.
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^Edit$/ })).not.toBeInTheDocument();
+
+    for (const title of ["Airport cab", "Flight to Pune", "Team lunch", "Taxi home"]) {
+      expect(screen.getByRole("button", { name: `Delete ${title}` })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: `Remove ${title} from trip` })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: `Edit ${title}` })).toBeInTheDocument();
+    }
+  });
+});

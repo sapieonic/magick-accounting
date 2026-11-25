@@ -53,37 +53,44 @@ vi.mock("@/components/ui/Toast", () => ({
   useToast: vi.fn(() => ({ toast: toastMock })),
 }));
 
+// Tests that check which rows offer actions render the real timeline.
+let realTimeline = false;
+
 // The timeline is built separately; this stand-in exposes its callbacks.
-vi.mock("@/components/trips/TripTimeline", () => ({
-  default: (props: any) => {
-    timelineProps(props);
-    return (
-      <ul data-testid="trip-timeline">
-        {props.expenses.map((expense: ExpenseListItem) => (
-          <li key={expense._id}>
-            {expense.title}
-            <button type="button" onClick={() => props.onDelete?.(expense)}>
-              Delete {expense.title}
-            </button>
-            <button type="button" onClick={() => props.onRemoveFromTrip?.(expense)}>
-              Remove {expense.title}
-            </button>
-            {props.review?.onApprove && expense.approvalStatus === "pending" && (
-              <button type="button" onClick={() => props.review.onApprove(expense)}>
-                Approve {expense.title}
+vi.mock("@/components/trips/TripTimeline", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/trips/TripTimeline")>();
+  return {
+    default: (props: any) => {
+      timelineProps(props);
+      if (realTimeline) return <actual.default {...props} />;
+      return (
+        <ul data-testid="trip-timeline">
+          {props.expenses.map((expense: ExpenseListItem) => (
+            <li key={expense._id}>
+              {expense.title}
+              <button type="button" onClick={() => props.onDelete?.(expense)}>
+                Delete {expense.title}
               </button>
-            )}
-            {props.review?.onReopen && expense.approvalStatus === "approved" && (
-              <button type="button" onClick={() => props.review.onReopen(expense)}>
-                Reopen {expense.title}
+              <button type="button" onClick={() => props.onRemoveFromTrip?.(expense)}>
+                Remove {expense.title}
               </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    );
-  },
-}));
+              {props.review?.onApprove && expense.approvalStatus === "pending" && (
+                <button type="button" onClick={() => props.review.onApprove(expense)}>
+                  Approve {expense.title}
+                </button>
+              )}
+              {props.review?.onReopen && expense.approvalStatus === "approved" && (
+                <button type="button" onClick={() => props.review.onReopen(expense)}>
+                  Reopen {expense.title}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      );
+    },
+  };
+});
 
 const me = { _id: ME, name: "Manas", email: "manas@example.com" };
 const priya = { _id: PRIYA, name: "Priya", email: "priya@example.com" };
@@ -181,6 +188,7 @@ describe("TripDetailPage", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
     vi.clearAllMocks();
+    realTimeline = false;
     window.history.replaceState(null, "", `/dashboard/trips/${TRIP_ID}`);
     response = detail();
     vi.mocked(useAuth).mockReturnValue({ user: { ...me, role: "admin" }, isAdmin: true } as any);
@@ -918,6 +926,281 @@ describe("TripDetailPage", () => {
       expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
       expect(screen.getAllByTestId("type-row")).toHaveLength(2);
+    });
+  });
+
+  describe("a shared bill on a regular user's trip page", () => {
+    // Manas (a user) sees three expenses on this trip:
+    // (a) his own pocket expense, ₹800.00 (legacy: approved);
+    const metro = makeExpense({
+      _id: "4".repeat(24),
+      title: "Metro card",
+      amount: 800,
+      amountInBaseCurrency: 800,
+      pocketAmount: 800,
+      pocketAmountInBaseCurrency: 800,
+      travelType: "cab",
+    });
+    // (b) a ₹3,000.00 dinner he submitted: he paid ₹1,250.50 from pocket and
+    //     ₹400.00 on the company card, Priya ₹1,349.50 from pocket (legacy:
+    //     approved; his page shows it awaiting approval);
+    const dinner = makeExpense({
+      _id: "5".repeat(24),
+      title: "Client dinner",
+      amount: 3000,
+      amountInBaseCurrency: 3000,
+      paymentSource: "multiple",
+      pocketAmount: 2600,
+      pocketAmountInBaseCurrency: 2600,
+      travelType: "food",
+      payments: [
+        { paidBy: me, amount: 1250.5, amountInBaseCurrency: 1250.5, source: "pocket" },
+        { paidBy: me, amount: 400, amountInBaseCurrency: 400, source: "company" },
+        { paidBy: priya, amount: 1349.5, amountInBaseCurrency: 1349.5, source: "pocket" },
+      ],
+    });
+    // (c) Priya's ₹5,500.75 hotel: she paid ₹4,000.00 from pocket, he ₹1,500.75 on the company card (legacy: approved).
+    const pune = makeExpense({
+      _id: "6".repeat(24),
+      title: "Hotel Pune",
+      amount: 5500.75,
+      amountInBaseCurrency: 5500.75,
+      date: "2026-10-27T00:00:00.000Z",
+      paymentSource: "multiple",
+      pocketAmount: 4000,
+      pocketAmountInBaseCurrency: 4000,
+      travelType: "stay",
+      createdBy: priya,
+      payments: [
+        { paidBy: priya, amount: 4000, amountInBaseCurrency: 4000, source: "pocket" },
+        { paidBy: me, amount: 1500.75, amountInBaseCurrency: 1500.75, source: "company" },
+      ],
+    });
+
+    const statValue = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
+    const statSub = (label: string) => screen.getByText(label).nextElementSibling?.nextElementSibling?.textContent;
+    const typeTexts = () => screen.getAllByTestId("type-row").map((row) => row.textContent);
+    // Each Who-paid row reads: avatar initial, name, "<total> total · <company> company", then what's owed.
+    const payerTexts = () => screen.getAllByTestId("payer-row").map((row) => row.textContent);
+    const figures = () => ({
+      stats: ["Your spend", "Trip total", "Company paid", "From pocket", "Per traveller"]
+        .filter((label) => screen.queryByText(label))
+        .map((label) => [label, statValue(label), statSub(label)]),
+      types: typeTexts(),
+      payers: payerTexts(),
+    });
+
+    beforeEach(() => {
+      realTimeline = true;
+      vi.useRealTimers();
+      vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    });
+
+    // On the user's page the dinner awaits approval, so it is out of his totals
+    // and only his ₹1,650.50 share of it is reported as pending.
+    const pendingDinner = { ...dinner, approvalStatus: "pending" as const };
+
+    function signInAsUser(dinnerStatus: "pending" | "rejected" = "pending") {
+      vi.mocked(useAuth).mockReturnValue({ user: { ...me, role: "user" }, isAdmin: false } as any);
+      const base = detail();
+      // As the server counts it for Manas: only his share, and only his own Who-paid row.
+      // Approved: 800 + 1,500.75 = 2,300.75; pocket 800; company 1,500.75.
+      // Awaiting approval: his 1,250.50 + 400.00 of the dinner = 1,650.50.
+      const pending = dinnerStatus === "pending";
+      response = detail({
+        trip: { ...base.trip, canManage: false, expenseCount: 2, totalAmount: 2300.75 },
+        expenses: [metro, { ...dinner, approvalStatus: dinnerStatus }, pune],
+        summary: {
+          totalAmount: 2300.75,
+          expenseCount: 2,
+          pocketAmount: 800,
+          companyAmount: 1500.75,
+          byType: [
+            { travelType: "stay", total: 1500.75, count: 1 },
+            { travelType: "cab", total: 800, count: 1 },
+          ],
+          byPayer: [{ user: me, totalSpend: 2300.75, pocketSpend: 800, companySpend: 1500.75 }],
+          pendingCount: pending ? 1 : 0,
+          pendingAmount: pending ? 1650.5 : 0,
+        },
+      });
+    }
+
+    it("offers edit, remove and delete only on the expenses the user submitted", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      signInAsUser();
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+
+      expect(timelineProps).toHaveBeenLastCalledWith(expect.objectContaining({ canModify: expect.any(Function) }));
+      for (const expense of [metro, dinner]) {
+        expect(screen.getByRole("link", { name: `Edit ${expense.title}` })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: `Remove ${expense.title} from trip` })).toBeInTheDocument();
+      }
+      // His pending dinner can go; his approved metro card is in the books (master admin only).
+      expect(screen.getByRole("button", { name: `Delete ${dinner.title}` })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: `Delete ${metro.title}` })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Hotel Pune" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Edit Hotel Pune" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Remove Hotel Pune from trip" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete Hotel Pune" })).not.toBeInTheDocument();
+
+      // Opened, Priya's hotel is read-only to him.
+      await user.click(screen.getByRole("button", { name: "Hotel Pune" }));
+      const hotelDetail = document.getElementById(`expense-detail-${pune._id}`)!;
+      expect(hotelDetail).toBeInTheDocument();
+      expect(within(hotelDetail).queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+      expect(within(hotelDetail).queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+      expect(within(hotelDetail).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+      expect(within(hotelDetail).queryByText(/only the master admin can delete/)).not.toBeInTheDocument();
+
+      // His own shared dinner opens with its actions.
+      await user.click(screen.getByRole("button", { name: "Client dinner" }));
+      const dinnerDetail = document.getElementById(`expense-detail-${dinner._id}`)!;
+      expect(within(dinnerDetail).getByText("Awaiting approval")).toBeInTheDocument();
+      expect(within(dinnerDetail).getByRole("link", { name: "Edit" })).toBeInTheDocument();
+      expect(within(dinnerDetail).getByRole("button", { name: "Remove from trip" })).toBeInTheDocument();
+      expect(within(dinnerDetail).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    });
+
+    it("takes only the user's own share of a deleted pending shared bill out of awaiting approval, and undo restores it", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      signInAsUser();
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+      const totals = screen.getByRole("region", { name: "Trip totals" });
+
+      // 4 days (27–30 Oct): 2,300.75 / 4 = 575.1875.
+      expect(statValue("Your spend")).toBe("₹2,300.75");
+      expect(statSub("Your spend")).toMatch(/^2 approved expenses · ≈ ₹575\.19 per day/);
+      expect(statValue("From pocket")).toBe("₹800.00");
+      expect(statValue("Company paid")).toBe("₹1,500.75");
+      expect(screen.queryByText("Per traveller")).not.toBeInTheDocument();
+      // His share of the dinner, not the whole ₹3,000.00.
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(1650.5)} awaiting approval (1 expense)`);
+      const types = screen.getAllByTestId("type-row");
+      expect(types).toHaveLength(2);
+      expect(types[0]).toHaveTextContent(/^Stay1 item65\.2%₹1,500\.75/);
+      expect(types[1]).toHaveTextContent(/^Cab \/ local1 item34\.8%₹800\.00/);
+      expect(payerTexts()).toEqual(["MManas₹2,300.75 total · ₹1,500.75 companyOwed₹800.00"]);
+      // The amounts (each stat's sub-line also says whether anything awaits approval).
+      const amounts = () => ({ ...figures(), stats: figures().stats.map(([label, value]) => [label, value]) });
+      const before = amounts();
+
+      await user.click(screen.getByRole("button", { name: "Delete Client dinner" }));
+
+      expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("Client dinner");
+      expect(totals).not.toHaveTextContent(/awaiting approval/);
+      // It was never in his totals.
+      expect(amounts()).toEqual(before);
+      expect(api.delete).not.toHaveBeenCalled();
+
+      const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "Client dinner"')?.[2];
+      act(() => options.action.onClick());
+
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Client dinner");
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(1650.5)} awaiting approval (1 expense)`);
+      expect(amounts()).toEqual(before);
+      await act(async () => {
+        vi.advanceTimersByTime(6000);
+      });
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("moves only the user's own share into awaiting approval when they resubmit their shared bill", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      signInAsUser("rejected");
+      const rejected = response.expenses.find((e) => e._id === dinner._id)!;
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...rejected, approvalStatus: "pending" } });
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+      const totals = screen.getByRole("region", { name: "Trip totals" });
+      expect(totals).not.toHaveTextContent(/awaiting approval/);
+      const before = figures();
+      // The reload after the resubmit doesn't land, so what shows is the page's own shift.
+      vi.mocked(api.get).mockImplementation(() => new Promise(() => {}));
+
+      await user.click(screen.getByRole("button", { name: "Client dinner" }));
+      const dinnerDetail = document.getElementById(`expense-detail-${dinner._id}`)!;
+      await user.click(within(dinnerDetail).getByRole("button", { name: "Resubmit as is…" }));
+      await user.click(within(screen.getByRole("dialog", { name: "Resubmit for approval" })).getByRole("button", { name: "Resubmit" }));
+
+      await waitFor(() =>
+        expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(1650.5)} awaiting approval (1 expense)`)
+      );
+      // The approved figures stay as they were.
+      expect(statValue("Your spend")).toBe("₹2,300.75");
+      expect(statValue("From pocket")).toBe("₹800.00");
+      expect(statValue("Company paid")).toBe("₹1,500.75");
+      expect({ types: typeTexts(), payers: payerTexts() }).toEqual({ types: before.types, payers: before.payers });
+    });
+
+    it("takes the whole bill, and each payer's share, off an admin's totals", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      // Approved spend (legacy included) is only the master admin's to delete.
+      vi.mocked(useAuth).mockReturnValue({ user: { ...me, role: "master_admin" }, isAdmin: true, isMasterAdmin: true } as any);
+      const base = detail();
+      // Whole expenses: total 800 + 3,000 + 5,500.75 = 9,300.75; pocket 800 + 2,600 + 4,000 = 7,400;
+      // company 400 + 1,500.75 = 1,900.75. Priya: 1,349.50 + 4,000 pocket. Manas: 2,050.50 pocket,
+      // 1,900.75 company.
+      response = detail({
+        trip: { ...base.trip, expenseCount: 3, totalAmount: 9300.75 },
+        expenses: [metro, dinner, pune],
+        summary: {
+          totalAmount: 9300.75,
+          expenseCount: 3,
+          pocketAmount: 7400,
+          companyAmount: 1900.75,
+          byType: [
+            { travelType: "stay", total: 5500.75, count: 1 },
+            { travelType: "food", total: 3000, count: 1 },
+            { travelType: "cab", total: 800, count: 1 },
+          ],
+          byPayer: [
+            { user: priya, totalSpend: 5349.5, pocketSpend: 5349.5, companySpend: 0 },
+            { user: me, totalSpend: 3951.25, pocketSpend: 2050.5, companySpend: 1900.75 },
+          ],
+        },
+      });
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+
+      // The master admin may change (and delete) any of them.
+      for (const expense of [metro, dinner, pune]) {
+        expect(screen.getByRole("button", { name: `Delete ${expense.title}` })).toBeInTheDocument();
+      }
+      expect(statValue("Trip total")).toBe("₹9,300.75");
+      expect(statValue("From pocket")).toBe("₹7,400.00");
+      expect(statValue("Company paid")).toBe("₹1,900.75");
+      // 9,300.75 / 2 = 4,650.375.
+      expect(statValue("Per traveller")).toBe("₹4,650.38");
+      expect(payerTexts()).toEqual([
+        "PPriya₹5,349.50 total · ₹0.00 companyOwed₹5,349.50",
+        "MManas₹3,951.25 total · ₹1,900.75 companyOwed₹2,050.50",
+      ]);
+      const before = figures();
+
+      await user.click(screen.getByRole("button", { name: "Delete Client dinner" }));
+
+      expect(statValue("Trip total")).toBe("₹6,300.75");
+      expect(statSub("Trip total")).toBe("2 expenses · ≈ ₹1,575.19 per day");
+      expect(statValue("From pocket")).toBe("₹4,800.00");
+      expect(statValue("Company paid")).toBe("₹1,500.75");
+      // 6,300.75 / 2 = 3,150.375.
+      expect(statValue("Per traveller")).toBe("₹3,150.38");
+      const types = screen.getAllByTestId("type-row");
+      expect(types).toHaveLength(2);
+      expect(types[0]).toHaveTextContent(/^Stay1 item87\.3%₹5,500\.75/);
+      expect(types[1]).toHaveTextContent(/^Cab \/ local1 item12\.7%₹800\.00/);
+      expect(payerTexts()).toEqual([
+        "PPriya₹4,000.00 total · ₹0.00 companyOwed₹4,000.00",
+        "MManas₹2,300.75 total · ₹1,500.75 companyOwed₹800.00",
+      ]);
+      expect(api.delete).not.toHaveBeenCalled();
+
+      const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "Client dinner"')?.[2];
+      act(() => options.action.onClick());
+      expect(figures()).toEqual(before);
     });
   });
 });

@@ -131,6 +131,45 @@ describe("GET /api/trips/:id/candidates", () => {
     expect(titles(await (await get()).json())).toEqual(["Flight GOI", "Hotel extra"]);
   });
 
+  describe("with shared expenses", () => {
+    // Trip-less, in the window, each paid partly by the other traveler.
+    const sharedBy = (title: string, createdBy: string, otherPayer: string) => ({
+      ...expense(title, "2026-10-13", createdBy),
+      amount: 1000,
+      amountInBaseCurrency: 1000,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: 1000,
+      payments: [
+        { paidBy: oid(createdBy), amount: 400, amountInBaseCurrency: 400, source: "pocket" },
+        { paidBy: oid(otherPayer), amount: 600, amountInBaseCurrency: 600, source: "pocket" },
+      ],
+    });
+    const ravisDinner = sharedBy("Team dinner (Ravi's)", RAVI, ASHA);
+    const ashasTaxi = sharedBy("Taxi (Asha's)", ASHA, RAVI);
+
+    beforeEach(() => {
+      vi.mocked(Expense.find).mockImplementation(
+        ((filter: Record<string, unknown>) =>
+          chain(new Query(filter).find([...docs, ravisDinner, ashasTaxi]).all())) as never
+      );
+    });
+
+    it("doesn't offer a user a shared bill someone else submitted, which they can't move", async () => {
+      signIn(ASHA, "user");
+      expect(titles(await (await get()).json())).toEqual(["Flight GOI", "Hotel extra", "Taxi (Asha's)"]);
+
+      signIn(RAVI, "user");
+      expect(titles(await (await get()).json())).toEqual(["Cab (airport)", "Team dinner (Ravi's)"]);
+    });
+
+    it("still offers an admin every traveler's shared bills", async () => {
+      signIn(ADMIN, "admin");
+      expect(titles(await (await get()).json())).toEqual(
+        ["Cab (airport)", "Flight GOI", "Hotel extra", "Taxi (Asha's)", "Team dinner (Ravi's)", "Visa for Asha"].sort()
+      );
+    });
+  });
+
   it("caps the list at 100 and says it was cut off", async () => {
     signIn(ADMIN, "admin");
     const many = Array.from({ length: 101 }, (_, i) => expense(`Bill ${i}`, "2026-10-13", ADMIN));

@@ -401,6 +401,92 @@ describe("ExpensesPage", () => {
     expect(statValue(totals, "Paid by Manas Nilorout")).toBe("₹200.00");
   });
 
+  it("gives a regular user their own share, and only lets them change what they submitted", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAdmin: false,
+      user: { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com", role: "user" },
+    } as any);
+    const manas = { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com" };
+    const ravi = { _id: "user-2", name: "Ravi", email: "ravi@example.com" };
+    const taxi = {
+      ...expense,
+      _id: "taxi",
+      title: "Taxi",
+      amount: 1000,
+      amountInBaseCurrency: 1000,
+      paymentSource: "pocket",
+      pocketAmount: 1000,
+      pocketAmountInBaseCurrency: 1000,
+    };
+    // Ravi's bill; Manas paid 200 of it on the company card.
+    const dinner = {
+      ...expense,
+      _id: "dinner",
+      title: "Client dinner",
+      amount: 300,
+      amountInBaseCurrency: 300,
+      paymentSource: "multiple",
+      pocketAmount: 100,
+      pocketAmountInBaseCurrency: 100,
+      createdBy: ravi,
+      payments: [
+        { paidBy: manas, amount: 200, amountInBaseCurrency: 200, source: "company" },
+        { paidBy: ravi, amount: 100, amountInBaseCurrency: 100, source: "pocket" },
+      ],
+    };
+    // Manas's bill, awaiting approval; he paid 150 of 500 from pocket, Ravi the rest.
+    const lunch = {
+      ...expense,
+      _id: "lunch",
+      title: "Team lunch",
+      amount: 500,
+      amountInBaseCurrency: 500,
+      approvalStatus: "pending",
+      paymentSource: "multiple",
+      pocketAmount: 500,
+      pocketAmountInBaseCurrency: 500,
+      payments: [
+        { paidBy: manas, amount: 150, amountInBaseCurrency: 150, source: "pocket" },
+        { paidBy: ravi, amount: 350, amountInBaseCurrency: 350, source: "pocket" },
+      ],
+    };
+    listedExpenses = [taxi, dinner, lunch];
+    // As the server sums it for him: 1000 + 200 approved, his 150 of the lunch awaiting approval.
+    listedSummary = {
+      totalAmount: 1200,
+      totalExpenses: 2,
+      companyAmount: 200,
+      pocketAmount: 1000,
+      pendingCount: 1,
+      pendingAmount: 150,
+      rejectedCount: 0,
+    };
+    render(<ExpensesPage />);
+
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(await within(totals).findByText("2 approved expenses · your share")).toBeInTheDocument();
+    expect(statValue(totals, "All time total")).toBe("₹1,200.00");
+    expect(statValue(totals, "Awaiting approval")).toBe("₹150.00");
+
+    // Ravi's bill is listed for Manas to see, but only Ravi (or an admin) changes it.
+    expect(screen.getByText("Client dinner")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Client dinner" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Edit Client dinner")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete Team lunch" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Edit Team lunch")).toBeInTheDocument();
+
+    // Deleting his own pending shared bill takes only his 150 out of Awaiting
+    // approval (not the whole 500), and leaves the approved total alone.
+    fireEvent.click(screen.getByRole("button", { name: "Delete Team lunch" }));
+    expect(statValue(totals, "All time total")).toBe("₹1,200.00");
+    expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+    expect(within(totals).getByRole("img", { name: "Company paid 16.7%, pocket 83.3%" })).toBeInTheDocument();
+
+    act(() => toastMock.mock.calls.at(-1)?.[2]?.action.onClick());
+    expect(statValue(totals, "Awaiting approval")).toBe("₹150.00");
+    expect(statValue(totals, "All time total")).toBe("₹1,200.00");
+  });
+
   it("names the department and category filter lists", async () => {
     render(<ExpensesPage />);
 
@@ -785,7 +871,7 @@ describe("ExpensesPage", () => {
     });
 
     it("counts a deleted rejected expense out of the rejected link only", async () => {
-      vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as any);
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: false, user: { _id: "user-1", name: "Manas Nilorout", role: "user" } } as any);
       render(<ExpensesPage />);
 
       const totals = await screen.findByRole("region", { name: "Totals" });
@@ -1129,6 +1215,86 @@ describe("ExpensesPage", () => {
       expect(within(detail("rejected-1")).getByText(/An admin will review this/)).toBeInTheDocument();
       // "Resubmit as is…" is gone with the rejection: focus goes to the row rather than the page.
       await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Team lunch" })));
+    });
+
+    describe("shared bills", () => {
+      const manas = { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com" };
+      const ravi = { _id: "user-2", name: "Ravi", email: "ravi@example.com" };
+      // ₹1,000 split: Manas ₹350 from pocket, Ravi ₹650 on the company card.
+      const shared = (overrides: Record<string, unknown>) => ({
+        ...expense,
+        amount: 1000,
+        amountInBaseCurrency: 1000,
+        paymentSource: "multiple",
+        pocketAmount: 350,
+        pocketAmountInBaseCurrency: 350,
+        payments: [
+          { paidBy: manas, amount: 350, amountInBaseCurrency: 350, source: "pocket" },
+          { paidBy: ravi, amount: 650, amountInBaseCurrency: 650, source: "company" },
+        ],
+        assetAllocationRevision: 2,
+        ...overrides,
+      });
+
+      it("moves only the user's own share into Awaiting approval when they resubmit their shared bill", async () => {
+        const rejected = shared({
+          _id: "shared-1",
+          title: "Offsite cab",
+          createdBy: manas,
+          approvalStatus: "rejected",
+          rejectionReason: "Receipt missing",
+        });
+        listedExpenses = [expense, rejected];
+        listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 0, pendingAmount: 0, rejectedCount: 1 };
+        vi.mocked(useAuth).mockReturnValue({ isAdmin: false, user: { ...manas, role: "user" } } as any);
+        vi.mocked(api.post).mockResolvedValue({ expense: { ...rejected, approvalStatus: "pending", rejectionReason: null } });
+
+        render(<ExpensesPage />);
+        const totals = await screen.findByRole("region", { name: "Totals" });
+        fireEvent.click(screen.getByRole("button", { name: "Offsite cab" }));
+        fireEvent.click(within(detail("shared-1")).getByRole("button", { name: "Resubmit as is…" }));
+        fireEvent.click(within(screen.getByRole("dialog", { name: "Resubmit for approval" })).getByRole("button", { name: "Resubmit" }));
+
+        await waitFor(() => expect(statValue(totals, "Awaiting approval")).toBe("₹350.00"));
+        expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+        expect(within(totals).queryByRole("button", { name: /rejected — see why/ })).not.toBeInTheDocument();
+      });
+
+      it("shows a payer someone else's pending shared bill with its status, read-only", async () => {
+        const pending = shared({ _id: "shared-2", title: "Hotel deposit", createdBy: ravi, approvalStatus: "pending" });
+        const rejected = shared({
+          _id: "shared-3",
+          title: "Team dinner",
+          createdBy: ravi,
+          approvalStatus: "rejected",
+          rejectionReason: "Over the limit",
+        });
+        listedExpenses = [expense, pending, rejected];
+        // Manas's share of the pending bill only.
+        listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 1, pendingAmount: 350, rejectedCount: 1 };
+        vi.mocked(useAuth).mockReturnValue({ isAdmin: false, user: { ...manas, role: "user" } } as any);
+
+        render(<ExpensesPage />);
+        const totals = await screen.findByRole("region", { name: "Totals" });
+        expect(statValue(totals, "Awaiting approval")).toBe("₹350.00");
+
+        expect(screen.queryByRole("button", { name: "Delete Hotel deposit" })).not.toBeInTheDocument();
+        expect(screen.queryByLabelText("Edit Hotel deposit")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Hotel deposit" }));
+        const pendingDetail = within(detail("shared-2"));
+        expect(pendingDetail.getByText("Awaiting approval")).toBeInTheDocument();
+        expect(pendingDetail.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+        expect(pendingDetail.queryByRole("link", { name: /^Edit/ })).not.toBeInTheDocument();
+        expect(pendingDetail.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Team dinner" }));
+        const rejectedDetail = within(detail("shared-3"));
+        expect(rejectedDetail.getByText("Over the limit")).toBeInTheDocument();
+        expect(rejectedDetail.queryByRole("button", { name: "Resubmit as is…" })).not.toBeInTheDocument();
+        expect(rejectedDetail.queryByRole("link", { name: /Edit/ })).not.toBeInTheDocument();
+        expect(rejectedDetail.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+        expect(rejectedDetail.getByText(/Ravi can fix it and resubmit/)).toBeInTheDocument();
+      });
     });
   });
 

@@ -74,7 +74,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     .sort(TRIP_EXPENSE_SORT)
     .lean();
   const [summary, expensesWithAssets] = await Promise.all([
-    getTripDetailSummary(filter, expenses),
+    getTripDetailSummary(filter, expenses, authResult),
     withLinkedAssetCounts(expenses),
   ]);
 

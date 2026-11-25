@@ -1,3 +1,10 @@
+## [1.15.1](https://github.com/sapieonic/magick-accounting/compare/v1.15.0...v1.15.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* count only a user's own share of shared expenses in their totals ([#33](https://github.com/sapieonic/magick-accounting/issues/33)) ([73666fd](https://github.com/sapieonic/magick-accounting/commit/73666fd77dab7786f53720930d1a4bd579c89fa4))
+
 # [1.15.0](https://github.com/sapieonic/magick-accounting/compare/v1.14.0...v1.15.0) (2026-11-22)
 
 

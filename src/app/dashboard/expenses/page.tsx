@@ -36,7 +36,7 @@ import { useApprovalActions } from "@/hooks/useApprovalActions";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { MAX_EXPENSE_PAGE, getPaymentBreakdown, payerShare } from "@/lib/expense";
+import { MAX_EXPENSE_PAGE, canModifyExpense, payerShare, viewerAmounts, type SpendViewer } from "@/lib/expense";
 import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
@@ -62,7 +62,7 @@ import {
   deleteRefusal,
   useFocusAfterReview,
 } from "@/components/expenses/review-status";
-import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
+import { expenseEditHref } from "@/components/expenses/ledger/format";
 import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import TripCluster, { buildExpenseListItems, pageItemKey, tripItemKey } from "@/components/trips/TripCluster";
@@ -103,32 +103,41 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count !== 1 ?
 /**
  * `summary` with one expense's amounts added (1) or taken out (-1), including
  * the "Paid by" person's share when that filter is on (`payerId`). Only an
- * approved expense is in the totals; the others move their own counts.
+ * approved expense is in the totals; the others move their own counts. The
+ * amounts are what the server counts for `viewer` (`viewerAmounts`): whole
+ * expenses for an admin, their own share for anyone else, the pending figure
+ * included.
  */
-function shiftSummary(prev: ExpenseSummary, expense: Expense, sign: 1 | -1, payerId: string): ExpenseSummary {
+function shiftSummary(
+  prev: ExpenseSummary,
+  expense: Expense,
+  sign: 1 | -1,
+  payerId: string,
+  viewer: SpendViewer
+): ExpenseSummary {
   const status = effectiveApprovalStatus(expense);
+  const own = viewerAmounts(expense, viewer);
   if (status === "pending") {
     return prev.pendingCount == null && prev.pendingAmount == null
       ? prev
       : {
           ...prev,
-          pendingAmount: roundMoney((prev.pendingAmount ?? 0) + sign * baseAmount(expense)),
+          pendingAmount: roundMoney((prev.pendingAmount ?? 0) + sign * own.total),
           pendingCount: Math.max(0, (prev.pendingCount ?? 0) + sign),
         };
   }
   if (status === "rejected") {
     return prev.rejectedCount == null ? prev : { ...prev, rejectedCount: Math.max(0, prev.rejectedCount + sign) };
   }
-  const { pocketBase, companyBase } = getPaymentBreakdown(expense);
   const share = payerId ? payerShare(expense, payerId) : null;
   return {
     ...prev,
-    totalAmount: roundMoney(prev.totalAmount + sign * baseAmount(expense)),
+    totalAmount: roundMoney(prev.totalAmount + sign * own.total),
     totalExpenses: Math.max(0, prev.totalExpenses + sign),
     ...(prev.companyAmount != null && prev.pocketAmount != null
       ? {
-          companyAmount: roundMoney(prev.companyAmount + sign * companyBase),
-          pocketAmount: roundMoney(prev.pocketAmount + sign * pocketBase),
+          companyAmount: roundMoney(prev.companyAmount + sign * own.company),
+          pocketAmount: roundMoney(prev.pocketAmount + sign * own.pocket),
         }
       : {}),
     ...(prev.payerSpend && share
@@ -241,7 +250,14 @@ function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: (
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
-  const { user, isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  // How totals count each expense (whole for an admin, their own share for
+  // anyone else) and which expenses this person may change.
+  const viewer = useMemo<SpendViewer>(
+    () => ({ _id: user?._id ?? "", role: user?.role ?? (isAdmin ? "admin" : "user") }),
+    [user?._id, user?.role, isAdmin]
+  );
+  const canModify = useCallback((expense: Expense) => canModifyExpense(expense, viewer), [viewer]);
   const sidePanel = useMediaQuery(SIDE_PANEL_QUERY);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   /** Trips on the loaded pages, keyed by id (grouped view only). */
@@ -307,7 +323,7 @@ export default function ExpensesPage() {
       if (!old && pin?.expense._id === updated._id) {
         // Opened from a link, beyond the loaded pages: still part of the summary when unfiltered.
         if (pin.counted) {
-          setSummary((prev) => shiftSummary(shiftSummary(prev, pin.expense, -1, filterPayer), updated, 1, filterPayer));
+          setSummary((prev) => shiftSummary(shiftSummary(prev, pin.expense, -1, filterPayer, viewer), updated, 1, filterPayer, viewer));
         }
         setPinned({ ...pin, expense: updated });
         return;
@@ -315,8 +331,8 @@ export default function ExpensesPage() {
       if (!old) return;
       const drop = Boolean(filterApproval) && effectiveApprovalStatus(updated) !== filterApproval;
       setSummary((prev) => {
-        const without = shiftSummary(prev, old, -1, filterPayer);
-        return drop ? without : shiftSummary(without, updated, 1, filterPayer);
+        const without = shiftSummary(prev, old, -1, filterPayer, viewer);
+        return drop ? without : shiftSummary(without, updated, 1, filterPayer, viewer);
       });
       if (drop) dropExpense(old);
       else setExpenses((prev) => prev.map((e) => (e._id === updated._id ? updated : e)));
@@ -325,13 +341,13 @@ export default function ExpensesPage() {
       const old = expensesRef.current.find((e) => e._id === id);
       const pin = pinnedRef.current;
       if (!old && pin?.expense._id === id) {
-        if (pin.counted) setSummary((prev) => shiftSummary(prev, pin.expense, -1, filterPayer));
+        if (pin.counted) setSummary((prev) => shiftSummary(prev, pin.expense, -1, filterPayer, viewer));
         setPinned(null);
         setSelectedId((prev) => (prev === id ? null : prev));
         return;
       }
       if (!old) return;
-      setSummary((prev) => shiftSummary(prev, old, -1, filterPayer));
+      setSummary((prev) => shiftSummary(prev, old, -1, filterPayer, viewer));
       dropExpense(old);
     },
   });
@@ -706,15 +722,15 @@ export default function ExpensesPage() {
       const action = inFlight[e._id];
       if (!action) return acc;
       const reviewed = asReviewed(e, action);
-      const without = shiftSummary(acc, e, -1, filterPayer);
-      return leavesFilter(reviewed) ? without : shiftSummary(without, reviewed, 1, filterPayer);
+      const without = shiftSummary(acc, e, -1, filterPayer, viewer);
+      return leavesFilter(reviewed) ? without : shiftSummary(without, reviewed, 1, filterPayer, viewer);
     }, summary);
     // The pinned expense is in the summary only when no filter is on (so none to leave).
     if (pinned?.counted && pinnedShown && inFlight[pinned.expense._id]) {
-      return shiftSummary(shiftSummary(listed, pinned.expense, -1, filterPayer), pinnedShown, 1, filterPayer);
+      return shiftSummary(shiftSummary(listed, pinned.expense, -1, filterPayer, viewer), pinnedShown, 1, filterPayer, viewer);
     }
     return listed;
-  }, [expenses, inFlight, leavesFilter, summary, filterPayer, pinned, pinnedShown]);
+  }, [expenses, inFlight, leavesFilter, summary, filterPayer, viewer, pinned, pinnedShown]);
 
   const listItems = useMemo(
     () => buildExpenseListItems(displayExpenses, groupTrips ? trips : null),
@@ -728,7 +744,7 @@ export default function ExpensesPage() {
 
   // Moves an expense's amounts in or out of the totals band (delete / undo).
   const adjustTotals = (expense: Expense, sign: 1 | -1) => {
-    setSummary((prev) => shiftSummary(prev, expense, sign, filterPayer));
+    setSummary((prev) => shiftSummary(prev, expense, sign, filterPayer, viewer));
   };
 
   // Optimistically remove the expense and give the user a short undo window
@@ -888,6 +904,7 @@ export default function ExpensesPage() {
         editHref={expenseEditHref(pinnedShown._id)}
         onDelete={deleteFor(pinnedShown)}
         review={review.handlers}
+        canModify={canModify}
         showTripLink
       />
     </div>
@@ -1055,7 +1072,7 @@ export default function ExpensesPage() {
               ? `${plural(shownSummary.totalExpenses, "approved expense")} · ${
                   filterApproval === "pending" ? "expenses awaiting approval" : "rejected expenses"
                 } aren't in totals`
-              : plural(shownSummary.totalExpenses, "approved expense")
+              : `${plural(shownSummary.totalExpenses, "approved expense")}${isAdmin ? "" : " · your share"}`
           }
           action={
             !isAdmin && rejectedCount > 0 && filterApproval !== "rejected" ? (
@@ -1176,6 +1193,7 @@ export default function ExpensesPage() {
                         detailId={DETAIL_PANEL_ID}
                         onDelete={handleDelete}
                         review={review.handlers}
+                        canModify={canModify}
                         filtered={isFiltered}
                       />
                     ) : (
@@ -1188,6 +1206,7 @@ export default function ExpensesPage() {
                         editHref={expenseEditHref(item.expense._id)}
                         onDelete={deleteFor(item.expense)}
                         review={review.handlers}
+                        canModify={canModify}
                         showTripLink={!groupTrips}
                       />
                     )}
@@ -1217,6 +1236,7 @@ export default function ExpensesPage() {
                 editHref={expenseEditHref(selectedExpense._id)}
                 onDelete={deleteFor(selectedExpense)}
                 review={review.handlers}
+                canModify={canModify}
                 onClose={() => setSelectedId(null)}
                 showHeader
                 className="bg-wash-r p-5"

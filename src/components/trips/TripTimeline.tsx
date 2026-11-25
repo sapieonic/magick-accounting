@@ -40,6 +40,7 @@ export default function TripTimeline({
   onDelete,
   onRemoveFromTrip,
   review,
+  canModify,
   initialExpandedId = null,
   returnTo,
   selectedId,
@@ -132,6 +133,7 @@ export default function TripTimeline({
                   onDelete={review?.inFlight?.[expense._id] ? undefined : onDelete}
                   onRemoveFromTrip={onRemoveFromTrip}
                   review={review}
+                  canModify={canModify}
                 />
               ))}
             </div>

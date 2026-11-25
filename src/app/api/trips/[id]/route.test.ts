@@ -203,23 +203,72 @@ describe("GET /api/trips/:id", () => {
     );
   });
 
-  it("shows a traveler only their own expenses and totals", async () => {
+  it("shows a traveler their own expenses, with only their own share in the totals", async () => {
     signIn(ASHA, "user");
     const body = await (await GET({} as NextRequest, params())).json();
 
-    expect((vi.mocked(Expense.find).mock.calls[0] as unknown[])[0]).toEqual({ createdBy: oid(ASHA), trip: oid(GOA) });
+    expect((vi.mocked(Expense.find).mock.calls[0] as unknown[])[0]).toEqual({
+      $and: [{ $or: [{ createdBy: oid(ASHA) }, { paymentSource: "multiple", "payments.paidBy": oid(ASHA) }] }],
+      trip: oid(GOA),
+    });
     expect(body.expenses.map((expense: { _id: string }) => expense._id)).toEqual(
       [flight, dinner].map((expense) => String(expense._id))
     );
-    expect(body.summary).toEqual(
-      expect.objectContaining({ totalAmount: 11300, expenseCount: 2, pocketAmount: 9300, companyAmount: 2000 })
+    // Her flight (8300 pocket) and her 1000 pocket part of the shared dinner;
+    // Ravi's 2000 of that dinner is his, not hers.
+    expect(body.summary).toEqual({
+      totalAmount: 9300,
+      expenseCount: 2,
+      pocketAmount: 9300,
+      companyAmount: 0,
+      byType: [
+        { travelType: "flight", total: 8300, count: 1 },
+        { travelType: null, total: 1000, count: 1 },
+      ],
+      byPayer: [
+        { user: { _id: ASHA, name: "Asha", email: "asha@example.com" }, totalSpend: 9300, pocketSpend: 9300, companySpend: 0 },
+      ],
+      pendingCount: 0,
+      pendingAmount: 0,
+    });
+    expect(body.trip).toEqual(expect.objectContaining({ expenseCount: 2, totalAmount: 9300, canManage: false }));
+  });
+
+  it("shows a payer the shared expense someone else submitted, counting only their part", async () => {
+    signIn(RAVI, "user");
+    const body = await (await GET({} as NextRequest, params())).json();
+
+    // His hotel, and Asha's dinner that he paid 2000 of.
+    expect(body.expenses.map((expense: { _id: string }) => expense._id)).toEqual(
+      [hotel, dinner].map((expense) => String(expense._id))
     );
-    // Ravi paid part of Asha's dinner, so he is credited with that share.
-    expect(body.summary.byPayer.map((row: { user: { _id: string }; totalSpend: number }) => [row.user._id, row.totalSpend])).toEqual([
-      [ASHA, 9300],
-      [RAVI, 2000],
-    ]);
-    expect(body.trip).toEqual(expect.objectContaining({ expenseCount: 2, totalAmount: 11300, canManage: false }));
+    expect(body.summary).toEqual({
+      totalAmount: 8000,
+      expenseCount: 2,
+      pocketAmount: 0,
+      companyAmount: 8000,
+      byType: [
+        { travelType: "stay", total: 6000, count: 1 },
+        { travelType: null, total: 2000, count: 1 },
+      ],
+      byPayer: [
+        { user: { _id: RAVI, name: "Ravi", email: "ravi@example.com" }, totalSpend: 8000, pocketSpend: 0, companySpend: 8000 },
+      ],
+      pendingCount: 0,
+      pendingAmount: 0,
+    });
+    expect(body.trip).toEqual(expect.objectContaining({ expenseCount: 2, totalAmount: 8000, canManage: true }));
+  });
+
+  it("splits the trip exactly between its people: their own totals add up to the admin's", async () => {
+    const totals: Record<string, { totalAmount: number; pocketAmount: number; companyAmount: number }> = {};
+    for (const [id, role] of [[ADMIN, "admin"], [ASHA, "user"], [RAVI, "user"]] as const) {
+      signIn(id, role);
+      totals[id] = (await (await GET({} as NextRequest, params())).json()).summary;
+    }
+    for (const key of ["totalAmount", "pocketAmount", "companyAmount"] as const) {
+      expect(totals[ASHA][key] + totals[RAVI][key]).toBe(totals[ADMIN][key]);
+    }
   });
 
   it("lists expenses of every status but totals approved ones, with pending apart", async () => {

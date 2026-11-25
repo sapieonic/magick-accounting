@@ -151,6 +151,9 @@ ExpenseSchema.index({ date: -1, createdAt: -1, _id: -1 });
 ExpenseSchema.index({ createdBy: 1, date: -1, createdAt: -1, _id: -1 });
 // The list narrowed by approval status (e.g. the admin review queue).
 ExpenseSchema.index({ approvalStatus: 1, date: -1, createdAt: -1, _id: -1 });
+// The other half of a `user`'s list: shared expenses they paid part of
+// (`visibleToUserFilter`), in the same order so the two halves merge sorted.
+ExpenseSchema.index({ "payments.paidBy": 1, date: -1, createdAt: -1, _id: -1 });
 ExpenseSchema.index({ department: 1, date: -1 });
 ExpenseSchema.index({ category: 1, date: -1 });
 ExpenseSchema.index({ currency: 1 });

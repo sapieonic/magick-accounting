@@ -98,6 +98,7 @@ export default function TripCluster({
   onDelete,
   onRemoveFromTrip,
   review,
+  canModify,
   filtered = false,
 }: TripClusterProps) {
   // Totals come from the expenses on hand so optimistic deletes stay correct.
@@ -220,6 +221,7 @@ export default function TripCluster({
             onDelete={onDelete}
             onRemoveFromTrip={onRemoveFromTrip}
             review={review}
+            canModify={canModify}
           />
         </div>
       )}

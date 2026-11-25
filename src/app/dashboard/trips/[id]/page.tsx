@@ -24,7 +24,7 @@ import { api } from "@/lib/api";
 import { APPROVED_DELETE_MESSAGE, canDeleteExpense, effectiveApprovalStatus } from "@/lib/approval";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
-import { getPaymentBreakdown, payerShare } from "@/lib/expense";
+import { canModifyExpense, payerShare, viewerAmounts, type SpendViewer } from "@/lib/expense";
 import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, withViewerStatus } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -73,10 +73,16 @@ interface SummaryChange {
  * deletes in their undo window (-1), and approvals in theirs (out as pending,
  * back in as approved). As on the server, only an approved expense is in the
  * totals; a pending one moves the pending figures and a rejected one is in
- * neither. A payer the summary doesn't list yet isn't added (the page reloads
- * the summary once a review is saved).
+ * neither. Amounts are what the server counts for `viewer` (`viewerAmounts`):
+ * whole expenses for an admin, their own share for anyone else. A payer the
+ * summary doesn't list yet isn't added (the page reloads the summary once a
+ * review is saved).
  */
-function shiftTripSummary(summary: TripDetailSummary, changes: SummaryChange[]): TripDetailSummary {
+function shiftTripSummary(
+  summary: TripDetailSummary,
+  changes: SummaryChange[],
+  viewer: SpendViewer
+): TripDetailSummary {
   if (changes.length === 0) return summary;
   const next: TripDetailSummary = {
     ...summary,
@@ -84,7 +90,8 @@ function shiftTripSummary(summary: TripDetailSummary, changes: SummaryChange[]):
     byPayer: summary.byPayer.map((row) => ({ ...row })),
   };
   for (const { expense, sign } of changes) {
-    const base = baseAmount(expense);
+    // As the server counts it: the whole expense for an admin, else the viewer's own share.
+    const { total: base, pocket, company } = viewerAmounts(expense, viewer);
     const status = effectiveApprovalStatus(expense);
     if (status === "pending") {
       if (next.pendingAmount != null || sign > 0) next.pendingAmount = roundMoney((next.pendingAmount ?? 0) + sign * base);
@@ -92,7 +99,6 @@ function shiftTripSummary(summary: TripDetailSummary, changes: SummaryChange[]):
       continue;
     }
     if (status === "rejected") continue;
-    const { pocketBase: pocket, companyBase: company } = getPaymentBreakdown(expense);
     next.totalAmount = roundMoney(next.totalAmount + sign * base);
     next.pocketAmount = roundMoney(next.pocketAmount + sign * pocket);
     next.companyAmount = roundMoney(next.companyAmount + sign * company);
@@ -128,8 +134,16 @@ function shiftTripSummary(summary: TripDetailSummary, changes: SummaryChange[]):
 }
 
 /** The server summary minus expenses still inside their delete undo window. */
-function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[]): TripDetailSummary {
-  return shiftTripSummary(summary, removed.map((expense) => ({ expense, sign: -1 as const })));
+function withoutExpenses(
+  summary: TripDetailSummary,
+  removed: ExpenseListItem[],
+  viewer: SpendViewer
+): TripDetailSummary {
+  return shiftTripSummary(
+    summary,
+    removed.map((expense) => ({ expense, sign: -1 as const })),
+    viewer
+  );
 }
 
 function DetailSkeleton() {
@@ -165,7 +179,12 @@ export default function TripDetailPage() {
   const params = useParams<{ id: string }>();
   const tripId = String(params.id);
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const viewer = useMemo<SpendViewer>(
+    () => ({ _id: user?._id ?? "", role: user?.role ?? (isAdmin ? "admin" : "user") }),
+    [user?._id, user?.role, isAdmin]
+  );
+  const canModify = useCallback((expense: ExpenseListItem) => canModifyExpense(expense, viewer), [viewer]);
   const { toast } = useToast();
   const [data, setData] = useState<TripDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -253,7 +272,7 @@ export default function TripDetailPage() {
           summary: shiftTripSummary(prev.summary, [
             { expense: old, sign: -1 },
             { expense: updated, sign: 1 },
-          ]),
+          ], viewer),
         };
       });
       void load(true);
@@ -264,7 +283,7 @@ export default function TripDetailPage() {
           ? {
               ...prev,
               expenses: prev.expenses.filter((e) => e._id !== id),
-              summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === id)),
+              summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === id), viewer),
             }
           : prev
       );
@@ -295,8 +314,8 @@ export default function TripDetailPage() {
         changes.push({ expense: asReviewed(e, inFlight[e._id]), sign: 1 });
       }
     }
-    return shiftTripSummary(data.summary, changes);
-  }, [data, pendingSet, inFlight]);
+    return shiftTripSummary(data.summary, changes, viewer);
+  }, [data, pendingSet, inFlight, viewer]);
 
   const handleDelete = useCallback(
     (expense: ExpenseListItem) => {
@@ -324,7 +343,7 @@ export default function TripDetailPage() {
               ? {
                   ...prev,
                   expenses: prev.expenses.filter((e) => e._id !== expense._id),
-                  summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === expense._id)),
+                  summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === expense._id), viewer),
                 }
               : prev
           );
@@ -345,7 +364,7 @@ export default function TripDetailPage() {
         action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
       });
     },
-    [data, inFlight, load, scheduleDelete, undoDelete, toast, user]
+    [data, inFlight, load, scheduleDelete, undoDelete, toast, user, viewer]
   );
 
   const handleRemoveFromTrip = useCallback(
@@ -550,7 +569,7 @@ export default function TripDetailPage() {
             sub={`Total ÷ ${trip.travelers.length}`}
           />
         )}
-        {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
+        {/* A user's totals are only their own share, so they can't be read against the trip budget. */}
         {isAdmin && trip.budget != null && (
           <BandCell label="Budget">
             <BudgetMeter spent={summary.totalAmount} budget={trip.budget} pending={pendingAmount} />
@@ -583,6 +602,7 @@ export default function TripDetailPage() {
                 onDelete={handleDelete}
                 onRemoveFromTrip={handleRemoveFromTrip}
                 review={review.handlers}
+                canModify={canModify}
                 initialExpandedId={expandId}
                 returnTo={`/dashboard/trips/${trip._id}`}
               />

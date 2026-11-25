@@ -261,6 +261,57 @@ describe("ExpenseRow", () => {
     expect(screen.getByRole("link", { name: /Pune visit/ })).toHaveClass("inline-flex", "min-h-6", "items-center");
   });
 
+  it("offers every action, on the row and in its inline detail, when canModify allows the expense", () => {
+    const canModify = vi.fn(() => true);
+    const onDelete = vi.fn();
+    const onRemoveFromTrip = vi.fn();
+    renderRow({ variant: "trip", selected: true, canModify, onDelete, onRemoveFromTrip });
+
+    expect(canModify).toHaveBeenCalledWith(expect.objectContaining({ _id: "exp-1" }));
+    const toolbar = screen.getByTestId("row-actions");
+    expect(within(toolbar).getByRole("link", { name: "Edit Team dinner" })).toHaveAttribute("href", "/edit");
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Remove Team dinner from trip" }));
+    expect(onRemoveFromTrip).toHaveBeenCalledWith(expect.objectContaining({ _id: "exp-1" }));
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Delete Team dinner" }));
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ _id: "exp-1" }));
+
+    const detail = document.getElementById("expense-detail-exp-1")!;
+    expect(within(detail).getByRole("link", { name: "Edit" })).toHaveAttribute("href", "/edit");
+    expect(within(detail).getByRole("button", { name: "Remove from trip" })).toBeInTheDocument();
+    expect(within(detail).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("hides every action, on the row and in its inline detail, when canModify rejects the expense", () => {
+    const canModify = vi.fn(() => false);
+    const onDelete = vi.fn();
+    const onRemoveFromTrip = vi.fn();
+    renderRow({ variant: "trip", selected: true, canModify, onDelete, onRemoveFromTrip });
+
+    expect(canModify).toHaveBeenCalledWith(expect.objectContaining({ _id: "exp-1" }));
+    expect(screen.queryByTestId("row-actions")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Edit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove/ })).not.toBeInTheDocument();
+
+    // The detail still opens, read-only.
+    const detail = document.getElementById("expense-detail-exp-1")!;
+    expect(detail).toBeInTheDocument();
+    expect(within(detail).getByText("Asha Rao")).toBeInTheDocument();
+    expect(within(detail).queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(onRemoveFromTrip).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row actions when canModify is omitted", () => {
+    renderRow({ onDelete: vi.fn(), onRemoveFromTrip: vi.fn() });
+    const toolbar = screen.getByTestId("row-actions");
+    expect(within(toolbar).getByRole("link", { name: "Edit Team dinner" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "Remove Team dinner from trip" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "Delete Team dinner" })).toBeInTheDocument();
+  });
+
   it("leaves the detail to the caller when not inline", () => {
     renderRow({ selected: true, inlineDetail: false, detailId: "side-panel" });
     expect(screen.getByRole("button", { name: "Team dinner" })).toHaveAttribute("aria-controls", "side-panel");

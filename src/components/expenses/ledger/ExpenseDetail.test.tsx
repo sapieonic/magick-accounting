@@ -375,3 +375,84 @@ describe("ExpenseDetail delete", () => {
     expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
   });
 });
+
+describe("ExpenseDetail actions", () => {
+  it("offers Edit, Remove from trip and Delete to someone who may change the expense", () => {
+    render(
+      <ExpenseDetail expense={expense} editHref="/edit" onDelete={vi.fn()} onRemoveFromTrip={vi.fn()} canModify={() => true} />
+    );
+    expect(screen.getByRole("link", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove from trip" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("is read-only for a payer who didn't submit the expense", () => {
+    const canModify = vi.fn(() => false);
+    render(
+      <ExpenseDetail expense={expense} editHref="/edit" onDelete={vi.fn()} onRemoveFromTrip={vi.fn()} canModify={canModify} />
+    );
+    expect(canModify).toHaveBeenCalledWith(expense);
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    // The details themselves still show.
+    expect(screen.getByText("Submitted by")).toBeInTheDocument();
+  });
+
+  describe("a payer of someone else's shared expense, with the approval actions", () => {
+    const ravi = { _id: "u2", name: "Ravi", email: "ravi@example.com" };
+    const shared: ExpenseListItem = {
+      ...expense,
+      paymentSource: "multiple",
+      payments: [
+        { paidBy: expense.createdBy!, amount: 400, amountInBaseCurrency: 400, source: "company" },
+        { paidBy: ravi, amount: 465.19, amountInBaseCurrency: 465.19, source: "pocket" },
+      ],
+    };
+    // Ravi (a user) is signed in; Manas submitted it.
+    const review = { onResubmit: vi.fn(), viewerId: ravi._id, viewerRole: "user" as const };
+    const canModify = () => false;
+
+    it("shows a pending one as awaiting approval, with nothing to change", () => {
+      render(
+        <ExpenseDetail
+          expense={{ ...shared, approvalStatus: "pending" }}
+          editHref="/edit"
+          onDelete={vi.fn()}
+          onRemoveFromTrip={vi.fn()}
+          review={review}
+          canModify={canModify}
+        />
+      );
+      expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /Edit/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+    });
+
+    it("shows a rejected one with its reason, but no resubmit, edit or delete", () => {
+      render(
+        <ExpenseDetail
+          expense={{ ...shared, approvalStatus: "rejected", rejectionReason: "Over the limit" }}
+          editHref="/edit"
+          onDelete={vi.fn()}
+          review={review}
+          canModify={canModify}
+        />
+      );
+      expect(screen.getByText("Over the limit")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Resubmit as is…" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /Edit/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+      expect(screen.getByText("What next: Manas Nilorout can fix it and resubmit. It isn't in totals.")).toBeInTheDocument();
+    });
+
+    it("never offers an approved one's delete lock note either", () => {
+      render(
+        <ExpenseDetail expense={{ ...shared, approvalStatus: "approved" }} editHref="/edit" onDelete={vi.fn()} review={review} canModify={canModify} />
+      );
+      expect(screen.queryByText(/only the master admin can delete/)).not.toBeInTheDocument();
+    });
+  });
+});

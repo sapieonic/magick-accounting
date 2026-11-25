@@ -104,6 +104,13 @@ export interface ExpenseActions {
   onRemoveFromTrip?: (expense: ExpenseListItem) => void;
   /** Approve / reject / resubmit; omitted shows the approval state without actions. */
   review?: ExpenseReviewActions;
+  /**
+   * Whether the viewer may change this expense (edit, delete, move); when it
+   * says no, those actions are hidden (a payer of someone else's shared
+   * expense can only read it). Omitted allows them all. Review actions follow
+   * their own rules (`canReviewExpense`, submitter-only resubmit).
+   */
+  canModify?: (expense: ExpenseListItem) => boolean;
 }
 
 interface ExpenseDetailProps extends ExpenseActions {
@@ -285,6 +292,8 @@ function ApprovalNotice({ expense, editHref, review }: { expense: ExpenseListIte
   const isAdmin = isAdminView(review);
   const isReviewer = mayReview(expense, review);
   const isOwner = Boolean(review?.viewerId && review.viewerId === expense.createdBy?._id);
+  // A user who paid part of someone else's shared expense: it isn't theirs to fix.
+  const otherPayer = !isAdmin && Boolean(review?.viewerId) && !isOwner;
   const busy = Boolean(review?.inFlight?.[expense._id]);
   const submitter = expense.createdBy?.name || "the submitter";
 
@@ -395,9 +404,9 @@ function ApprovalNotice({ expense, editHref, review }: { expense: ExpenseListIte
           </blockquote>
         )}
         <p>
-          {isOwner || !isAdmin
+          {isOwner || (!isAdmin && !otherPayer)
             ? "What next: fix the details and resubmit, or delete it if it was a mistake."
-            : `What next: ${submitter} can fix it and resubmit. It isn't in company totals.`}
+            : `What next: ${submitter} can fix it and resubmit. It isn't in ${isAdmin ? "company " : ""}totals.`}
         </p>
       </Notice>
     );
@@ -464,6 +473,7 @@ export default function ExpenseDetail({
   onDelete,
   onRemoveFromTrip,
   review,
+  canModify,
   showHeader = false,
   showTrip = true,
   onClose,
@@ -485,7 +495,11 @@ export default function ExpenseDetail({
     assets === 0 &&
     !review?.inFlight?.[expense._id] &&
     mayReview(expense, review);
-  const deleteState = deleteOffer(expense, { onDelete, review });
+  // A payer of someone else's shared expense only reads it: no Edit, Remove or Delete.
+  const modifiable = !canModify || canModify(expense);
+  const deleteState = modifiable ? deleteOffer(expense, { onDelete, review }) : "none";
+  const showEdit = modifiable && !ownerCanResubmit;
+  const showRemove = modifiable && Boolean(onRemoveFromTrip);
 
   const items: DetailItem[] = [
     ...(status === "approved" ? [{ label: "Approval", icon: CircleCheck, value: <ApprovedValue expense={expense} /> }] : []),
@@ -574,9 +588,10 @@ export default function ExpenseDetail({
 
       {historyCount > 1 && <ApprovalHistory expense={expense} />}
 
+      {(showEdit || canReopen || showRemove || deleteState !== "none") && (
       <div className="flex flex-wrap gap-2 border-t border-rule-2 pt-4">
         {/* The rejected notice already offers "Edit & resubmit" to its submitter. */}
-        {!ownerCanResubmit && (
+        {showEdit && (
           <Button href={editHref} icon={Pencil} className="grow basis-[100px]">
             Edit
           </Button>
@@ -591,7 +606,7 @@ export default function ExpenseDetail({
             Move back to review…
           </Button>
         )}
-        {onRemoveFromTrip && (
+        {showRemove && onRemoveFromTrip && (
           <Button variant="secondary" icon={Unlink} onClick={() => onRemoveFromTrip(expense)} className="grow basis-[150px] !text-amber">
             Remove from trip
           </Button>
@@ -608,6 +623,7 @@ export default function ExpenseDetail({
           </p>
         )}
       </div>
+      )}
     </div>
   );
 }
