@@ -92,7 +92,7 @@ function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: stri
         )}
       </div>
 
-      {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
+      {/* A user's totals are only their own share, so they can't be read against the trip budget. */}
       {showBudget && trip.budget != null && <BudgetMeter spent={trip.totalAmount} budget={trip.budget} />}
 
       <div className="mt-auto flex items-end justify-between gap-3 border-t border-rule-2 pt-3">
@@ -222,7 +222,7 @@ export default function TripsPage() {
         meta={
           <>
             Flights, stays and meals for each business trip, grouped in one place.
-            {!isAdmin && <span className="block text-xs">Totals and expense counts include only your own expenses.</span>}
+            {!isAdmin && <span className="block text-xs">Totals are your own share; counts include expenses you submitted or helped pay for.</span>}
           </>
         }
         actions={

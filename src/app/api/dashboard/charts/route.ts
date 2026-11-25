@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { baseTotalExpr } from "@/lib/expense";
-import { buildExpenseFilter } from "@/lib/expense-query";
+import { roundMoney } from "@/lib/asset";
+import { buildExpenseFilter, spendExprs } from "@/lib/expense-query";
 import Expense from "@/models/Expense";
 import "@/models/Category";
 import "@/models/Department";
@@ -59,6 +59,9 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const filter = buildExpenseFilter(new URL(req.url).searchParams, authResult);
+  // Whole expenses for an admin, the caller's own share for anyone else,
+  // matching the totals of /api/dashboard/stats.
+  const spendTotal = spendExprs(authResult).total;
 
   const buckets = buildMonthBuckets();
   const trendStart = buckets[0].start;
@@ -75,7 +78,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: { y: { $year: "$date" }, m: { $month: "$date" } },
-          total: { $sum: baseTotalExpr },
+          total: { $sum: spendTotal },
           count: { $sum: 1 },
         },
       },
@@ -85,7 +88,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: "$category",
-          total: { $sum: baseTotalExpr },
+          total: { $sum: spendTotal },
           count: { $sum: 1 },
         },
       },
@@ -114,7 +117,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: "$department",
-          total: { $sum: baseTotalExpr },
+          total: { $sum: spendTotal },
           count: { $sum: 1 },
         },
       },
@@ -143,7 +146,7 @@ export async function GET(req: NextRequest) {
   const trendMap = new Map<string, { total: number; count: number }>();
   for (const row of trendRows) {
     const key = `${row._id.y}-${String(row._id.m).padStart(2, "0")}`;
-    trendMap.set(key, { total: row.total, count: row.count });
+    trendMap.set(key, { total: roundMoney(row.total ?? 0), count: row.count });
   }
 
   const monthlyTrend = buckets.map((b) => ({
@@ -155,7 +158,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     monthlyTrend,
-    topCategories: categoryRows,
-    departmentSpend: departmentSpendRows,
+    // Rounded to the paisa, like every other money figure the API returns.
+    topCategories: categoryRows.map((row) => ({ ...row, total: roundMoney(row.total ?? 0) })),
+    departmentSpend: departmentSpendRows.map((row) => ({ ...row, total: roundMoney(row.total ?? 0) })),
   });
 }

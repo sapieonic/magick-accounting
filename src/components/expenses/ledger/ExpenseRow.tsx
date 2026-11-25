@@ -93,7 +93,9 @@ export default function ExpenseRow({
   detailId,
   onDelete,
   onRemoveFromTrip,
+  canModify,
 }: ExpenseRowProps) {
+  const modifiable = !canModify || canModify(expense);
   const layout = LAYOUT[variant];
   const isTrip = variant === "trip";
   const code = expense.currency?.code;
@@ -224,6 +226,7 @@ export default function ExpenseRow({
               amount. Only where the pointer can hover (else display:none, so
               they don't widen the cell): on touch the row opens its detail,
               which has the same actions. While hidden they don't take clicks either. */}
+          {modifiable && (
           <span
             data-testid="row-actions"
             data-row-actions=""
@@ -254,6 +257,7 @@ export default function ExpenseRow({
               />
             )}
           </span>
+          )}
         </span>
       </div>
 
@@ -264,6 +268,7 @@ export default function ExpenseRow({
           editHref={editHref}
           onDelete={onDelete}
           onRemoveFromTrip={onRemoveFromTrip}
+          canModify={canModify}
           showTrip={!isTrip}
           className={cn("animate-slide-up bg-background py-4", ledgerPad(nested))}
         />

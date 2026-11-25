@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   const includeSummary = searchParams.get("includeSummary") === "true";
   const filter = buildExpenseFilter(searchParams, authResult);
   const summaryPromise = includeSummary
-    ? getExpenseSummary(filter, parsePaidByParam(searchParams, authResult))
+    ? getExpenseSummary(filter, authResult, parsePaidByParam(searchParams, authResult))
     : Promise.resolve(null);
 
   if (searchParams.get("groupTrips") === "true") {

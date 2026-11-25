@@ -20,7 +20,7 @@ import {
   parseExpensePageParams,
   parsePaidByParam,
 } from "@/lib/expense-query";
-import { MAX_EXPENSE_PAGE, paidByFilter, payerSpendPipeline } from "@/lib/expense";
+import { MAX_EXPENSE_PAGE, paidByFilter, payerSpendPipeline, visibleToUserFilter } from "@/lib/expense";
 import Expense from "@/models/Expense";
 
 const USER_ID = "507f1f77bcf86cd799439011";
@@ -34,20 +34,28 @@ function makeUser(role: AuthUser["role"], _id = USER_ID): AuthUser {
   return { _id, email: "u@example.com", name: "U", role };
 }
 
+const ADMIN = makeUser("admin");
+
 function params(qs: string): URLSearchParams {
   return new URLSearchParams(qs);
 }
 
 describe("buildExpenseFilter — role scoping", () => {
-  it("scopes role 'user' to their own createdBy as an ObjectId", () => {
+  const me = new mongoose.Types.ObjectId(USER_ID);
+
+  it("scopes role 'user' to what they submitted and shared expenses they paid part of", () => {
     const filter = buildExpenseFilter(params(""), makeUser("user"));
-    expect(filter.createdBy).toBeInstanceOf(mongoose.Types.ObjectId);
-    expect((filter.createdBy as mongoose.Types.ObjectId).toString()).toBe(USER_ID);
+    expect(filter).not.toHaveProperty("createdBy");
+    expect(filter.$and).toEqual([visibleToUserFilter(me)]);
+    expect(filter.$and).toEqual([
+      { $or: [{ createdBy: me }, { paymentSource: "multiple", "payments.paidBy": me }] },
+    ]);
   });
 
   it("role 'user' IGNORES any createdBy query param", () => {
     const filter = buildExpenseFilter(params(`createdBy=${OTHER_ID}`), makeUser("user"));
-    expect((filter.createdBy as mongoose.Types.ObjectId).toString()).toBe(USER_ID);
+    expect(filter).not.toHaveProperty("createdBy");
+    expect(filter.$and).toEqual([visibleToUserFilter(me)]);
   });
 
   it("role 'admin' honors a valid createdBy param", () => {
@@ -241,7 +249,7 @@ describe("buildExpenseFilter — combined", () => {
       params(`category=${CAT_A}&category=${CAT_B}&search=taxi&from=2024-02-01&to=2024-02-28`),
       makeUser("user")
     );
-    expect((filter.createdBy as mongoose.Types.ObjectId).toString()).toBe(USER_ID);
+    expect(filter.$and).toEqual([visibleToUserFilter(new mongoose.Types.ObjectId(USER_ID))]);
     expect((filter.category as { $in: mongoose.Types.ObjectId[] }).$in).toHaveLength(2);
     expect(filter.$or).toBeDefined();
     expect(filter.date).toBeDefined();
@@ -257,7 +265,7 @@ describe("getExpenseSummary", () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([
       { _id: null, totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 },
     ] as never);
-    const result = await getExpenseSummary({ foo: "bar" });
+    const result = await getExpenseSummary({ foo: "bar" }, ADMIN);
     expect(result).toEqual({ totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 });
   });
 
@@ -266,21 +274,33 @@ describe("getExpenseSummary", () => {
       { totalExpenses: 1, totalAmount: 10 },
     ] as never);
     const filter = { createdBy: "abc" };
-    await getExpenseSummary(filter);
+    await getExpenseSummary(filter, ADMIN);
     const pipeline = vi.mocked(Expense.aggregate).mock.calls[0][0] as unknown as Array<Record<string, unknown>>;
     expect(pipeline[0]).toEqual({ $match: filter });
   });
 
   it("falls back to zeros when aggregate returns []", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([] as never);
-    const result = await getExpenseSummary({});
+    const result = await getExpenseSummary({}, ADMIN);
     expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
   });
 
   it("falls back to 0 for missing fields in the summary doc", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([{ _id: null }] as never);
-    const result = await getExpenseSummary({});
+    const result = await getExpenseSummary({}, ADMIN);
     expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
+  });
+
+  it("rounds the sums to the paisa (no floating-point residue)", async () => {
+    vi.mocked(Expense.aggregate).mockResolvedValue([
+      { totalExpenses: 3, totalAmount: 0.1 + 0.2, companyAmount: 0.30000000000000004, pocketAmount: 1e-17 },
+    ] as never);
+    expect(await getExpenseSummary({}, ADMIN)).toEqual({
+      totalExpenses: 3,
+      totalAmount: 0.3,
+      companyAmount: 0.3,
+      pocketAmount: 0,
+    });
   });
 
   it("splits the total into company and pocket, legacy documents included", async () => {
@@ -297,7 +317,7 @@ describe("getExpenseSummary", () => {
       ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
     );
 
-    const result = await getExpenseSummary({});
+    const result = await getExpenseSummary({}, ADMIN);
 
     expect(result).toEqual({ totalExpenses: 4, totalAmount: 2400, companyAmount: 1800, pocketAmount: 600 });
   });
@@ -317,7 +337,10 @@ describe("buildExpenseFilter — paidBy", () => {
   });
 
   it("ignores paidBy for role user and for an invalid id", () => {
-    expect(buildExpenseFilter(params(`paidBy=${OTHER_ID}`), makeUser("user"))).not.toHaveProperty("$and");
+    // A user's own visibility is the only `$and` clause: no payer filter is added.
+    expect(buildExpenseFilter(params(`paidBy=${OTHER_ID}`), makeUser("user")).$and).toEqual([
+      visibleToUserFilter(new mongoose.Types.ObjectId(USER_ID)),
+    ]);
     expect(parsePaidByParam(params(`paidBy=${OTHER_ID}`), makeUser("user"))).toBeNull();
     expect(buildExpenseFilter(params("paidBy=nope"), makeUser("admin"))).not.toHaveProperty("$and");
   });
@@ -335,7 +358,7 @@ describe("getExpenseSummary — payer share", () => {
       .mockResolvedValueOnce([{ _id: null, totalSpend: 250, pocketSpend: 200, companySpend: 50 }] as never);
 
     const filter = { $and: [paidByFilter(payer)] };
-    const result = await getExpenseSummary(filter, payer);
+    const result = await getExpenseSummary(filter, ADMIN, payer);
 
     expect(vi.mocked(Expense.aggregate).mock.calls[1][0]).toEqual(payerSpendPipeline(filter, payer));
     expect(result).toEqual({
@@ -349,7 +372,7 @@ describe("getExpenseSummary — payer share", () => {
 
   it("reports a zero share when nothing is credited to the payer", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([] as never).mockResolvedValueOnce([] as never);
-    const result = await getExpenseSummary({}, new mongoose.Types.ObjectId(OTHER_ID));
+    const result = await getExpenseSummary({}, ADMIN, new mongoose.Types.ObjectId(OTHER_ID));
     expect(result.payerSpend).toEqual({ totalSpend: 0, pocketSpend: 0, companySpend: 0 });
   });
 });
@@ -371,9 +394,9 @@ describe("buildExpenseFilter — trip", () => {
     expect(buildExpenseFilter(params("trip=nope"), makeUser("admin"))).not.toHaveProperty("trip");
   });
 
-  it("keeps a user to their own expenses inside a trip", () => {
+  it("keeps a user to their own expenses (and shared ones they paid part of) inside a trip", () => {
     const filter = buildExpenseFilter(params(`trip=${TRIP_ID}`), makeUser("user"));
-    expect(String(filter.createdBy)).toBe(USER_ID);
+    expect(filter.$and).toEqual([visibleToUserFilter(new mongoose.Types.ObjectId(USER_ID))]);
     expect(String(filter.trip)).toBe(TRIP_ID);
   });
 });

@@ -3,6 +3,7 @@ import { verifyAuth } from "@/lib/auth";
 import { uploadObject, getDownloadUrl, deleteObject } from "@/lib/s3";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
+import { canViewExpense } from "@/lib/expense";
 
 function generateId(): string {
   const bytes = new Uint8Array(16);
@@ -64,11 +65,14 @@ export async function GET(req: NextRequest) {
   try {
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const expense: any = await Expense.findOne({ receiptKey: key }).select("createdBy").lean();
+    const expense: any = await Expense.findOne({ receiptKey: key })
+      .select("createdBy paymentSource payments.paidBy")
+      .lean();
     if (!expense) {
       return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
     }
-    if (authResult.role === "user" && String(expense.createdBy) !== authResult._id) {
+    // Whoever may open the expense may see its receipt (payers of a shared one too).
+    if (!canViewExpense(expense, authResult)) {
       return NextResponse.json({ error: "Not authorized to access this receipt" }, { status: 403 });
     }
     const downloadUrl = await getDownloadUrl(key);

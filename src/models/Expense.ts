@@ -98,6 +98,9 @@ const ExpenseSchema = new Schema<IExpense>(
 // submitter (role `user`, or `createdBy`); they also serve plain date queries.
 ExpenseSchema.index({ date: -1, createdAt: -1, _id: -1 });
 ExpenseSchema.index({ createdBy: 1, date: -1, createdAt: -1, _id: -1 });
+// The other half of a `user`'s list: shared expenses they paid part of
+// (`visibleToUserFilter`), in the same order so the two halves merge sorted.
+ExpenseSchema.index({ "payments.paidBy": 1, date: -1, createdAt: -1, _id: -1 });
 ExpenseSchema.index({ department: 1, date: -1 });
 ExpenseSchema.index({ category: 1, date: -1 });
 ExpenseSchema.index({ currency: 1 });

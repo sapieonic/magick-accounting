@@ -1,12 +1,13 @@
 import mongoose, { type PipelineStage } from "mongoose";
 import type { AuthUser } from "@/lib/auth";
 import { roundMoney } from "@/lib/asset";
-import { baseTotalExpr, companyBaseExpr, pocketBaseExpr, spendByPayerPipeline } from "@/lib/expense";
+import { isAdminViewer, payerShareStages, viewerAmounts, type SpendViewer } from "@/lib/expense";
 import {
   buildExpenseFilter,
   escapeRegExp,
   expensePagination,
   groupedExpensePagePipeline,
+  spendExprs,
   type ExpensePageParams,
 } from "@/lib/expense-query";
 import { getTripStatus, OBJECT_ID_PATTERN, totalsByTravelType, type TravelType } from "@/lib/trip";
@@ -74,7 +75,8 @@ export async function withLinkedAssetCounts<T extends { _id: unknown }>(
 
 /**
  * The expenses of one trip the caller may see: the same rules as the expense
- * list (`user` role: only their own), narrowed to the trip.
+ * list (`user` role: what they submitted and shared expenses they paid part
+ * of), narrowed to the trip.
  */
 export function tripExpenseFilter(tripId: string, user: AuthUser): Record<string, unknown> {
   return buildExpenseFilter(new URLSearchParams({ trip: tripId }), user);
@@ -176,10 +178,14 @@ export function tripSearchFilter(
   return Object.keys(access).length > 0 ? { $and: [access, search] } : search;
 }
 
-/** Per-trip count and base-currency total of the expenses matching `visibility`. */
+/**
+ * Per-trip count and base-currency total of the expenses matching
+ * `visibility`, summed as `viewer` counts them (`spendExprs`).
+ */
 export function tripTotalsPipeline(
   visibility: Record<string, unknown>,
-  tripIds: mongoose.Types.ObjectId[]
+  tripIds: mongoose.Types.ObjectId[],
+  viewer: Pick<AuthUser, "_id" | "role">
 ): PipelineStage[] {
   return [
     { $match: { ...visibility, trip: { $in: tripIds } } },
@@ -187,15 +193,15 @@ export function tripTotalsPipeline(
       $group: {
         _id: "$trip",
         expenseCount: { $sum: 1 },
-        totalAmount: { $sum: baseTotalExpr },
+        totalAmount: { $sum: spendExprs(viewer).total },
       },
     },
   ];
 }
 
 /**
- * Totals of the expenses the caller can see in each trip (`user` role: their
- * own), keyed by trip id.
+ * Totals of the expenses the caller can see in each trip, keyed by trip id.
+ * `user` role: their own share of the expenses they submitted or paid part of.
  */
 export async function visibleTripTotals(
   tripIds: unknown[],
@@ -205,7 +211,7 @@ export async function visibleTripTotals(
   const visibility = buildExpenseFilter(new URLSearchParams(), user);
   const ids = tripIds.map((id) => new mongoose.Types.ObjectId(String(id)));
   const rows: (TripTotals & { _id: unknown })[] = await Expense.aggregate(
-    tripTotalsPipeline(visibility, ids)
+    tripTotalsPipeline(visibility, ids, user)
   );
   return new Map(
     rows.map((row) => [
@@ -225,9 +231,18 @@ export async function loadTripListItem(tripId: string, user: AuthUser): Promise<
 
 /**
  * Totals of the expenses matching `filter` (one trip, as the caller sees it),
- * plus each person's share the way Spend by User credits it.
+ * summed as `viewer` counts them (`spendExprs`), plus each person's share the
+ * way Spend by User credits it. A `user` only gets their own payer row, so
+ * the rows add up to their totals.
  */
-export function tripDetailSummaryPipeline(filter: Record<string, unknown>): PipelineStage[] {
+export function tripDetailSummaryPipeline(
+  filter: Record<string, unknown>,
+  viewer: Pick<AuthUser, "_id" | "role">
+): PipelineStage[] {
+  const amounts = spendExprs(viewer);
+  const ownRowOnly = isAdminViewer(viewer)
+    ? []
+    : [{ $match: { "shares.user": new mongoose.Types.ObjectId(viewer._id) } }];
   return [
     { $match: filter },
     {
@@ -236,14 +251,28 @@ export function tripDetailSummaryPipeline(filter: Record<string, unknown>): Pipe
           {
             $group: {
               _id: null,
-              totalAmount: { $sum: baseTotalExpr },
+              totalAmount: { $sum: amounts.total },
               expenseCount: { $sum: 1 },
-              pocketAmount: { $sum: pocketBaseExpr },
-              companyAmount: { $sum: companyBaseExpr },
+              pocketAmount: { $sum: amounts.pocket },
+              companyAmount: { $sum: amounts.company },
             },
           },
         ],
-        byPayer: [...spendByPayerPipeline, { $sort: { totalSpend: -1, _id: 1 } }],
+        byPayer: [
+          ...payerShareStages,
+          ...ownRowOnly,
+          {
+            $group: {
+              _id: "$shares.user",
+              totalSpend: { $sum: { $add: ["$shares.pocket", "$shares.company"] } },
+              companySpend: { $sum: "$shares.company" },
+              pocketSpend: { $sum: "$shares.pocket" },
+            },
+          },
+          // A payer whose share rounds to nothing (or a submitter who paid none of it) isn't listed.
+          { $match: { totalSpend: { $gt: 0 } } },
+          { $sort: { totalSpend: -1, _id: 1 } },
+        ],
       },
     },
   ] as PipelineStage[];
@@ -259,9 +288,10 @@ interface PayerRow {
 /** Runs `tripDetailSummaryPipeline` and joins the payers' names. */
 export async function getTripDetailSummary(
   filter: Record<string, unknown>,
-  expenses: { date: string | Date; amount: number; amountInBaseCurrency?: number | null; travelType?: TravelType | null }[]
+  expenses: (Parameters<typeof viewerAmounts>[0] & { date: string | Date; travelType?: TravelType | null })[],
+  viewer: SpendViewer
 ): Promise<TripDetailSummary> {
-  const [result] = await Expense.aggregate(tripDetailSummaryPipeline(filter));
+  const [result] = await Expense.aggregate(tripDetailSummaryPipeline(filter, viewer));
   const totals = result?.totals?.[0];
   const payerRows: PayerRow[] = result?.byPayer ?? [];
 
@@ -287,8 +317,9 @@ export async function getTripDetailSummary(
     byType: totalsByTravelType(
       expenses.map((expense) => ({
         date: isoDate(expense.date),
+        // As the totals count it: the whole expense, or a `user`'s own share.
         amount: expense.amount,
-        amountInBaseCurrency: expense.amountInBaseCurrency,
+        amountInBaseCurrency: viewerAmounts(expense, viewer).total,
         travelType: expense.travelType ?? null,
       }))
     ),
@@ -427,7 +458,10 @@ export function tripCandidateFilter(
   if (search?.trim()) params.set("search", search.trim());
   const filter = buildExpenseFilter(params, user);
 
-  if (!filter.createdBy) {
+  if (!isAdminUser(user)) {
+    // Only what they submitted: those are the expenses they may move.
+    filter.createdBy = new mongoose.Types.ObjectId(user._id);
+  } else if (!filter.createdBy) {
     const submitters = new Set([...(trip.travelers ?? []), user._id].map(idOf));
     filter.createdBy = {
       $in: [...submitters]

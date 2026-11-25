@@ -59,4 +59,20 @@ describe("GET /api/upload receipt authorization", () => {
       downloadUrl: "https://signed.example/receipt",
     });
   });
+
+  it("lets a payer of a shared expense open its receipt, but not someone on a stray payer list", async () => {
+    vi.mocked(verifyAuth).mockResolvedValue({ _id: "user-2", email: "two@example.com", name: "Two", role: "user" });
+    vi.mocked(getDownloadUrl).mockResolvedValue("https://signed.example/receipt");
+    const payments = [
+      { paidBy: "user-1", amount: 60, source: "pocket" },
+      { paidBy: "user-2", amount: 40, source: "company" },
+    ];
+    const request = { url: "http://localhost/api/upload?key=receipts/key.pdf" } as NextRequest;
+
+    mockExpenseLookup({ createdBy: "user-1", paymentSource: "multiple", payments });
+    expect((await GET(request)).status).toBe(200);
+
+    mockExpenseLookup({ createdBy: "user-1", paymentSource: "pocket", payments });
+    expect((await GET(request)).status).toBe(403);
+  });
 });

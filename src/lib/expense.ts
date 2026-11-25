@@ -1,5 +1,4 @@
 import { moneyToCents, roundMoney } from "@/lib/asset";
-import type { ExpensePaymentEntry } from "@/lib/expense-csv";
 
 // Kept here (not in the model) so client code can import it without mongoose.
 export type PaymentSource = "pocket" | "company" | "split" | "multiple";
@@ -346,6 +345,53 @@ export function payerSpendPipeline(filter: Record<string, unknown>, payerId: unk
 }
 
 /**
+ * Aggregation expressions for one person's share of a single expense, in base
+ * currency: `{ total, pocket, company }`. Same rule as `payerShareStages` (each
+ * payer of a shared expense gets their own entries, the submitter gets
+ * anything else in full), but as plain expressions, so they can be summed in a
+ * `$group` without unwinding. A person who neither paid nor submitted gets 0.
+ */
+export function payerShareExprs(payerId: unknown) {
+  const sharedEntries = (source: PaymentEntrySource) => ({
+    $reduce: {
+      input: {
+        $filter: {
+          input: { $ifNull: ["$payments", []] },
+          as: "payment",
+          cond: {
+            $and: [{ $eq: ["$$payment.paidBy", payerId] }, { $eq: ["$$payment.source", source] }],
+          },
+        },
+      },
+      initialValue: 0,
+      in: { $add: ["$$value", { $ifNull: ["$$this.amountInBaseCurrency", 0] }] },
+    },
+  });
+  const ifSubmitter = (expr: unknown) => ({ $cond: [{ $eq: ["$createdBy", payerId] }, expr, 0] });
+  const pocket = { $cond: [sharedPaymentExpr, sharedEntries("pocket"), ifSubmitter(pocketBaseExpr)] };
+  const company = { $cond: [sharedPaymentExpr, sharedEntries("company"), ifSubmitter(companyBaseExpr)] };
+  return { total: { $add: [pocket, company] }, pocket, company };
+}
+
+/** Whole-expense amounts in base currency, as `{ total, pocket, company }` expressions. */
+export const wholeExpenseExprs = {
+  total: baseTotalExpr,
+  pocket: pocketBaseExpr,
+  company: companyBaseExpr,
+};
+
+/**
+ * Query for the expenses a `user`-role person may see: the ones they
+ * submitted and the shared ones they paid part of. Every expense that counts
+ * toward their spend (`paidByFilter`) is among them.
+ */
+export function visibleToUserFilter(userId: unknown): Record<string, unknown> {
+  return {
+    $or: [{ createdBy: userId }, { paymentSource: "multiple", "payments.paidBy": userId }],
+  };
+}
+
+/**
  * Query matching the expenses credited to `payerId` by `payerShareStages`:
  * shared expenses listing them as a payer, and their other submissions.
  */
@@ -405,30 +451,87 @@ export function getPaymentBreakdown(expense: PaymentSplitFields): PaymentBreakdo
   };
 }
 
-/**
- * The part of a listed expense credited to `payerId` in base currency, by the
- * server's rule (`payerShareStages`): a "several people" expense credits each
- * payer's own entries, anything else counts wholly to its submitter.
- */
-export function payerShare(
-  expense: PaymentSplitFields & {
-    payments?: ExpensePaymentEntry[];
-    createdBy?: { _id?: string } | null;
-  },
-  payerId: string
-): { pocket: number; company: number } {
-  const payments = expense.paymentSource === "multiple" ? expense.payments ?? [] : [];
-  if (payments.length > 0) {
-    const share = { pocket: 0, company: 0 };
-    for (const entry of payments) {
-      if (entry.paidBy?._id !== payerId) continue;
-      const base = entry.amountInBaseCurrency ?? 0;
-      if (entry.source === "pocket") share.pocket += base;
-      else if (entry.source === "company") share.company += base;
-    }
-    return share;
+/** An id, or a populated document's `_id`, as a string ("" when absent). */
+function idString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object" && "_id" in (value as Record<string, unknown>)) {
+    const inner = (value as { _id: unknown })._id;
+    // A Mongoose ObjectId's `_id` is the ObjectId itself.
+    if (inner !== value) return idString(inner);
   }
-  if (expense.createdBy?._id !== payerId) return { pocket: 0, company: 0 };
+  return String(value).toLowerCase();
+}
+
+/** The fields `payerShare` and the access checks read; ids may be raw or populated. */
+export interface PayerShareFields extends PaymentSplitFields {
+  payments?: { paidBy?: unknown; amountInBaseCurrency?: number | null; source?: string }[] | null;
+  createdBy?: unknown;
+}
+
+/** A shared ("several people") expense with its payer list, as `sharedPaymentExpr` reads it. */
+function sharedPayments(expense: PayerShareFields) {
+  return expense.paymentSource === "multiple" ? expense.payments ?? [] : [];
+}
+
+/**
+ * The part of an expense credited to `payerId` in base currency, by the
+ * server's rule (`payerShareStages` / `payerShareExprs`): a "several people"
+ * expense credits each payer's own entries, anything else counts wholly to its
+ * submitter. Works on listed (populated) and raw documents alike. Sums in
+ * paise, so the result is exact to the paisa.
+ */
+export function payerShare(expense: PayerShareFields, payerId: string): { pocket: number; company: number } {
+  const payer = idString(payerId);
+  const payments = sharedPayments(expense);
+  if (payments.length > 0) {
+    let pocketCents = 0;
+    let companyCents = 0;
+    for (const entry of payments) {
+      if (!payer || idString(entry.paidBy) !== payer) continue;
+      const cents = moneyToCents(entry.amountInBaseCurrency ?? 0);
+      if (entry.source === "pocket") pocketCents += cents;
+      else if (entry.source === "company") companyCents += cents;
+    }
+    return { pocket: pocketCents / 100, company: companyCents / 100 };
+  }
+  if (!payer || idString(expense.createdBy) !== payer) return { pocket: 0, company: 0 };
   const { pocketBase, companyBase } = getPaymentBreakdown(expense);
   return { pocket: pocketBase, company: companyBase };
+}
+
+/** Who is looking at money figures: admins see whole expenses, anyone else their own share. */
+export interface SpendViewer {
+  _id: string;
+  role: "master_admin" | "admin" | "user";
+}
+
+export function isAdminViewer(viewer: Pick<SpendViewer, "role">): boolean {
+  return viewer.role === "admin" || viewer.role === "master_admin";
+}
+
+/**
+ * The amounts of one expense as `viewer` counts them, in base currency:
+ * the whole expense for an admin, their own share (`payerShare`) for anyone
+ * else. Client-side counterpart of `spendExprs` in `expense-query.ts`.
+ */
+export function viewerAmounts(
+  expense: PayerShareFields,
+  viewer: SpendViewer
+): { total: number; pocket: number; company: number } {
+  const { pocket, company } = isAdminViewer(viewer)
+    ? (({ pocketBase, companyBase }) => ({ pocket: pocketBase, company: companyBase }))(getPaymentBreakdown(expense))
+    : payerShare(expense, viewer._id);
+  return { total: (moneyToCents(pocket) + moneyToCents(company)) / 100, pocket, company };
+}
+
+/** Whether `viewer` may open an expense: admins all, others theirs and shared ones they paid part of. */
+export function canViewExpense(expense: PayerShareFields, viewer: SpendViewer): boolean {
+  if (canModifyExpense(expense, viewer)) return true;
+  const me = idString(viewer._id);
+  return sharedPayments(expense).some((entry) => idString(entry.paidBy) === me);
+}
+
+/** Whether `viewer` may edit or delete an expense: admins all, others only what they submitted. */
+export function canModifyExpense(expense: Pick<PayerShareFields, "createdBy">, viewer: SpendViewer): boolean {
+  return isAdminViewer(viewer) || (idString(viewer._id) !== "" && idString(expense.createdBy) === idString(viewer._id));
 }

@@ -75,3 +75,27 @@ describe("ExpenseDetail receipt preview", () => {
     expect(receipt.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe("ExpenseDetail actions", () => {
+  it("offers Edit, Remove from trip and Delete to someone who may change the expense", () => {
+    render(
+      <ExpenseDetail expense={expense} editHref="/edit" onDelete={vi.fn()} onRemoveFromTrip={vi.fn()} canModify={() => true} />
+    );
+    expect(screen.getByRole("link", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove from trip" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("is read-only for a payer who didn't submit the expense", () => {
+    const canModify = vi.fn(() => false);
+    render(
+      <ExpenseDetail expense={expense} editHref="/edit" onDelete={vi.fn()} onRemoveFromTrip={vi.fn()} canModify={canModify} />
+    );
+    expect(canModify).toHaveBeenCalledWith(expense);
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    // The details themselves still show.
+    expect(screen.getByText("Submitted by")).toBeInTheDocument();
+  });
+});

@@ -41,6 +41,12 @@ export interface ExpenseActions {
   onDelete?: (expense: ExpenseListItem) => void;
   /** Takes the expense out of its trip; omitted hides the action. */
   onRemoveFromTrip?: (expense: ExpenseListItem) => void;
+  /**
+   * Whether the viewer may change this expense (edit, delete, move); when it
+   * says no, those actions are hidden (a payer of someone else's shared
+   * expense can only read it). Omitted allows them all.
+   */
+  canModify?: (expense: ExpenseListItem) => boolean;
 }
 
 interface ExpenseDetailProps extends ExpenseActions {
@@ -178,6 +184,7 @@ export default function ExpenseDetail({
   editHref,
   onDelete,
   onRemoveFromTrip,
+  canModify,
   showHeader = false,
   showTrip = true,
   onClose,
@@ -271,6 +278,7 @@ export default function ExpenseDetail({
 
       {!showHeader && expense.receiptKey && <Receipt expense={expense} />}
 
+      {(!canModify || canModify(expense)) && (
       <div className="flex flex-wrap gap-2 border-t border-rule-2 pt-4">
         <Button href={editHref} icon={Pencil} className="grow basis-[100px]">
           Edit
@@ -286,6 +294,7 @@ export default function ExpenseDetail({
           </Button>
         )}
       </div>
+      )}
     </div>
   );
 }

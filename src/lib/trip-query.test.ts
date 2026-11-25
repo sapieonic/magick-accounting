@@ -19,6 +19,9 @@ const pune = oid();
 const asha = oid();
 const ravi = oid();
 
+const ADMIN = { _id: String(oid()), role: "admin" as const };
+const asUser = (id: mongoose.Types.ObjectId) => ({ _id: String(id), role: "user" as const });
+
 function run(pipeline: unknown[], docs: Record<string, unknown>[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new Aggregator(pipeline as any[]).run(docs) as any[];
@@ -47,7 +50,7 @@ const docs = [
 
 describe("tripTotalsPipeline", () => {
   it("counts and totals each trip's matching expenses in base currency", () => {
-    const rows = run(tripTotalsPipeline({}, [goa, pune]), docs);
+    const rows = run(tripTotalsPipeline({}, [goa, pune], ADMIN), docs);
     const byTrip = Object.fromEntries(rows.map((row) => [String(row._id), row]));
 
     expect(byTrip[String(goa)]).toEqual(expect.objectContaining({ expenseCount: 4, totalAmount: 4502 }));
@@ -55,14 +58,21 @@ describe("tripTotalsPipeline", () => {
   });
 
   it("applies the caller's visibility", () => {
-    const rows = run(tripTotalsPipeline({ createdBy: ravi }, [goa]), docs);
+    const rows = run(tripTotalsPipeline({ createdBy: ravi }, [goa], ADMIN), docs);
     expect(rows).toEqual([expect.objectContaining({ expenseCount: 2, totalAmount: 502 })]);
+  });
+
+  it("totals a user's own share of what they can see, not whole expenses", () => {
+    const visibility = { $or: [{ createdBy: ravi }, { paymentSource: "multiple", "payments.paidBy": ravi }] };
+    const rows = run(tripTotalsPipeline(visibility, [goa], asUser(ravi)), docs);
+    // Ravi's company 500 + his 1000 pocket part of Asha's shared dinner + his legacy 2.
+    expect(rows).toEqual([expect.objectContaining({ expenseCount: 3, totalAmount: 1502 })]);
   });
 });
 
 describe("tripDetailSummaryPipeline", () => {
   it("splits pocket and company, and credits each payer like Spend by User", () => {
-    const [result] = run(tripDetailSummaryPipeline({ trip: goa }), docs);
+    const [result] = run(tripDetailSummaryPipeline({ trip: goa }, ADMIN), docs);
 
     expect(result.totals[0]).toEqual(
       expect.objectContaining({
@@ -84,5 +94,33 @@ describe("tripDetailSummaryPipeline", () => {
     );
     // Largest spender first.
     expect(String(result.byPayer[0]._id)).toBe(String(asha));
+    // The payer rows account for every rupee of the trip.
+    const spent = result.byPayer.reduce((sum: number, row: { totalSpend: number }) => sum + row.totalSpend, 0);
+    expect(spent).toBe(result.totals[0].totalAmount);
+  });
+
+  it("gives a user their own share and only their own payer row", () => {
+    // Asha sees her two expenses; Ravi paid part of the shared one.
+    const visible = { trip: goa, $or: [{ createdBy: asha }, { paymentSource: "multiple", "payments.paidBy": asha }] };
+    const [result] = run(tripDetailSummaryPipeline(visible, asUser(asha)), docs);
+
+    expect(result.totals[0]).toEqual(
+      expect.objectContaining({ expenseCount: 2, totalAmount: 3000, pocketAmount: 1000, companyAmount: 2000 })
+    );
+    expect(result.byPayer).toEqual([
+      expect.objectContaining({ totalSpend: 3000, pocketSpend: 1000, companySpend: 2000 }),
+    ]);
+    expect(String(result.byPayer[0]._id)).toBe(String(asha));
+  });
+
+  it("counts a payer's part of someone else's expense, and nothing for a submitter who paid none", () => {
+    const visible = { trip: goa, $or: [{ createdBy: ravi }, { paymentSource: "multiple", "payments.paidBy": ravi }] };
+    const [result] = run(tripDetailSummaryPipeline(visible, asUser(ravi)), docs);
+    expect(result.totals[0]).toEqual(
+      expect.objectContaining({ expenseCount: 3, totalAmount: 1502, pocketAmount: 1002, companyAmount: 500 })
+    );
+    expect(result.byPayer).toEqual([
+      expect.objectContaining({ totalSpend: 1502, pocketSpend: 1002, companySpend: 500 }),
+    ]);
   });
 });
