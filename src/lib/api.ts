@@ -10,9 +10,25 @@ async function getAuthHeaders(): Promise<HeadersInit> {
   };
 }
 
+/** A failed API request; `code` carries the route's machine-readable reason, if any. */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+    const code = (data as { code?: unknown } | null)?.code;
+    if (typeof code === "string") this.code = code;
+  }
+}
+
 async function handleResponse(res: Response) {
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
+  if (!res.ok) throw new ApiError(data.error || "Request failed", res.status, data);
   return data;
 }
 
@@ -51,7 +67,7 @@ export const api = {
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Request failed");
+      throw new ApiError(data.error || "Request failed", res.status, data);
     }
     return res.blob();
   },
