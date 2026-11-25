@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import TripCluster from "./TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
@@ -89,5 +89,24 @@ describe("TripCluster", () => {
     expect(screen.getByText("₹8,000.00")).toBeInTheDocument();
     expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Goa client visit/ })).toHaveAccessibleName(/₹8,000\.00$/);
+  });
+
+  it("forwards the approval actions to an expense opened inside the trip", () => {
+    const onApprove = vi.fn();
+    const pending = makeExpense({ _id: "cab", amount: 800, amountInBaseCurrency: 800, approvalStatus: "pending", receiptKey: undefined });
+    render(
+      <TripCluster
+        trip={trip}
+        expenses={[pending]}
+        expanded
+        onToggle={vi.fn()}
+        selectedId="cab"
+        onSelect={vi.fn()}
+        inlineDetail
+        review={{ onApprove, onReject: vi.fn() }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalledWith(pending);
   });
 });

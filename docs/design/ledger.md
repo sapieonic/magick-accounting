@@ -278,7 +278,10 @@ expenses in `inFlight` at once, a toast offers Undo, and the request goes after 
 unmount; built on the generic `usePendingCommits`, which `usePendingDeletes` also wraps). Conflicts come back in words
 ("Asha changed this expense after you opened it — review the latest version.", "Already approved by another admin.",
 "Approved 9 of 10. 1 changed and needs another look."), the expense is re-read and handed to `onUpdated`, and the nav
-count refreshes. Render its `dialogs` once on the page.
+count refreshes. Render its `dialogs` once on the page. The review queue hides expenses in `inFlight`; Expenses and the
+trip page show them with the status they're heading for and move the totals with them (Undo just drops them from
+`inFlight`), and on `onUpdated` replace the row and move the band for the status change (the trip page then reloads
+its summary, so "Who paid" is the server's figure). An expense that no longer matches the Status filter leaves the list.
 
 Review queue (`/dashboard/approvals`): the Expenses layout (flat ledger + resizable detail panel with the receipt
 large). Approving moves the selection to the next expense and focus to its title (to the empty state's heading when

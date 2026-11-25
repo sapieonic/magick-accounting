@@ -39,6 +39,7 @@ export default function TripTimeline({
   expenses,
   onDelete,
   onRemoveFromTrip,
+  review,
   initialExpandedId = null,
   returnTo,
   selectedId,
@@ -126,6 +127,7 @@ export default function TripTimeline({
                   editHref={expenseEditHref(expense._id, returnTo)}
                   onDelete={onDelete}
                   onRemoveFromTrip={onRemoveFromTrip}
+                  review={review}
                 />
               ))}
             </div>

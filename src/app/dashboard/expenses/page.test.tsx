@@ -33,10 +33,12 @@ vi.mock("@/hooks/useTitle", () => ({
   useTitle: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("@/lib/api")>()).ApiError,
   api: {
     get: vi.fn(),
     delete: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -766,6 +768,166 @@ describe("ExpensesPage", () => {
       expect(statValue(totals, "All time total")).toBe("₹0.00");
       expect(within(totals).getByText("0 approved expenses")).toBeInTheDocument();
       expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+    });
+  });
+
+  describe("review actions", () => {
+    const taxi = {
+      ...expense,
+      _id: "pending-1",
+      title: "Taxi to client",
+      amount: 450,
+      amountInBaseCurrency: 450,
+      approvalStatus: "pending",
+      assetAllocationRevision: 0,
+      createdBy: { _id: "user-2", name: "Asha Rao", email: "asha@example.com" },
+    };
+    const admin = { _id: "admin-1", name: "Priya", email: "priya@example.com", role: "admin" };
+
+    /** The open expense's detail (inline under its row at this width). */
+    const detail = (_id: string) => document.getElementById("expense-detail-panel")!;
+
+    beforeEach(() => {
+      listedExpenses = [expense, taxi];
+      listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 1, pendingAmount: 450, rejectedCount: 0 };
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: true, user: admin } as any);
+    });
+
+    it("approving from the detail moves the amount from Awaiting approval into the total", async () => {
+      vi.mocked(api.post).mockResolvedValue({
+        expense: { ...taxi, approvalStatus: "approved", reviewedBy: { _id: "admin-1", name: "Priya" }, reviewedAt: "2026-11-25T10:00:00.000Z" },
+      });
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      vi.useFakeTimers();
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: "Approve" }));
+
+      // In the band straight away, with Undo; the request waits for the window.
+      expect(statValue(totals, "All time total")).toBe("₹6,128.76");
+      expect(within(totals).getByText("2 approved expenses")).toBeInTheDocument();
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+      expect(toastMock).toHaveBeenLastCalledWith('Approved "Taxi to client"', "success", expect.objectContaining({ durationMs: 5000 }));
+      expect(api.post).not.toHaveBeenCalled();
+
+      await lapseUndoWindow();
+      expect(api.post).toHaveBeenCalledWith("/api/expenses/pending-1/approval", { action: "approve", revision: 0 });
+      expect(statValue(totals, "All time total")).toBe("₹6,128.76");
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+      const ledger = screen.getByRole("region", { name: "Expense ledger" });
+      expect(within(ledger).queryByText("Awaiting approval")).not.toBeInTheDocument();
+      expect(within(detail("pending-1")).getByText("Approved by Priya on 25 Nov")).toBeInTheDocument();
+    });
+
+    it("puts everything back on Undo", async () => {
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      vi.useFakeTimers();
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: "Approve" }));
+      expect(statValue(totals, "All time total")).toBe("₹6,128.76");
+
+      act(() => toastMock.mock.calls.at(-1)![2].action.onClick());
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+      expect(within(detail("pending-1")).getByRole("button", { name: "Approve" })).toBeEnabled();
+      await lapseUndoWindow();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("keeps a rejected expense out of the totals and badges it", async () => {
+      vi.mocked(api.post).mockResolvedValue({
+        expense: { ...taxi, approvalStatus: "rejected", rejectionReason: "Duplicate" },
+      });
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: "Reject…" }));
+      const dialog = screen.getByRole("dialog", { name: "Reject expense" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Duplicate" }));
+      vi.useFakeTimers();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Reject expense" }));
+
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+      await lapseUndoWindow();
+      expect(api.post).toHaveBeenCalledWith("/api/expenses/pending-1/approval", {
+        action: "reject",
+        revision: 0,
+        reason: "Duplicate",
+      });
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(screen.getAllByText("Rejected").length).toBeGreaterThan(0);
+      expect(screen.getByText("₹450.00", { exact: false })).toHaveTextContent("(rejected, not in totals)");
+    });
+
+    it("drops an approved expense from the 'Awaiting approval' filter", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?approval=pending");
+      listedExpenses = [taxi];
+      listedSummary = { totalAmount: 0, totalExpenses: 0, companyAmount: 0, pocketAmount: 0, pendingCount: 1, pendingAmount: 450 };
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...taxi, approvalStatus: "approved" } });
+      render(<ExpensesPage />);
+      fireEvent.click(await screen.findByRole("button", { name: "Taxi to client" }));
+      vi.useFakeTimers();
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: "Approve" }));
+      expect(screen.queryByRole("button", { name: "Taxi to client" })).not.toBeInTheDocument();
+      // It left the filtered set, so it isn't added to this view's total either.
+      const totals = screen.getByRole("region", { name: "Totals" });
+      expect(statValue(totals, "All time total")).toBe("₹0.00");
+
+      await lapseUndoWindow();
+      expect(api.post).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("button", { name: "Taxi to client" })).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Nothing awaiting approval" })).toBeInTheDocument();
+    });
+
+    it("lets the submitter resubmit a rejected expense as is", async () => {
+      const lunch = {
+        ...expense,
+        _id: "rejected-1",
+        title: "Team lunch",
+        amount: 900,
+        amountInBaseCurrency: 900,
+        approvalStatus: "rejected",
+        rejectionReason: "Receipt missing",
+        reviewedBy: { _id: "admin-1", name: "Priya" },
+        reviewedAt: "2026-11-20T10:00:00.000Z",
+        assetAllocationRevision: 3,
+      };
+      listedExpenses = [expense, lunch];
+      listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 0, pendingAmount: 0, rejectedCount: 1 };
+      vi.mocked(useAuth).mockReturnValue({
+        isAdmin: false,
+        user: { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com", role: "user" },
+      } as any);
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...lunch, approvalStatus: "pending", rejectionReason: null } });
+
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).getByRole("button", { name: "1 rejected — see why" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Team lunch" }));
+      const notice = within(detail("rejected-1"));
+      expect(notice.getByText("Receipt missing")).toBeInTheDocument();
+      expect(notice.getByRole("link", { name: "Edit & resubmit" })).toHaveAttribute("href", "/dashboard/expenses/rejected-1/edit");
+      fireEvent.click(notice.getByRole("button", { name: "Resubmit as is…" }));
+
+      const dialog = screen.getByRole("dialog", { name: "Resubmit for approval" });
+      fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Receipt attached now" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Resubmit" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Resubmit for approval" })).not.toBeInTheDocument());
+      expect(api.post).toHaveBeenCalledWith("/api/expenses/rejected-1/approval", {
+        action: "resubmit",
+        revision: 3,
+        note: "Receipt attached now",
+      });
+      expect(toastMock).toHaveBeenCalledWith("Resubmitted. An admin will review it again.");
+      expect(statValue(totals, "Awaiting approval")).toBe("₹900.00");
+      expect(within(totals).queryByRole("button", { name: /rejected — see why/ })).not.toBeInTheDocument();
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(within(detail("rejected-1")).getByText(/An admin will review this/)).toBeInTheDocument();
     });
   });
 

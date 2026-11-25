@@ -29,6 +29,7 @@ import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, w
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
+import { useApprovalActions } from "@/hooks/useApprovalActions";
 import { useToast } from "@/components/ui/Toast";
 import Avatar from "@/components/ui/Avatar";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -54,44 +55,60 @@ import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/type
 /** Suggestions shown in the "Might belong here" panel. */
 const SUGGESTIONS = 3;
 
+/** The status an approve or reject in its undo window will leave the expense in. */
+const REVIEWED_STATUS = { approve: "approved", reject: "rejected" } as const;
+
+/** An expense's amounts added to (1) or taken out of (-1) the trip summary. */
+interface SummaryChange {
+  expense: ExpenseListItem;
+  sign: 1 | -1;
+}
+
 /**
- * The server summary minus expenses still inside their undo window, so the
- * stats move the moment an expense is deleted. As on the server, only an
- * approved expense is in the totals; a pending one moves the pending figures
- * and a rejected one is in neither.
+ * The server summary moved by expenses the page changed since it loaded:
+ * deletes in their undo window (-1), and approvals in theirs (out as pending,
+ * back in as approved). As on the server, only an approved expense is in the
+ * totals; a pending one moves the pending figures and a rejected one is in
+ * neither. A payer the summary doesn't list yet isn't added (the page reloads
+ * the summary once a review is saved).
  */
-function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[]): TripDetailSummary {
-  if (removed.length === 0) return summary;
+function shiftTripSummary(summary: TripDetailSummary, changes: SummaryChange[]): TripDetailSummary {
+  if (changes.length === 0) return summary;
   const next: TripDetailSummary = {
     ...summary,
     byType: summary.byType.map((row) => ({ ...row })),
     byPayer: summary.byPayer.map((row) => ({ ...row })),
   };
-  for (const expense of removed) {
+  for (const { expense, sign } of changes) {
     const base = baseAmount(expense);
     const status = effectiveApprovalStatus(expense);
     if (status === "pending") {
-      if (next.pendingAmount != null) next.pendingAmount = roundMoney(next.pendingAmount - base);
-      if (next.pendingCount != null) next.pendingCount = Math.max(0, next.pendingCount - 1);
+      if (next.pendingAmount != null || sign > 0) next.pendingAmount = roundMoney((next.pendingAmount ?? 0) + sign * base);
+      if (next.pendingCount != null || sign > 0) next.pendingCount = Math.max(0, (next.pendingCount ?? 0) + sign);
       continue;
     }
     if (status === "rejected") continue;
     const { pocketBase: pocket, companyBase: company } = getPaymentBreakdown(expense);
-    next.totalAmount = roundMoney(next.totalAmount - base);
-    next.pocketAmount = roundMoney(next.pocketAmount - pocket);
-    next.companyAmount = roundMoney(next.companyAmount - company);
-    next.expenseCount = Math.max(0, next.expenseCount - 1);
-    const typeRow = next.byType.find((row) => row.travelType === (expense.travelType ?? null));
+    next.totalAmount = roundMoney(next.totalAmount + sign * base);
+    next.pocketAmount = roundMoney(next.pocketAmount + sign * pocket);
+    next.companyAmount = roundMoney(next.companyAmount + sign * company);
+    next.expenseCount = Math.max(0, next.expenseCount + sign);
+    const travelType = expense.travelType ?? null;
+    let typeRow = next.byType.find((row) => row.travelType === travelType);
+    if (!typeRow && sign > 0) {
+      typeRow = { travelType, total: 0, count: 0 };
+      next.byType.push(typeRow);
+    }
     if (typeRow) {
-      typeRow.total = roundMoney(typeRow.total - base);
-      typeRow.count -= 1;
+      typeRow.total = roundMoney(typeRow.total + sign * base);
+      typeRow.count += sign;
     }
     // Each payer's own part, as the server credits it (several payers for a shared bill).
     for (const payer of next.byPayer) {
       const share = payerShare(expense, payer.user._id);
-      payer.pocketSpend = roundMoney(payer.pocketSpend - share.pocket);
-      payer.companySpend = roundMoney(payer.companySpend - share.company);
-      payer.totalSpend = roundMoney(payer.totalSpend - share.pocket - share.company);
+      payer.pocketSpend = roundMoney(payer.pocketSpend + sign * share.pocket);
+      payer.companySpend = roundMoney(payer.companySpend + sign * share.company);
+      payer.totalSpend = roundMoney(payer.totalSpend + sign * (share.pocket + share.company));
     }
   }
   // Keep the server's order (largest first, untyped last) now the totals moved.
@@ -104,6 +121,11 @@ function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[])
     });
   next.byPayer = next.byPayer.filter((row) => row.totalSpend > 0.004);
   return next;
+}
+
+/** The server summary minus expenses still inside their delete undo window. */
+function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[]): TripDetailSummary {
+  return shiftTripSummary(summary, removed.map((expense) => ({ expense, sign: -1 as const })));
 }
 
 function DetailSkeleton() {
@@ -208,15 +230,64 @@ export default function TripDetailPage() {
     };
   }, [loadCount, tripId]);
 
+  // Approve / reject (admins) and resubmit (submitters) from an expense's detail.
+  // Once saved, the expense is replaced and the summary reloaded, so "Who paid"
+  // is the server's own figure rather than a guess.
+  const review = useApprovalActions({
+    onUpdated: (updated) => {
+      setData((prev) => {
+        const old = prev?.expenses.find((e) => e._id === updated._id);
+        if (!prev || !old) return prev;
+        return {
+          ...prev,
+          expenses: prev.expenses.map((e) => (e._id === updated._id ? updated : e)),
+          summary: shiftTripSummary(prev.summary, [
+            { expense: old, sign: -1 },
+            { expense: updated, sign: 1 },
+          ]),
+        };
+      });
+      void load(true);
+    },
+    onRemoved: (id) => {
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              expenses: prev.expenses.filter((e) => e._id !== id),
+              summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === id)),
+            }
+          : prev
+      );
+      void load(true);
+    },
+  });
+  const { inFlight } = review;
+
   const pendingSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  // During a review's undo window the expense shows the status it's heading for,
+  // and the totals move with it; Undo drops it from `inFlight`.
   const expenses = useMemo(
-    () => (data ? data.expenses.filter((e) => !pendingSet.has(e._id)) : []),
-    [data, pendingSet]
+    () =>
+      data
+        ? data.expenses
+            .filter((e) => !pendingSet.has(e._id))
+            .map((e) => (inFlight[e._id] ? { ...e, approvalStatus: REVIEWED_STATUS[inFlight[e._id]] } : e))
+        : [],
+    [data, pendingSet, inFlight]
   );
-  const summary = useMemo(
-    () => (data ? withoutExpenses(data.summary, data.expenses.filter((e) => pendingSet.has(e._id))) : null),
-    [data, pendingSet]
-  );
+  const summary = useMemo(() => {
+    if (!data) return null;
+    const changes: SummaryChange[] = [];
+    for (const e of data.expenses) {
+      if (pendingSet.has(e._id)) changes.push({ expense: e, sign: -1 });
+      else if (inFlight[e._id]) {
+        changes.push({ expense: e, sign: -1 });
+        changes.push({ expense: { ...e, approvalStatus: REVIEWED_STATUS[inFlight[e._id]] }, sign: 1 });
+      }
+    }
+    return shiftTripSummary(data.summary, changes);
+  }, [data, pendingSet, inFlight]);
 
   const handleDelete = useCallback(
     (expense: ExpenseListItem) => {
@@ -484,6 +555,7 @@ export default function TripDetailPage() {
               expenses={expenses}
               onDelete={handleDelete}
               onRemoveFromTrip={handleRemoveFromTrip}
+              review={review.handlers}
               initialExpandedId={expandId}
               returnTo={`/dashboard/trips/${trip._id}`}
             />
@@ -618,6 +690,7 @@ export default function TripDetailPage() {
         </PanelGrid>
       </div>
 
+      {review.dialogs}
       <TripFormModal isOpen={editOpen} onClose={() => setEditOpen(false)} trip={trip} onSaved={handleTripSaved} />
       <AddExistingExpensesModal
         tripId={trip._id}

@@ -139,4 +139,12 @@ describe("TripTimeline", () => {
       "/dashboard/expenses/taxi/edit?returnTo=%2Fdashboard%2Ftrips%2Ftrip-1"
     );
   });
+
+  it("forwards the approval actions to an opened expense", () => {
+    const onApprove = vi.fn();
+    const pending = makeExpense({ _id: "cab", title: "Airport cab", date: "2026-10-13T00:00:00.000Z", approvalStatus: "pending" });
+    render(<TripTimeline trip={trip} expenses={[pending]} initialExpandedId="cab" review={{ onApprove, onReject: vi.fn() }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalledWith(pending);
+  });
 });

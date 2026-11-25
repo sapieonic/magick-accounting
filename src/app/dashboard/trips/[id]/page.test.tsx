@@ -30,7 +30,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("@/lib/api")>()).ApiError,
   api: {
     get: vi.fn(),
     post: vi.fn(),
@@ -67,6 +68,11 @@ vi.mock("@/components/trips/TripTimeline", () => ({
             <button type="button" onClick={() => props.onRemoveFromTrip?.(expense)}>
               Remove {expense.title}
             </button>
+            {props.review?.onApprove && expense.approvalStatus === "pending" && (
+              <button type="button" onClick={() => props.review.onApprove(expense)}>
+                Approve {expense.title}
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -690,6 +696,68 @@ describe("TripDetailPage", () => {
       expect(totals).not.toHaveTextContent(/awaiting approval/);
       expect(within(totals).getByText(formatBaseCurrency(7000))).toBeInTheDocument(); // pocket unchanged
       expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7000));
+    });
+
+    it("moves an approved expense into the trip total, then reloads the server's summary", async () => {
+      const approvedCab = { ...cab, approvalStatus: "approved" as const };
+      vi.mocked(api.post).mockResolvedValue({ expense: approvedCab });
+      render(<TripDetailPage />);
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+      expect(timelineProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({ review: expect.objectContaining({ viewerId: ME }) })
+      );
+
+      // Fake the undo window's timer too (the suite fakes only Date).
+      vi.useRealTimers();
+      vi.useFakeTimers({ now: TODAY });
+      act(() => {
+        screen.getByRole("button", { name: "Approve Airport cab" }).click();
+      });
+      // In the totals at once, with Undo.
+      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      expect(totals).not.toHaveTextContent(/awaiting approval/);
+      expect(within(totals).getByText(formatBaseCurrency(7800))).toBeInTheDocument(); // from pocket
+      expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7800));
+      expect(screen.getAllByTestId("type-row")).toHaveLength(3);
+      expect(api.post).not.toHaveBeenCalled();
+
+      response = detail({
+        expenses: [flight, hotel, approvedCab, dinner],
+        summary: {
+          ...detail().summary,
+          totalAmount: 13300,
+          expenseCount: 3,
+          pocketAmount: 7800,
+          pendingCount: 0,
+          pendingAmount: 0,
+        },
+      });
+      const tripLoads = () => vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`).length;
+      const loadsBefore = tripLoads();
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      vi.useRealTimers();
+
+      expect(api.post).toHaveBeenCalledWith(`/api/expenses/${cab._id}/approval`, { action: "approve", revision: 0 });
+      await waitFor(() => expect(tripLoads()).toBe(loadsBefore + 1));
+      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      expect(totals).toHaveTextContent("3 expenses ·");
+    });
+
+    it("puts the totals back when an approve is undone", async () => {
+      render(<TripDetailPage />);
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+      act(() => {
+        screen.getByRole("button", { name: "Approve Airport cab" }).click();
+      });
+      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      act(() => toastMock.mock.calls.at(-1)![2].action.onClick());
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
     });
 
     it("leaves every total alone when a rejected expense is deleted", async () => {
