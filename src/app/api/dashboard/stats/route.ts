@@ -15,13 +15,15 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const filter = buildExpenseFilter(new URL(req.url).searchParams, authResult);
-  const recentFilter = {
-    ...filter,
-    createdBy: new mongoose.Types.ObjectId(authResult._id),
-  };
+  // An admin's own recent expenses; anyone else's list is already theirs
+  // (what they submitted and shared expenses they paid part of).
+  const recentFilter =
+    authResult.role === "user"
+      ? filter
+      : { ...filter, createdBy: new mongoose.Types.ObjectId(authResult._id) };
 
   const [summary, departmentCount, categoryCount, recentExpenses] = await Promise.all([
-    getExpenseSummary(filter),
+    getExpenseSummary(filter, authResult),
     Department.countDocuments(),
     Category.countDocuments(),
     Expense.find(recentFilter)

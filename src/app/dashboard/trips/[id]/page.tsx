@@ -22,7 +22,7 @@ import {
 import { api } from "@/lib/api";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
-import { getPaymentBreakdown, payerShare } from "@/lib/expense";
+import { canModifyExpense, payerShare, viewerAmounts, type SpendViewer } from "@/lib/expense";
 import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, withViewerStatus } from "@/lib/trip";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
@@ -55,7 +55,11 @@ const SUGGESTIONS = 3;
  * The server summary minus expenses still inside their undo window, so the
  * stats move the moment an expense is deleted.
  */
-function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[]): TripDetailSummary {
+function withoutExpenses(
+  summary: TripDetailSummary,
+  removed: ExpenseListItem[],
+  viewer: SpendViewer
+): TripDetailSummary {
   if (removed.length === 0) return summary;
   const next: TripDetailSummary = {
     ...summary,
@@ -63,8 +67,8 @@ function withoutExpenses(summary: TripDetailSummary, removed: ExpenseListItem[])
     byPayer: summary.byPayer.map((row) => ({ ...row })),
   };
   for (const expense of removed) {
-    const base = baseAmount(expense);
-    const { pocketBase: pocket, companyBase: company } = getPaymentBreakdown(expense);
+    // As the server counts it: the whole expense for an admin, else the viewer's own share.
+    const { total: base, pocket, company } = viewerAmounts(expense, viewer);
     next.totalAmount = roundMoney(next.totalAmount - base);
     next.pocketAmount = roundMoney(next.pocketAmount - pocket);
     next.companyAmount = roundMoney(next.companyAmount - company);
@@ -127,7 +131,12 @@ export default function TripDetailPage() {
   const params = useParams<{ id: string }>();
   const tripId = String(params.id);
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const viewer = useMemo<SpendViewer>(
+    () => ({ _id: user?._id ?? "", role: user?.role ?? (isAdmin ? "admin" : "user") }),
+    [user?._id, user?.role, isAdmin]
+  );
+  const canModify = useCallback((expense: ExpenseListItem) => canModifyExpense(expense, viewer), [viewer]);
   const { toast } = useToast();
   const [data, setData] = useState<TripDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -202,8 +211,8 @@ export default function TripDetailPage() {
     [data, pendingSet]
   );
   const summary = useMemo(
-    () => (data ? withoutExpenses(data.summary, data.expenses.filter((e) => pendingSet.has(e._id))) : null),
-    [data, pendingSet]
+    () => (data ? withoutExpenses(data.summary, data.expenses.filter((e) => pendingSet.has(e._id)), viewer) : null),
+    [data, pendingSet, viewer]
   );
 
   const handleDelete = useCallback(
@@ -221,7 +230,7 @@ export default function TripDetailPage() {
               ? {
                   ...prev,
                   expenses: prev.expenses.filter((e) => e._id !== expense._id),
-                  summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === expense._id)),
+                  summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === expense._id), viewer),
                 }
               : prev
           );
@@ -236,7 +245,7 @@ export default function TripDetailPage() {
         action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
       });
     },
-    [load, scheduleDelete, undoDelete, toast]
+    [load, scheduleDelete, undoDelete, toast, viewer]
   );
 
   const handleRemoveFromTrip = useCallback(
@@ -427,7 +436,7 @@ export default function TripDetailPage() {
             sub={`Total ÷ ${trip.travelers.length}`}
           />
         )}
-        {/* A user's totals cover only their own expenses, so they can't be read against the trip budget. */}
+        {/* A user's totals are only their own share, so they can't be read against the trip budget. */}
         {isAdmin && trip.budget != null && (
           <BandCell label="Budget">
             <BudgetMeter spent={summary.totalAmount} budget={trip.budget} />
@@ -458,6 +467,7 @@ export default function TripDetailPage() {
               expenses={expenses}
               onDelete={handleDelete}
               onRemoveFromTrip={handleRemoveFromTrip}
+              canModify={canModify}
               initialExpandedId={expandId}
               returnTo={`/dashboard/trips/${trip._id}`}
             />

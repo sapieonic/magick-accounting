@@ -399,6 +399,80 @@ describe("ExpensesPage", () => {
     expect(statValue(totals, "Paid by Manas Nilorout")).toBe("₹200.00");
   });
 
+  it("gives a regular user their own share, and only lets them change what they submitted", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAdmin: false,
+      user: { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com", role: "user" },
+    } as any);
+    const manas = { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com" };
+    const ravi = { _id: "user-2", name: "Ravi", email: "ravi@example.com" };
+    const taxi = {
+      ...expense,
+      _id: "taxi",
+      title: "Taxi",
+      amount: 1000,
+      amountInBaseCurrency: 1000,
+      paymentSource: "pocket",
+      pocketAmount: 1000,
+      pocketAmountInBaseCurrency: 1000,
+    };
+    // Ravi's bill; Manas paid 200 of it on the company card.
+    const dinner = {
+      ...expense,
+      _id: "dinner",
+      title: "Client dinner",
+      amount: 300,
+      amountInBaseCurrency: 300,
+      paymentSource: "multiple",
+      pocketAmount: 100,
+      pocketAmountInBaseCurrency: 100,
+      createdBy: ravi,
+      payments: [
+        { paidBy: manas, amount: 200, amountInBaseCurrency: 200, source: "company" },
+        { paidBy: ravi, amount: 100, amountInBaseCurrency: 100, source: "pocket" },
+      ],
+    };
+    // Manas's bill; he paid 150 of 500 from pocket, Ravi the rest.
+    const lunch = {
+      ...expense,
+      _id: "lunch",
+      title: "Team lunch",
+      amount: 500,
+      amountInBaseCurrency: 500,
+      paymentSource: "multiple",
+      pocketAmount: 500,
+      pocketAmountInBaseCurrency: 500,
+      payments: [
+        { paidBy: manas, amount: 150, amountInBaseCurrency: 150, source: "pocket" },
+        { paidBy: ravi, amount: 350, amountInBaseCurrency: 350, source: "pocket" },
+      ],
+    };
+    listedExpenses = [taxi, dinner, lunch];
+    // As the server sums it for him: 1000 + 200 + 150.
+    listedSummary = { totalAmount: 1350, totalExpenses: 3, companyAmount: 200, pocketAmount: 1150 };
+    render(<ExpensesPage />);
+
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    expect(await within(totals).findByText("3 expenses · your share")).toBeInTheDocument();
+    expect(statValue(totals, "All time total")).toBe("₹1,350.00");
+
+    // Ravi's bill is listed for Manas to see, but only Ravi (or an admin) changes it.
+    expect(screen.getByText("Client dinner")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Client dinner" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Edit Client dinner")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete Team lunch" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Edit Team lunch")).toBeInTheDocument();
+
+    // Deleting his own shared bill takes out only his 150, not the whole 500.
+    fireEvent.click(screen.getByRole("button", { name: "Delete Team lunch" }));
+    expect(statValue(totals, "All time total")).toBe("₹1,200.00");
+    expect(within(totals).getByRole("img", { name: "Company paid 16.7%, pocket 83.3%" })).toBeInTheDocument();
+
+    act(() => toastMock.mock.calls.at(-1)?.[2]?.action.onClick());
+    expect(statValue(totals, "All time total")).toBe("₹1,350.00");
+    expect(within(totals).getByRole("img", { name: "Company paid 14.8%, pocket 85.2%" })).toBeInTheDocument();
+  });
+
   it("names the department and category filter lists", async () => {
     render(<ExpensesPage />);
 

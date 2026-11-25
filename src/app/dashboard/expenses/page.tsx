@@ -22,7 +22,7 @@ import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { MAX_EXPENSE_PAGE, getPaymentBreakdown, payerShare } from "@/lib/expense";
+import { MAX_EXPENSE_PAGE, canModifyExpense, payerShare, viewerAmounts, type SpendViewer } from "@/lib/expense";
 import { EXPENSE_CSV_HEADERS, expenseCsvRow } from "@/lib/expense-csv";
 import { useToast } from "@/components/ui/Toast";
 import { InlineLoader } from "@/components/ui/Spinner";
@@ -41,7 +41,7 @@ import { focusRing, panelClass, panelPadX, transition } from "@/components/ui/st
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseDetailPanel from "@/components/expenses/ledger/ExpenseDetailPanel";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
-import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
+import { expenseEditHref } from "@/components/expenses/ledger/format";
 import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import TripCluster, { buildExpenseListItems, pageItemKey, tripItemKey } from "@/components/trips/TripCluster";
@@ -151,7 +151,14 @@ function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: (
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  // How totals count each expense (whole for an admin, their own share for
+  // anyone else) and which expenses this person may change.
+  const viewer = useMemo<SpendViewer>(
+    () => ({ _id: user?._id ?? "", role: user?.role ?? (isAdmin ? "admin" : "user") }),
+    [user?._id, user?.role, isAdmin]
+  );
+  const canModify = useCallback((expense: Expense) => canModifyExpense(expense, viewer), [viewer]);
   const sidePanel = useMediaQuery(SIDE_PANEL_QUERY);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   /** Trips on the loaded pages, keyed by id (grouped view only). */
@@ -492,16 +499,18 @@ export default function ExpensesPage() {
   // Moves an expense's amounts in or out of the totals band (delete / undo),
   // including the "Paid by" person's share when that filter is on.
   const adjustTotals = (expense: Expense, sign: 1 | -1) => {
-    const { pocketBase, companyBase } = getPaymentBreakdown(expense);
+    // The summary counts what the server does: whole expenses for an admin,
+    // the person's own share otherwise.
+    const own = viewerAmounts(expense, viewer);
     const share = filterPayer ? payerShare(expense, filterPayer) : null;
     setSummary((prev) => ({
       ...prev,
-      totalAmount: roundMoney(prev.totalAmount + sign * baseAmount(expense)),
+      totalAmount: roundMoney(prev.totalAmount + sign * own.total),
       totalExpenses: Math.max(0, prev.totalExpenses + sign),
       ...(prev.companyAmount != null && prev.pocketAmount != null
         ? {
-            companyAmount: roundMoney(prev.companyAmount + sign * companyBase),
-            pocketAmount: roundMoney(prev.pocketAmount + sign * pocketBase),
+            companyAmount: roundMoney(prev.companyAmount + sign * own.company),
+            pocketAmount: roundMoney(prev.pocketAmount + sign * own.pocket),
           }
         : {}),
       ...(prev.payerSpend && share
@@ -734,7 +743,7 @@ export default function ExpensesPage() {
           headline
           label={`${periodLabel} total`}
           value={formatBaseCurrency(summary.totalAmount)}
-          sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}`}
+          sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}${isAdmin ? "" : " · your share"}`}
         />
         <BandCell label="Company · pocket">
           {summary.companyAmount != null && summary.pocketAmount != null ? (
@@ -799,6 +808,7 @@ export default function ExpensesPage() {
                         inlineDetail={!sidePanel}
                         detailId={DETAIL_PANEL_ID}
                         onDelete={handleDelete}
+                        canModify={canModify}
                         filtered={isFiltered}
                       />
                     ) : (
@@ -810,6 +820,7 @@ export default function ExpensesPage() {
                         detailId={DETAIL_PANEL_ID}
                         editHref={expenseEditHref(item.expense._id)}
                         onDelete={handleDelete}
+                        canModify={canModify}
                         showTripLink={!groupTrips}
                       />
                     )}
@@ -838,6 +849,7 @@ export default function ExpensesPage() {
                 expense={selectedExpense}
                 editHref={expenseEditHref(selectedExpense._id)}
                 onDelete={handleDelete}
+                canModify={canModify}
                 onClose={() => setSelectedId(null)}
                 showHeader
                 className="bg-wash-r p-5"

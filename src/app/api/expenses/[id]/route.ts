@@ -6,6 +6,7 @@ import Currency from "@/models/Currency";
 import Asset from "@/models/Asset";
 import {
   buildPaymentFields,
+  canViewExpense,
   getPaymentBreakdown,
   normalizeGstAmount,
   normalizePaymentSplit,
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Expense not found" }, { status: 404 });
   }
 
-  if (authResult.role === "user" && expense.createdBy._id.toString() !== authResult._id) {
+  // Payers of a shared expense may read it; only its submitter (or an admin) changes it.
+  if (!canViewExpense(expense, authResult)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

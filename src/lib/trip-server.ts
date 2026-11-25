@@ -25,7 +25,8 @@ export function isAdminUser(user: AuthUser): boolean {
 /**
  * Trips a person can see: admins see all; everyone else sees the trips they
  * travel on or created. Inside a visible trip, `user`-role people still see
- * only their own expenses (`buildExpenseFilter` scopes that).
+ * only what they submitted and shared expenses they paid part of
+ * (`buildExpenseFilter` scopes that).
  */
 export function tripAccessFilter(user: AuthUser): Record<string, unknown> {
   if (isAdminUser(user)) return {};

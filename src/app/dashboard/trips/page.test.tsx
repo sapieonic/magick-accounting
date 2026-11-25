@@ -126,9 +126,11 @@ describe("TripsPage", () => {
     expect(within(ongoing).getByText("Mumbai → Pune")).toBeInTheDocument();
     expect(within(ongoing).getByText(formatBaseCurrency(9000))).toBeInTheDocument();
     expect(within(ongoing).getByText("3 expenses")).toBeInTheDocument();
-    // A user's total covers only their own expenses, so the trip budget isn't compared with it.
+    // A user's total is only their own share, so the trip budget isn't compared with it.
     expect(within(ongoing).queryByRole("progressbar", { name: "Budget used" })).not.toBeInTheDocument();
-    expect(screen.getByText("Totals and expense counts include only your own expenses.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Totals are your own share; counts include expenses you submitted or helped pay for.")
+    ).toBeInTheDocument();
     expect(within(upcoming).getByText("Bengaluru client visit")).toBeInTheDocument();
     expect(within(past).getByText("Delhi offsite")).toBeInTheDocument();
     expect(within(past).getByText("1 expense")).toBeInTheDocument();
@@ -160,7 +162,9 @@ describe("TripsPage", () => {
     // 90% of budget: shown as a warning.
     expect(within(ongoing).getByRole("progressbar", { name: "Budget used" })).toHaveAttribute("aria-valuenow", "90");
     expect(within(ongoing).getByText("90%")).toBeInTheDocument();
-    expect(screen.queryByText("Totals and expense counts include only your own expenses.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Totals are your own share; counts include expenses you submitted or helped pay for.")
+    ).not.toBeInTheDocument();
   });
 
   it("shows the first-trip empty state", async () => {

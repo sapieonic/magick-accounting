@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
+import { Query } from "mingo";
+import "mingo/init/system";
 import { NextRequest } from "next/server";
 import { PATCH } from "./route";
 import { verifyAuth, type AuthUser } from "@/lib/auth";
@@ -140,5 +142,59 @@ describe("PATCH /api/trips/:id/expenses", () => {
       { _id: { $in: [oid(E1)] }, trip: oid(GOA), createdBy: oid(RAVI) },
       { $set: { trip: null, travelType: null } }
     );
+  });
+
+  describe("a shared expense", () => {
+    // Asha submitted it; Ravi paid ₹600 of it, so he can see it but not move it.
+    const shared = {
+      _id: oid(E1),
+      createdBy: oid(ASHA),
+      trip: null as mongoose.Types.ObjectId | null,
+      amount: 1000,
+      paymentSource: "multiple",
+      payments: [
+        { paidBy: oid(ASHA), amount: 400, amountInBaseCurrency: 400, source: "pocket" },
+        { paidBy: oid(RAVI), amount: 600, amountInBaseCurrency: 600, source: "pocket" },
+      ],
+    };
+
+    beforeEach(() => {
+      vi.mocked(Trip.findById).mockReturnValue(
+        chain({ _id: oid(GOA), travelers: [oid(ASHA), oid(RAVI)], createdBy: oid(ASHA) }) as never
+      );
+      // The real ownership query, run over the stored expense.
+      vi.mocked(Expense.exists).mockImplementation(((filter: Record<string, unknown>) =>
+        Promise.resolve(new Query(filter).find([shared]).all()[0] ?? null)) as never);
+    });
+
+    it("can't be added to or removed from a trip by a payer who didn't submit it", async () => {
+      signIn(RAVI, "user");
+
+      const adding = await patch({ add: [E1] });
+      expect(adding.status).toBe(403);
+      expect(await adding.json()).toEqual({ error: "You can only move your own expenses" });
+
+      shared.trip = oid(GOA);
+      try {
+        const removing = await patch({ remove: [E1] });
+        expect(removing.status).toBe(403);
+        expect(await removing.json()).toEqual({ error: "You can only move your own expenses" });
+      } finally {
+        shared.trip = null;
+      }
+      expect(Expense.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("can still be moved by the person who submitted it", async () => {
+      signIn(ASHA, "user");
+
+      const response = await patch({ add: [E1] });
+
+      expect(response.status).toBe(200);
+      expect(Expense.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: [oid(E1)] }, createdBy: oid(ASHA) },
+        { $set: { trip: oid(GOA) } }
+      );
+    });
   });
 });

@@ -84,33 +84,86 @@ describe("DELETE /api/expenses/:id", () => {
 
 describe("GET /api/expenses/:id", () => {
   const expenseId = "66c1884c0853f8a76a4da111";
+  const OWNER = "66c1884c0853f8a76a4da201";
+  const PAYER = "66c1884c0853f8a76a4da202";
+  const OUTSIDER = "66c1884c0853f8a76a4da203";
 
-  it("keeps a named payer who didn't submit the expense out", async () => {
-    vi.mocked(connectDB).mockResolvedValue(undefined);
-    vi.mocked(verifyAuth).mockResolvedValue({
-      _id: "payer-id",
-      email: "payer@example.com",
-      name: "Payer",
-      role: "user",
-    });
-    const query = {
-      populate: vi.fn(() => query),
-      lean: vi.fn().mockResolvedValue({
-        _id: expenseId,
-        createdBy: { _id: "owner-id" },
-        paymentSource: "multiple",
-        payments: [
-          { paidBy: { _id: "payer-id" }, amount: 60, source: "pocket" },
-          { paidBy: { _id: "owner-id" }, amount: 40, source: "company" },
-        ],
-      }),
-    };
+  function signIn(_id: string, role: "user" | "admin" = "user") {
+    vi.mocked(verifyAuth).mockResolvedValue({ _id, email: "x@example.com", name: "X", role });
+  }
+
+  function stored(expense: Record<string, unknown>) {
+    const query = { populate: vi.fn(() => query), lean: vi.fn().mockResolvedValue(expense) };
     vi.mocked(Expense.findById).mockReturnValue(query as never);
+    const assets = { populate: vi.fn(() => assets), sort: vi.fn(() => assets), lean: vi.fn().mockResolvedValue([]) };
+    vi.mocked(Asset.find).mockReturnValue(assets as never);
+  }
 
-    const response = await GET({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+  // As the route loads it: submitter and payers populated.
+  const shared = {
+    _id: expenseId,
+    createdBy: { _id: new mongoose.Types.ObjectId(OWNER), name: "Owner" },
+    paymentSource: "multiple",
+    payments: [
+      { paidBy: { _id: new mongoose.Types.ObjectId(PAYER), name: "Payer" }, amount: 60, source: "pocket" },
+      { paidBy: { _id: new mongoose.Types.ObjectId(OWNER), name: "Owner" }, amount: 40, source: "company" },
+    ],
+  };
 
-    expect(response.status).toBe(403);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+  });
+
+  const get = () => GET({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+
+  it("lets a payer of a shared expense read it", async () => {
+    signIn(PAYER);
+    stored(shared);
+    const response = await get();
+    expect(response.status).toBe(200);
+    expect((await response.json()).expense._id).toBe(expenseId);
+  });
+
+  it("lets the submitter and an admin read it", async () => {
+    stored(shared);
+    signIn(OWNER);
+    expect((await get()).status).toBe(200);
+    signIn(OUTSIDER, "admin");
+    expect((await get()).status).toBe(200);
+  });
+
+  it("keeps out someone who neither submitted nor paid", async () => {
+    signIn(OUTSIDER);
+    stored(shared);
+    expect((await get()).status).toBe(403);
     expect(Asset.find).not.toHaveBeenCalled();
+  });
+
+  it("keeps out a person named on a payer list of an expense that isn't shared", async () => {
+    // Only a "several people" expense credits its payers; a stray list grants nothing.
+    signIn(PAYER);
+    stored({ ...shared, paymentSource: "pocket" });
+    expect((await get()).status).toBe(403);
+  });
+
+  it("doesn't let a payer who didn't submit it edit or delete it", async () => {
+    signIn(PAYER);
+    vi.mocked(Expense.findById).mockResolvedValue({
+      _id: expenseId,
+      createdBy: new mongoose.Types.ObjectId(OWNER),
+      paymentSource: "multiple",
+      payments: shared.payments.map((entry) => ({ ...entry, paidBy: entry.paidBy._id })),
+    } as never);
+    const context = { params: Promise.resolve({ id: expenseId }) };
+
+    const put = await PUT({ json: async () => ({ title: "Mine now" }) } as unknown as NextRequest, context);
+    expect(put.status).toBe(403);
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+
+    const del = await DELETE({} as NextRequest, context);
+    expect(del.status).toBe(403);
+    expect(Expense.deleteOne).not.toHaveBeenCalled();
   });
 });
 
