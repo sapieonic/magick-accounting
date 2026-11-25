@@ -12,7 +12,8 @@ import {
   paymentEntriesEqual,
   storedRateToBase,
 } from "@/lib/expense";
-import { assertPayersExist, storedPaymentEntries } from "@/lib/expense-server";
+import { assertPayersExist, revisionMatch, storedPaymentEntries } from "@/lib/expense-server";
+import { approvalChangeAfterEdit } from "@/lib/approval-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
 import { normalizeTravelType } from "@/lib/trip";
@@ -41,6 +42,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .populate("createdBy", "name email photoURL")
     .populate("payments.paidBy", "name email")
     .populate("trip", "name")
+    .populate("reviewedBy", "name email")
+    .populate("approvalHistory.by", "name email")
     .lean();
 
   if (!expense) {
@@ -180,6 +183,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         { status: 403 }
       );
     }
+    // An owner's save can send the expense back for approval (`statusAfterEdit`).
+    const approvalChange = approvalChangeAfterEdit({
+      expense,
+      editor: authResult,
+      accountingChanged: changedProtectedField,
+    });
 
     // Trip and travel type aren't accounting fields, so they're left out of
     // the linked-asset check above. The trip is only re-checked when it
@@ -237,14 +246,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       travelType: newTravelType,
     };
     const previousReceiptKey = expense.receiptKey;
-    const revision = Number(expense.assetAllocationRevision || 0);
-    const revisionFilter =
-      revision === 0
-        ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
-        : { assetAllocationRevision: revision };
+    // The revision CAS also loses to an approve/reject that landed after the
+    // read above, since those increment it too.
     const updated = await Expense.findOneAndUpdate(
-      { _id: id, ...revisionFilter },
-      { $set: update, $inc: { assetAllocationRevision: 1 } },
+      { _id: id, ...revisionMatch(Number(expense.assetAllocationRevision || 0)) },
+      {
+        $set: { ...update, ...(approvalChange?.$set ?? {}) },
+        ...(approvalChange ? { $push: approvalChange.$push } : {}),
+        $inc: { assetAllocationRevision: 1 },
+      },
       { new: true, runValidators: true }
     )
       .populate("category", "name")
@@ -253,6 +263,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate("createdBy", "name email photoURL")
       .populate("payments.paidBy", "name email")
       .populate("trip", "name")
+      .populate("reviewedBy", "name email")
+      .populate("approvalHistory.by", "name email")
       .lean();
     if (!updated) {
       throw new Error("Expense changed while you were editing it; reload and try again");
@@ -296,11 +308,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     );
   }
 
-  const revision = Number(expense.assetAllocationRevision || 0);
-  const revisionCondition =
-    revision === 0
-      ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
-      : { assetAllocationRevision: revision };
+  const revisionCondition = revisionMatch(Number(expense.assetAllocationRevision || 0));
   const deletion = await Expense.deleteOne({
     _id: expense._id,
     $and: [

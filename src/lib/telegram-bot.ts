@@ -9,6 +9,7 @@ import Expense from "@/models/Expense";
 import { deleteObject, uploadObject } from "@/lib/s3";
 import { roundMoney } from "@/lib/asset";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
+import { creationApprovalFields, initialApprovalStatus, type Role } from "@/lib/approval";
 import {
   extractExpense,
   isExtractableReceiptType,
@@ -65,7 +66,12 @@ interface LinkedUser {
   _id: mongoose.Types.ObjectId;
   name: string;
   email: string;
+  /** Read on every update, so a new expense gets the status for the role held now. */
+  role: Role;
 }
+
+/** The app account a link code belongs to (no role needed to link). */
+type LinkCandidate = Omit<LinkedUser, "role">;
 
 /** An error whose message is written for the person chatting with the bot. */
 export class DraftSaveError extends Error {}
@@ -139,7 +145,7 @@ export function parseCommand(text: string): { name: string; arg: string } | null
 
 async function findLinkedUser(telegramUserId: number): Promise<LinkedUser | null> {
   return (await User.findOne({ "telegram.userId": telegramUserId })
-    .select("_id name email")
+    .select("_id name email role")
     .lean()) as LinkedUser | null;
 }
 
@@ -203,7 +209,7 @@ async function offerLink(code: string, chatId: number, bot: ConnectedBot): Promi
     telegramLinkCodeExpiresAt: { $gt: new Date() },
   })
     .select("_id name email")
-    .lean()) as LinkedUser | null;
+    .lean()) as LinkCandidate | null;
 
   if (!user) {
     await sendMessage(bot.token, chatId, expiredLinkText(bot));
@@ -233,7 +239,7 @@ async function linkAccount(code: string, from: TelegramUser, chatId: number, bot
     telegramLinkCodeExpiresAt: { $gt: new Date() },
   })
     .select("_id name email")
-    .lean()) as LinkedUser | null;
+    .lean()) as LinkCandidate | null;
   if (!user) return expiredLinkText(bot);
 
   const takenMessage =
@@ -812,7 +818,7 @@ async function saveDraft(
 
   let expenseId: mongoose.Types.ObjectId;
   try {
-    expenseId = await createExpenseFromDraft(claimed, user._id);
+    expenseId = await createExpenseFromDraft(claimed, user);
   } catch (err) {
     if (!(err instanceof DraftSaveError)) console.error("Telegram expense save failed:", err);
     const reverted = (await TelegramDraft.findOneAndUpdate(
@@ -834,11 +840,14 @@ async function saveDraft(
     { _id: claimed._id },
     { $set: { expense: expenseId, expiresAt: finishedExpiry() } }
   );
-  await answerCallbackQuery(bot.token, callbackId, "Saved");
+  // createExpenseFromDraft decided the status from this same role.
+  const pendingApproval = initialApprovalStatus(user.role) === "pending";
+  await answerCallbackQuery(bot.token, callbackId, pendingApproval ? "Submitted for approval" : "Saved");
   if (claimed.messageId) {
     const card = renderSavedCard(
       await toSnapshot(claimed),
-      bot.appUrl ? `${bot.appUrl}/dashboard/expenses/${expenseId}/edit` : null
+      bot.appUrl ? `${bot.appUrl}/dashboard/expenses/${expenseId}/edit` : null,
+      { pendingApproval }
     );
     await editMessageText(bot.token, claimed.chatId, claimed.messageId, card.html, card.keyboard);
   }
@@ -847,12 +856,13 @@ async function saveDraft(
 /**
  * Creates the expense for a completed draft with the same rules as
  * POST /api/expenses: entry-time exchange rate, GST within the total, and the
- * pocket/company split built by buildPaymentFields. Throws DraftSaveError,
+ * pocket/company split built by buildPaymentFields, and the approval status
+ * for the creator's current role (`creationApprovalFields`). Throws DraftSaveError,
  * with a message for the user, when the draft can't be saved as it is.
  */
 export async function createExpenseFromDraft(
   draft: ITelegramDraft,
-  userId: mongoose.Types.ObjectId | string
+  creator: { _id: mongoose.Types.ObjectId | string; role: Role }
 ): Promise<mongoose.Types.ObjectId> {
   const amount = draft.amount;
   if (amount == null || !Number.isFinite(amount) || amount < 0) {
@@ -888,6 +898,8 @@ export async function createExpenseFromDraft(
     throw new DraftSaveError("This receipt is already attached to another expense");
   }
 
+  // Same rule as POST /api/expenses: a user's expense waits for an admin.
+  const approvalFields = creationApprovalFields(creator);
   const expense = await Expense.create({
     title: draft.title || "Expense via Telegram",
     amount,
@@ -905,7 +917,8 @@ export async function createExpenseFromDraft(
     receiptFilename: draft.receiptKey ? draft.receiptFilename || undefined : undefined,
     trip: null,
     travelType: null,
-    createdBy: userId,
+    createdBy: creator._id,
+    ...approvalFields,
   });
   return expense._id;
 }

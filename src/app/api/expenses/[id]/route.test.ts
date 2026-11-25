@@ -624,3 +624,211 @@ describe("PUT /api/expenses/:id trip", () => {
     expect(storedUpdate()).toEqual(expect.objectContaining({ travelType: "visa" }));
   });
 });
+
+describe("GET /api/expenses/:id approval", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+
+  it("populates the reviewer and who did each approval step", async () => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: "admin-id",
+      email: "admin@example.com",
+      name: "Admin",
+      role: "admin",
+    });
+    const query = {
+      populate: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue({ _id: expenseId, createdBy: { _id: "owner-id" }, approvalStatus: "rejected" }),
+    };
+    vi.mocked(Expense.findById).mockReturnValue(query as never);
+    const assets = { populate: vi.fn(), sort: vi.fn(), lean: vi.fn().mockResolvedValue([]) };
+    assets.populate.mockReturnValue(assets);
+    assets.sort.mockReturnValue(assets);
+    vi.mocked(Asset.find).mockReturnValue(assets as never);
+
+    const response = await GET({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+
+    expect(response.status).toBe(200);
+    expect(query.populate).toHaveBeenCalledWith("reviewedBy", "name email");
+    expect(query.populate).toHaveBeenCalledWith("approvalHistory.by", "name email");
+  });
+});
+
+describe("PUT /api/expenses/:id approval", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+  const ownerId = "66c1884c0853f8a76a4da201";
+  const objectIdLike = (value: string) => ({ toString: () => value });
+
+  function mockStoredExpense(overrides: Record<string, unknown> = {}) {
+    vi.mocked(Expense.findById).mockResolvedValue({
+      _id: expenseId,
+      title: "Taxi",
+      description: "",
+      createdBy: objectIdLike(ownerId),
+      amount: 100,
+      gstAmount: null,
+      currency: objectIdLike("inr-id"),
+      amountInBaseCurrency: 100,
+      exchangeRateToBase: 1,
+      date: new Date("2026-11-01T00:00:00.000Z"),
+      category: objectIdLike("category-id"),
+      department: objectIdLike("department-id"),
+      paymentSource: "pocket",
+      pocketAmount: 100,
+      pocketAmountInBaseCurrency: 100,
+      assetAllocationRevision: 4,
+      approvalStatus: "approved",
+      ...overrides,
+    } as never);
+  }
+
+  function signInAs(role: "user" | "admin") {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: role === "user" ? ownerId : "admin-id",
+      email: `${role}@example.com`,
+      name: role,
+      role,
+    });
+  }
+
+  function put(body: Record<string, unknown>) {
+    return PUT({ json: async () => body } as unknown as NextRequest, {
+      params: Promise.resolve({ id: expenseId }),
+    });
+  }
+
+  function storedCall() {
+    const [filter, update] = vi.mocked(Expense.findOneAndUpdate).mock.calls[0] as unknown as [
+      Record<string, unknown>,
+      { $set: Record<string, unknown>; $push?: Record<string, unknown>; $inc: Record<string, number> },
+    ];
+    return { filter, update };
+  }
+
+  const sentBack = (note: string) => ({
+    approvalHistory: { action: "resubmitted", by: ownerId, at: expect.any(Date), note },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    signInAs("user");
+    vi.mocked(Asset.find).mockResolvedValue([] as never);
+    mockStoredExpense();
+    const query = {
+      populate: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue({ _id: expenseId, approvalStatus: "pending" }),
+    };
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue(query as never);
+  });
+
+  it("sends an approved expense back for approval when its submitter changes the amount", async () => {
+    const response = await put({ amount: 120 });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).expense.approvalStatus).toBe("pending");
+    const { filter, update } = storedCall();
+    expect(filter).toEqual({ _id: expenseId, assetAllocationRevision: 4 });
+    expect(update.$set).toEqual(
+      expect.objectContaining({
+        amount: 120,
+        approvalStatus: "pending",
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+      })
+    );
+    expect(update.$push).toEqual(sentBack("Edited after approval"));
+    expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
+  });
+
+  it("treats a legacy expense without a status as approved", async () => {
+    mockStoredExpense({ approvalStatus: undefined, assetAllocationRevision: undefined });
+
+    expect((await put({ category: "other-category" })).status).toBe(200);
+    const { filter, update } = storedCall();
+    expect(filter).toEqual(expect.objectContaining({ $or: expect.any(Array) }));
+    expect(update.$set.approvalStatus).toBe("pending");
+    expect(update.$push).toEqual(sentBack("Edited after approval"));
+  });
+
+  it("keeps an approved expense approved when only the title or description changes", async () => {
+    // The edit form resends every field unchanged.
+    const response = await put({
+      title: "Taxi to client",
+      description: "Meeting",
+      amount: 100,
+      currency: "inr-id",
+      category: "category-id",
+      department: "department-id",
+      date: "2026-11-01T00:00:00.000Z",
+      paymentSource: "pocket",
+    });
+
+    expect(response.status).toBe(200);
+    const { update } = storedCall();
+    expect(update.$set).toEqual(expect.objectContaining({ title: "Taxi to client" }));
+    expect(update.$set).not.toHaveProperty("approvalStatus");
+    expect(update).not.toHaveProperty("$push");
+    expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
+  });
+
+  it("sends a rejected expense back for approval on any save by its submitter", async () => {
+    mockStoredExpense({ approvalStatus: "rejected", rejectionReason: "Receipt missing", reviewedBy: "admin-id" });
+
+    expect((await put({ title: "Taxi (receipt attached)" })).status).toBe(200);
+    const { update } = storedCall();
+    expect(update.$set).toEqual(
+      expect.objectContaining({ approvalStatus: "pending", rejectionReason: null, reviewedBy: null })
+    );
+    expect(update.$push).toEqual(sentBack("Edited after rejection"));
+  });
+
+  it("never changes the status on an admin's edit", async () => {
+    signInAs("admin");
+    for (const approvalStatus of ["approved", "rejected", "pending"]) {
+      vi.mocked(Expense.findOneAndUpdate).mockClear();
+      mockStoredExpense({ approvalStatus });
+
+      expect((await put({ amount: 250 })).status).toBe(200);
+      const { update } = storedCall();
+      expect(update.$set).not.toHaveProperty("approvalStatus");
+      expect(update).not.toHaveProperty("$push");
+    }
+  });
+
+  it("keeps a pending expense pending, still moving its revision on", async () => {
+    mockStoredExpense({ approvalStatus: "pending" });
+
+    expect((await put({ amount: 80 })).status).toBe(200);
+    const { filter, update } = storedCall();
+    expect(filter).toEqual({ _id: expenseId, assetAllocationRevision: 4 });
+    expect(update.$set).not.toHaveProperty("approvalStatus");
+    expect(update).not.toHaveProperty("$push");
+    expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
+  });
+
+  it("loses to a review that landed after the expense was read", async () => {
+    // An admin approved it (revision 4 → 5) between the read and the write.
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue({
+      populate: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as never);
+
+    const response = await put({ amount: 80 });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Expense changed while you were editing it; reload and try again",
+    });
+  });
+
+  it("populates the reviewer in the response", async () => {
+    await put({ title: "Taxi" });
+
+    const query = vi.mocked(Expense.findOneAndUpdate).mock.results[0].value;
+    expect(query.populate).toHaveBeenCalledWith("reviewedBy", "name email");
+    expect(query.populate).toHaveBeenCalledWith("approvalHistory.by", "name email");
+  });
+});

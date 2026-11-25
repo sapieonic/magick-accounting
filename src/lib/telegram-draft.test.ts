@@ -176,4 +176,17 @@ describe("renderDraftCard", () => {
     expect(card.html).toContain("Expense saved");
     expect(card.keyboard[0][0].url).toBe("https://app.example.com/dashboard/expenses/1/edit");
   });
+
+  it("says a user's expense was submitted for approval and won't count until approved", () => {
+    const card = renderSavedCard(snapshot(), "https://app.example.com/dashboard/expenses/1/edit", {
+      pendingApproval: true,
+    });
+    expect(card.html.split("\n").slice(0, 2)).toEqual([
+      "📨 <b>Expense submitted for approval</b>",
+      "An admin will review it. It counts as spend once approved.",
+    ]);
+    expect(card.html).not.toContain("Expense saved");
+    expect(card.html).toContain("Uber &lt;airport&gt;");
+    expect(card.keyboard[0][0].url).toBe("https://app.example.com/dashboard/expenses/1/edit");
+  });
 });

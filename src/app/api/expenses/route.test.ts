@@ -12,6 +12,7 @@ import Asset from "@/models/Asset";
 import User from "@/models/User";
 import Trip from "@/models/Trip";
 import { encodeExpenseCursor } from "@/lib/expense-query";
+import { createAssetsForExpense } from "@/lib/asset-server";
 
 vi.mock("@/lib/auth", () => ({ verifyAuth: vi.fn() }));
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
@@ -214,6 +215,122 @@ describe("POST /api/expenses payment split", () => {
       expect(createdExpense()).toEqual(expect.objectContaining({ paymentSource: "pocket", payments: [] }));
       expect(User.countDocuments).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("POST /api/expenses approval", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+  const userId = "66c1884c0853f8a76a4da201";
+  const adminId = "66c1884c0853f8a76a4da202";
+
+  function chain(result: unknown) {
+    const query = {
+      populate: vi.fn(() => query),
+      sort: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue(result),
+    };
+    return query;
+  }
+
+  function post(body: Record<string, unknown> = {}) {
+    return POST({
+      json: async () => ({
+        title: "Office chair",
+        amount: 100,
+        currency: "inr-id",
+        category: "category-id",
+        department: "department-id",
+        date: "2026-11-01",
+        ...body,
+      }),
+    } as unknown as NextRequest);
+  }
+
+  function createdExpense() {
+    return (vi.mocked(Expense.create).mock.calls[0][0] as unknown as Record<string, unknown>[])[0];
+  }
+
+  function signInAs(role: "user" | "admin" | "master_admin") {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: role === "user" ? userId : adminId,
+      email: `${role}@example.com`,
+      name: role,
+      role,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    vi.mocked(Currency.findById).mockReturnValue(chain({ _id: "inr-id", rateToBase: 1 }) as never);
+    vi.mocked(Expense.create).mockResolvedValue([{ _id: expenseId }] as never);
+    vi.mocked(Asset.find).mockReturnValue(chain([]) as never);
+    vi.mocked(Expense.findById).mockReturnValue(chain({ _id: expenseId }) as never);
+  });
+
+  it("submits a user's expense for approval", async () => {
+    signInAs("user");
+
+    const response = await post();
+
+    expect(response.status).toBe(201);
+    expect(createdExpense()).toEqual(
+      expect.objectContaining({
+        createdBy: userId,
+        approvalStatus: "pending",
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+        approvalHistory: [{ action: "submitted", by: userId, at: expect.any(Date), note: null }],
+      })
+    );
+  });
+
+  it("approves an admin's own expense on creation", async () => {
+    for (const role of ["admin", "master_admin"] as const) {
+      vi.mocked(Expense.create).mockClear();
+      signInAs(role);
+
+      expect((await post()).status).toBe(201);
+      const created = createdExpense();
+      expect(created).toEqual(
+        expect.objectContaining({
+          approvalStatus: "approved",
+          reviewedBy: adminId,
+          reviewedAt: expect.any(Date),
+          approvalHistory: [{ action: "auto_approved", by: adminId, at: created.reviewedAt, note: null }],
+        })
+      );
+    }
+  });
+
+  it("refuses assets on a user's expense before writing anything", async () => {
+    signInAs("user");
+
+    const response = await post({ assets: [{ name: "Chair", allocatedAmount: 100 }] });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Assets can be registered once an admin approves this expense.",
+    });
+    expect(Expense.exists).not.toHaveBeenCalled();
+    expect(Expense.create).not.toHaveBeenCalled();
+    expect(createAssetsForExpense).not.toHaveBeenCalled();
+  });
+
+  it("lets a user send an empty asset list, and never creates assets for them", async () => {
+    signInAs("user");
+
+    expect((await post({ assets: [] })).status).toBe(201);
+    expect(createAssetsForExpense).toHaveBeenCalledWith(expect.objectContaining({ rawAssets: [] }));
+  });
+
+  it("still creates an admin's assets with the expense", async () => {
+    signInAs("admin");
+    const assets = [{ name: "Chair", allocatedAmount: 100 }];
+
+    expect((await post({ assets })).status).toBe(201);
+    expect(createAssetsForExpense).toHaveBeenCalledWith(expect.objectContaining({ rawAssets: assets }));
   });
 });
 
@@ -579,7 +696,16 @@ describe("GET /api/expenses", () => {
 
     try {
       const flat = await (await get("?limit=20&includeSummary=true")).json();
-      expect(flat.summary).toEqual({ totalExpenses: 6, totalAmount: 600, companyAmount: 170, pocketAmount: 430 });
+      // Every document here predates approvals, so all of it is approved spend.
+      expect(flat.summary).toEqual({
+        totalExpenses: 6,
+        totalAmount: 600,
+        companyAmount: 170,
+        pocketAmount: 430,
+        pendingCount: 0,
+        pendingAmount: 0,
+        rejectedCount: 0,
+      });
 
       const grouped = await (await get("?groupTrips=true&limit=3&includeSummary=true")).json();
       expect(grouped.summary).toEqual(flat.summary);

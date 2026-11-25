@@ -259,9 +259,19 @@ export function renderDraftCard(
   };
 }
 
-export function renderSavedCard(draft: DraftSnapshot, expenseUrl: string | null): DraftCard {
+export function renderSavedCard(
+  draft: DraftSnapshot,
+  expenseUrl: string | null,
+  options: { pendingApproval?: boolean } = {}
+): DraftCard {
+  const header = options.pendingApproval
+    ? [
+        "📨 <b>Expense submitted for approval</b>",
+        "An admin will review it. It counts as spend once approved.",
+      ]
+    : ["✅ <b>Expense saved</b>"];
   return {
-    html: ["✅ <b>Expense saved</b>", "", ...summaryLines(draft)].join("\n"),
+    html: [...header, "", ...summaryLines(draft)].join("\n"),
     keyboard: expenseUrl ? [[{ text: "Open in Magick Accounting", url: expenseUrl }]] : [],
   };
 }
