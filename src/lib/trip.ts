@@ -142,6 +142,8 @@ export interface TripDaySection<T> {
   /** 1-based day of the trip; only for `day` sections. */
   dayNumber?: number;
   items: T[];
+  /** Base-currency total of the `items` awaiting approval (not in `total`). */
+  pendingTotal?: number;
   /** Base-currency total of `items`. */
   total: number;
 }

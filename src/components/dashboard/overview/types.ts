@@ -1,3 +1,5 @@
+import type { ApprovalStatus } from "@/lib/approval";
+
 /** Response shapes of /api/dashboard/stats, /api/dashboard/charts and (admins) /api/users. */
 
 export interface RecentExpense {
@@ -9,6 +11,8 @@ export interface RecentExpense {
   date: string;
   category?: { name: string } | null;
   department?: { name: string } | null;
+  approvalStatus?: ApprovalStatus | null;
+  rejectionReason?: string | null;
 }
 
 export interface OverviewStats {
@@ -17,6 +21,10 @@ export interface OverviewStats {
   /** Company vs pocket spend (base currency), the same split as the Expenses page's band. */
   companyAmount: number;
   pocketAmount: number;
+  /** Totals above are approved-only; these describe what's left out. */
+  pendingCount?: number;
+  pendingAmount?: number;
+  rejectedCount?: number;
   departmentCount: number;
   categoryCount: number;
   /** The caller's own five latest expenses. */
