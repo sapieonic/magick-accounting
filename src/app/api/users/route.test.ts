@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import mongoose from "mongoose";
+import { Aggregator } from "mingo";
+import "mingo/init/system";
 import { NextRequest, NextResponse } from "next/server";
 import { GET } from "./route";
 import { verifyAuth, requireAdmin } from "@/lib/auth";
@@ -6,6 +9,7 @@ import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
 import { spendByPayerPipeline } from "@/lib/expense";
+import { APPROVED_MATCH } from "@/lib/approval";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -87,7 +91,7 @@ describe("GET /api/users", () => {
 
     expect(connectDB).toHaveBeenCalled();
     expect(User.find).toHaveBeenCalled();
-    expect(Expense.aggregate).toHaveBeenCalledWith(spendByPayerPipeline);
+    expect(Expense.aggregate).toHaveBeenCalledWith([{ $match: APPROVED_MATCH }, ...spendByPayerPipeline]);
 
     expect(NextResponse.json).toHaveBeenCalledWith({
       users: [
@@ -162,6 +166,55 @@ describe("GET /api/users", () => {
     expect(NextResponse.json).toHaveBeenCalledWith({
       users: [
         { ...mockUsers[0], totalSpend: 90, companySpend: 90, pocketSpend: 0 },
+      ],
+    });
+  });
+
+  it("credits approved spend only, legacy expenses included", async () => {
+    vi.mocked(verifyAuth).mockResolvedValueOnce({ uid: "admin-123", role: "admin" } as any);
+    vi.mocked(requireAdmin).mockReturnValueOnce(null);
+
+    const asha = new mongoose.Types.ObjectId();
+    const ravi = new mongoose.Types.ObjectId();
+    const mockUsers = [
+      { _id: asha, name: "Asha" },
+      { _id: ravi, name: "Ravi" },
+    ];
+    const UserMock = await import("@/models/User");
+    const { lean } = (UserMock as any).__mockChain;
+    lean.mockResolvedValueOnce(mockUsers);
+
+    const shared = (approvalStatus: string) => ({
+      createdBy: asha,
+      amount: 300,
+      amountInBaseCurrency: 300,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: 100,
+      payments: [
+        { paidBy: ravi, amount: 100, amountInBaseCurrency: 100, source: "pocket" },
+        { paidBy: asha, amount: 200, amountInBaseCurrency: 200, source: "company" },
+      ],
+      approvalStatus,
+    });
+    const expenses = [
+      // Legacy (no status) and approved: spend.
+      { createdBy: asha, amount: 500, amountInBaseCurrency: 500, paymentSource: "pocket", pocketAmountInBaseCurrency: 500 },
+      shared("approved"),
+      // Awaiting approval or rejected: not spend, for the submitter or any payer.
+      { createdBy: asha, amount: 900, amountInBaseCurrency: 900, paymentSource: "pocket", approvalStatus: "pending" },
+      shared("pending"),
+      shared("rejected"),
+    ];
+    vi.mocked(Expense.aggregate).mockImplementationOnce(
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(expenses))) as never
+    );
+
+    await GET(mockReq);
+
+    expect(NextResponse.json).toHaveBeenCalledWith({
+      users: [
+        { ...mockUsers[0], totalSpend: 700, companySpend: 200, pocketSpend: 500 },
+        { ...mockUsers[1], totalSpend: 100, companySpend: 0, pocketSpend: 100 },
       ],
     });
   });

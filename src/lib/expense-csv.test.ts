@@ -103,10 +103,10 @@ describe("expenseCsvRow", () => {
     expect(column(expenseCsvRow({ ...base, amount: 75 }), "Payments")).toBe("");
   });
 
-  it("adds the trip and travel type in the last columns, blank without them", () => {
-    expect(EXPENSE_CSV_HEADERS.slice(-2)).toEqual(["Trip", "Travel Type"]);
+  it("adds the trip and travel type after the payments, blank without them", () => {
     // Existing columns keep their positions.
     expect(EXPENSE_CSV_HEADERS.indexOf("Payments")).toBe(13);
+    expect(EXPENSE_CSV_HEADERS.slice(14, 16)).toEqual(["Trip", "Travel Type"]);
 
     const inTrip = expenseCsvRow({
       ...base,
@@ -123,5 +123,34 @@ describe("expenseCsvRow", () => {
     const plain = expenseCsvRow({ ...base, amount: 75, trip: null });
     expect(column(plain, "Trip")).toBe("");
     expect(column(plain, "Travel Type")).toBe("");
+  });
+
+  it("adds the approval status and rejection reason as the last columns", () => {
+    expect(EXPENSE_CSV_HEADERS.slice(-2)).toEqual(["Approval status", "Rejection reason"]);
+    // Existing columns keep their positions.
+    expect(EXPENSE_CSV_HEADERS.indexOf("Travel Type")).toBe(15);
+
+    const legacy = expenseCsvRow({ ...base, amount: 75 });
+    expect(column(legacy, "Approval status")).toBe("Approved");
+    expect(column(legacy, "Rejection reason")).toBe("");
+
+    const pending = expenseCsvRow({ ...base, amount: 75, approvalStatus: "pending" });
+    expect(column(pending, "Approval status")).toBe("Awaiting approval");
+    expect(column(pending, "Rejection reason")).toBe("");
+
+    const rejected = expenseCsvRow({
+      ...base,
+      amount: 75,
+      approvalStatus: "rejected",
+      rejectionReason: "Receipt missing or unreadable",
+    });
+    expect(column(rejected, "Approval status")).toBe("Rejected");
+    expect(column(rejected, "Rejection reason")).toBe("Receipt missing or unreadable");
+    expect(rejected).toHaveLength(EXPENSE_CSV_HEADERS.length);
+
+    // A reason left over on an expense that is no longer rejected isn't exported.
+    const approved = expenseCsvRow({ ...base, amount: 75, approvalStatus: "approved", rejectionReason: "Old" });
+    expect(column(approved, "Approval status")).toBe("Approved");
+    expect(column(approved, "Rejection reason")).toBe("");
   });
 });

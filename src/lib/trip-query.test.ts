@@ -86,3 +86,72 @@ describe("tripDetailSummaryPipeline", () => {
     expect(String(result.byPayer[0]._id)).toBe(String(asha));
   });
 });
+
+describe("approval", () => {
+  // Goa's expenses above plus ones not yet (or never) approved.
+  const withApprovals = [
+    ...docs,
+    { trip: goa, createdBy: asha, amount: 1, amountInBaseCurrency: 800, paymentSource: "pocket", pocketAmountInBaseCurrency: 800, approvalStatus: "pending" },
+    { trip: goa, createdBy: ravi, amount: 1, amountInBaseCurrency: 250.5, paymentSource: "company", pocketAmountInBaseCurrency: 0, approvalStatus: "pending" },
+    {
+      trip: goa,
+      createdBy: ravi,
+      amount: 60,
+      amountInBaseCurrency: 6000,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: 6000,
+      payments: [
+        { paidBy: asha, amount: 30, amountInBaseCurrency: 3000, source: "pocket" },
+        { paidBy: ravi, amount: 30, amountInBaseCurrency: 3000, source: "pocket" },
+      ],
+      approvalStatus: "rejected",
+    },
+    { trip: goa, createdBy: asha, amount: 5, amountInBaseCurrency: 500, approvalStatus: "approved" },
+    { trip: pune, createdBy: asha, amount: 3, amountInBaseCurrency: 300, approvalStatus: "pending" },
+  ];
+
+  it("totals approved expenses per trip and reports those awaiting approval apart", () => {
+    const rows = run(tripTotalsPipeline({}, [goa, pune]), withApprovals);
+    const byTrip = Object.fromEntries(rows.map((row) => [String(row._id), row]));
+
+    // Legacy expenses (no status) count as approved; rejected ones count nowhere.
+    expect(byTrip[String(goa)]).toEqual({
+      _id: goa,
+      expenseCount: 5,
+      totalAmount: 5002,
+      pendingCount: 2,
+      pendingAmount: 1050.5,
+    });
+    expect(byTrip[String(pune)]).toEqual({
+      _id: pune,
+      expenseCount: 1,
+      totalAmount: 700,
+      pendingCount: 1,
+      pendingAmount: 300,
+    });
+  });
+
+  it("keeps the detail totals and payer shares approved-only", () => {
+    const [result] = run(tripDetailSummaryPipeline({ trip: goa }), withApprovals);
+
+    expect(result.totals[0]).toEqual(
+      expect.objectContaining({ totalAmount: 5002, expenseCount: 5, pocketAmount: 2502, companyAmount: 2500 })
+    );
+    expect(result.pending).toEqual([{ _id: null, pendingCount: 2, pendingAmount: 1050.5 }]);
+    const payers = Object.fromEntries(
+      result.byPayer.map((row: { _id: unknown }) => [String(row._id), row])
+    );
+    // The rejected expense would have credited each of them 3000.
+    expect(payers[String(asha)]).toEqual(
+      expect.objectContaining({ totalSpend: 3500, pocketSpend: 1500, companySpend: 2000 })
+    );
+    expect(payers[String(ravi)]).toEqual(
+      expect.objectContaining({ totalSpend: 1502, pocketSpend: 1002, companySpend: 500 })
+    );
+  });
+
+  it("returns an empty pending facet when nothing awaits approval", () => {
+    const [result] = run(tripDetailSummaryPipeline({ trip: goa }), docs);
+    expect(result.pending).toEqual([]);
+  });
+});

@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import mongoose from "mongoose";
+import { Query } from "mingo";
+import "mingo/init/system";
 import { NextRequest, NextResponse } from "next/server";
 import { GET } from "./route";
 import { verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import { baseTotalExpr } from "@/lib/expense";
+import { APPROVED_MATCH } from "@/lib/approval";
 
 vi.mock("@/lib/auth", () => ({
   verifyAuth: vi.fn(),
@@ -98,10 +102,36 @@ describe("GET /api/dashboard/charts", () => {
     } as NextRequest);
 
     const trendPipeline = vi.mocked(Expense.aggregate).mock.calls[0][0] as any[];
-    const trendDateFilter = trendPipeline[0].$match.date;
+    // The trend window is built from the list's own date range, then narrowed to approved spend.
+    expect(trendPipeline[0].$match.$and[1]).toEqual(APPROVED_MATCH);
+    const trendDateFilter = trendPipeline[0].$match.$and[0].date;
 
     expect(trendDateFilter.$gte.toISOString()).toBe("2026-06-15T00:00:00.000Z");
     expect(trendDateFilter.$lte.toISOString()).toBe("2026-06-20T23:59:59.999Z");
     expect(trendDateFilter.$lt.toISOString()).toBe("2026-08-01T00:00:00.000Z");
+  });
+
+  it("charts approved spend only, legacy expenses included", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-04T12:00:00.000Z"));
+    vi.mocked(verifyAuth).mockResolvedValueOnce({ _id: "507f1f77bcf86cd799439011", role: "user" } as any);
+    vi.mocked(Expense.aggregate).mockResolvedValue([]);
+
+    await GET({ url: "http://localhost/api/dashboard/charts" } as NextRequest);
+
+    const user = new mongoose.Types.ObjectId("507f1f77bcf86cd799439011");
+    const date = new Date("2026-06-10T00:00:00.000Z");
+    const docs = [
+      { _id: "legacy", createdBy: user, date },
+      { _id: "approved", createdBy: user, date, approvalStatus: "approved" },
+      { _id: "pending", createdBy: user, date, approvalStatus: "pending" },
+      { _id: "rejected", createdBy: user, date, approvalStatus: "rejected" },
+    ];
+    const pipelines = vi.mocked(Expense.aggregate).mock.calls.map(([pipeline]) => pipeline as any[]);
+    expect(pipelines).toHaveLength(3);
+    for (const pipeline of pipelines) {
+      const matched = new Query(pipeline[0].$match).find(docs).all().map((doc: any) => doc._id);
+      expect(matched).toEqual(["legacy", "approved"]);
+    }
   });
 });

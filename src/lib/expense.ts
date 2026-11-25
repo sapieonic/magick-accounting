@@ -329,13 +329,22 @@ const shareTotals = {
   pocketSpend: { $sum: "$shares.pocket" },
 };
 
-/** Aggregation pipeline totalling base-currency spend per person (see `payerShareStages`). */
+/**
+ * Aggregation pipeline totalling base-currency spend per person (see
+ * `payerShareStages`). It counts every document it is given: callers must
+ * prepend `{ $match: APPROVED_MATCH }` (`@/lib/approval`) so expenses awaiting
+ * approval or rejected don't count as spend.
+ */
 export const spendByPayerPipeline = [
   ...payerShareStages,
   { $group: { _id: "$shares.user", ...shareTotals } },
 ];
 
-/** Pipeline totalling one person's share of the expenses matching `filter`. */
+/**
+ * Pipeline totalling one person's share of the expenses matching `filter`.
+ * `filter` is used as is: pass `withApproved(filter)` (`@/lib/approval`) to
+ * count approved spend only.
+ */
 export function payerSpendPipeline(filter: Record<string, unknown>, payerId: unknown) {
   return [
     { $match: filter },
@@ -348,6 +357,8 @@ export function payerSpendPipeline(filter: Record<string, unknown>, payerId: unk
 /**
  * Query matching the expenses credited to `payerId` by `payerShareStages`:
  * shared expenses listing them as a payer, and their other submissions.
+ * It matches every approval status (a list shows them all); totals built on
+ * it must also apply `APPROVED_MATCH` / `withApproved` (`@/lib/approval`).
  */
 export function paidByFilter(payerId: unknown): Record<string, unknown> {
   const shared = { paymentSource: "multiple", "payments.0": { $exists: true } };
@@ -408,7 +419,9 @@ export function getPaymentBreakdown(expense: PaymentSplitFields): PaymentBreakdo
 /**
  * The part of a listed expense credited to `payerId` in base currency, by the
  * server's rule (`payerShareStages`): a "several people" expense credits each
- * payer's own entries, anything else counts wholly to its submitter.
+ * payer's own entries, anything else counts wholly to its submitter. It
+ * ignores approval: callers keeping spend totals must gate it with
+ * `countsAsSpend` (`@/lib/approval`), as the server counts approved only.
  */
 export function payerShare(
   expense: PaymentSplitFields & {

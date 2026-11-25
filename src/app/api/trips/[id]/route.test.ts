@@ -158,6 +158,7 @@ describe("GET /api/trips/:id", () => {
     const query = vi.mocked(Expense.find).mock.results[0].value;
     expect(query.sort).toHaveBeenCalledWith({ date: 1, createdAt: 1, _id: 1 });
     expect(query.populate).toHaveBeenCalledWith("trip", "name");
+    expect(query.populate).toHaveBeenCalledWith("reviewedBy", "name email");
     expect(body.expenses.map((expense: { _id: string }) => expense._id)).toEqual(
       [flight, hotel, dinner].map((expense) => String(expense._id))
     );
@@ -187,9 +188,18 @@ describe("GET /api/trips/:id", () => {
           companySpend: 8000,
         },
       ],
+      pendingCount: 0,
+      pendingAmount: 0,
     });
     expect(body.trip).toEqual(
-      expect.objectContaining({ _id: GOA, expenseCount: 3, totalAmount: 17300, canManage: true })
+      expect.objectContaining({
+        _id: GOA,
+        expenseCount: 3,
+        totalAmount: 17300,
+        pendingCount: 0,
+        pendingAmount: 0,
+        canManage: true,
+      })
     );
   });
 
@@ -212,6 +222,69 @@ describe("GET /api/trips/:id", () => {
     expect(body.trip).toEqual(expect.objectContaining({ expenseCount: 2, totalAmount: 11300, canManage: false }));
   });
 
+  it("lists expenses of every status but totals approved ones, with pending apart", async () => {
+    const pendingCab = {
+      _id: oid("66c1884c0853f8a76a4da505"),
+      trip: oid(GOA),
+      createdBy: oid(ASHA),
+      date: new Date("2026-10-14T00:00:00.000Z"),
+      amount: 450,
+      amountInBaseCurrency: 450,
+      paymentSource: "pocket",
+      pocketAmountInBaseCurrency: 450,
+      travelType: "cab",
+      approvalStatus: "pending",
+    };
+    const rejectedSpa = {
+      ...pendingCab,
+      _id: oid("66c1884c0853f8a76a4da506"),
+      createdBy: oid(RAVI),
+      amount: 4000,
+      amountInBaseCurrency: 4000,
+      pocketAmountInBaseCurrency: 4000,
+      travelType: "other",
+      approvalStatus: "rejected",
+    };
+    const all = [{ ...flight, approvalStatus: "approved" }, hotel, dinner, pendingCab, rejectedSpa, elsewhere];
+    vi.mocked(Expense.find).mockImplementation(
+      ((filter: Record<string, unknown>) => chain(new Query(filter).find(all).all())) as never
+    );
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(all))) as never
+    );
+    signIn(ADMIN, "admin");
+
+    const body = await (await GET({} as NextRequest, params())).json();
+
+    expect(body.expenses.map((expense: { _id: string }) => expense._id)).toEqual(
+      [flight, hotel, dinner, pendingCab, rejectedSpa].map((expense) => String(expense._id))
+    );
+    // Same figures as without the two, plus what awaits approval.
+    expect(body.summary).toEqual(
+      expect.objectContaining({
+        totalAmount: 17300,
+        expenseCount: 3,
+        pocketAmount: 9300,
+        companyAmount: 8000,
+        pendingCount: 1,
+        pendingAmount: 450,
+        byType: [
+          { travelType: "flight", total: 8300, count: 1 },
+          { travelType: "stay", total: 6000, count: 1 },
+          { travelType: null, total: 3000, count: 1 },
+        ],
+      })
+    );
+    expect(body.summary.byPayer.map((row: { user: { _id: string }; totalSpend: number }) => [row.user._id, row.totalSpend])).toEqual([
+      [ASHA, 9300],
+      [RAVI, 8000],
+    ]);
+    expect(body.trip).toEqual(
+      expect.objectContaining({ expenseCount: 3, totalAmount: 17300, pendingCount: 1, pendingAmount: 450 })
+    );
+  });
+
   it("reports zero totals for a trip without visible expenses", async () => {
     signIn(OUTSIDER, "admin");
     vi.mocked(Expense.find).mockReturnValue(chain([]) as never);
@@ -226,6 +299,8 @@ describe("GET /api/trips/:id", () => {
       companyAmount: 0,
       byType: [],
       byPayer: [],
+      pendingCount: 0,
+      pendingAmount: 0,
     });
     expect(Asset.aggregate).not.toHaveBeenCalled();
     expect(User.find).not.toHaveBeenCalled();

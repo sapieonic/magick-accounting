@@ -1,12 +1,20 @@
 import mongoose, { type PipelineStage } from "mongoose";
 import type { AuthUser } from "@/lib/auth";
 import { roundMoney } from "@/lib/asset";
+import {
+  APPROVED_MATCH,
+  isApprovedExpr,
+  isPendingExpr,
+  PENDING_MATCH,
+  type ApprovalStatus,
+} from "@/lib/approval";
 import { baseTotalExpr, companyBaseExpr, pocketBaseExpr, spendByPayerPipeline } from "@/lib/expense";
 import {
   buildExpenseFilter,
   escapeRegExp,
   expensePagination,
   groupedExpensePagePipeline,
+  sumWhere,
   type ExpensePageParams,
 } from "@/lib/expense-query";
 import { getTripStatus, OBJECT_ID_PATTERN, totalsByTravelType, type TravelType } from "@/lib/trip";
@@ -50,7 +58,8 @@ export function populateExpenseRefs<Q extends { populate: (...args: any[]) => an
     .populate("currency", "code name symbol rateToBase isBase")
     .populate("createdBy", "name email photoURL")
     .populate("payments.paidBy", "name email")
-    .populate("trip", "name");
+    .populate("trip", "name")
+    .populate("reviewedBy", "name email");
 }
 
 /** Adds `linkedAssetCount` (assets bought through each expense) to listed expenses. */
@@ -134,9 +143,12 @@ function serializeTripSummary(trip: LeanDoc, now: Date = new Date()): TripSummar
   };
 }
 
+/** Approved expenses' count and total; those awaiting approval separately. */
 interface TripTotals {
   expenseCount: number;
   totalAmount: number;
+  pendingCount?: number;
+  pendingAmount?: number;
 }
 
 const NO_TOTALS: TripTotals = { expenseCount: 0, totalAmount: 0 };
@@ -160,6 +172,8 @@ export function serializeTripListItem(
     createdBy: tripPerson(trip.createdBy),
     expenseCount: totals?.expenseCount ?? 0,
     totalAmount: roundMoney(totals?.totalAmount ?? 0),
+    pendingCount: totals?.pendingCount ?? 0,
+    pendingAmount: roundMoney(totals?.pendingAmount ?? 0),
     canManage: canManageTrip(trip, user),
   };
 }
@@ -176,7 +190,10 @@ export function tripSearchFilter(
   return Object.keys(access).length > 0 ? { $and: [access, search] } : search;
 }
 
-/** Per-trip count and base-currency total of the expenses matching `visibility`. */
+/**
+ * Per-trip count and base-currency total of the approved expenses matching
+ * `visibility`, plus the count and total of those awaiting approval.
+ */
 export function tripTotalsPipeline(
   visibility: Record<string, unknown>,
   tripIds: mongoose.Types.ObjectId[]
@@ -186,8 +203,10 @@ export function tripTotalsPipeline(
     {
       $group: {
         _id: "$trip",
-        expenseCount: { $sum: 1 },
-        totalAmount: { $sum: baseTotalExpr },
+        expenseCount: sumWhere(isApprovedExpr, 1),
+        totalAmount: sumWhere(isApprovedExpr, baseTotalExpr),
+        pendingCount: sumWhere(isPendingExpr, 1),
+        pendingAmount: sumWhere(isPendingExpr, baseTotalExpr),
       },
     },
   ];
@@ -210,7 +229,12 @@ export async function visibleTripTotals(
   return new Map(
     rows.map((row) => [
       String(row._id),
-      { expenseCount: row.expenseCount, totalAmount: roundMoney(row.totalAmount ?? 0) },
+      {
+        expenseCount: row.expenseCount,
+        totalAmount: roundMoney(row.totalAmount ?? 0),
+        pendingCount: row.pendingCount ?? 0,
+        pendingAmount: roundMoney(row.pendingAmount ?? 0),
+      },
     ])
   );
 }
@@ -224,8 +248,9 @@ export async function loadTripListItem(tripId: string, user: AuthUser): Promise<
 }
 
 /**
- * Totals of the expenses matching `filter` (one trip, as the caller sees it),
- * plus each person's share the way Spend by User credits it.
+ * Totals of the approved expenses matching `filter` (one trip, as the caller
+ * sees it), plus each person's share the way Spend by User credits it, and
+ * the count and total of those awaiting approval.
  */
 export function tripDetailSummaryPipeline(filter: Record<string, unknown>): PipelineStage[] {
   return [
@@ -233,6 +258,7 @@ export function tripDetailSummaryPipeline(filter: Record<string, unknown>): Pipe
     {
       $facet: {
         totals: [
+          { $match: APPROVED_MATCH },
           {
             $group: {
               _id: null,
@@ -243,7 +269,15 @@ export function tripDetailSummaryPipeline(filter: Record<string, unknown>): Pipe
             },
           },
         ],
-        byPayer: [...spendByPayerPipeline, { $sort: { totalSpend: -1, _id: 1 } }],
+        pending: [
+          { $match: PENDING_MATCH },
+          { $group: { _id: null, pendingCount: { $sum: 1 }, pendingAmount: { $sum: baseTotalExpr } } },
+        ],
+        byPayer: [
+          { $match: APPROVED_MATCH },
+          ...spendByPayerPipeline,
+          { $sort: { totalSpend: -1, _id: 1 } },
+        ],
       },
     },
   ] as PipelineStage[];
@@ -256,13 +290,23 @@ interface PayerRow {
   companySpend: number;
 }
 
-/** Runs `tripDetailSummaryPipeline` and joins the payers' names. */
+/**
+ * Runs `tripDetailSummaryPipeline` and joins the payers' names. `byType` is
+ * totalled from `expenses` (the same visible expenses), approved ones only.
+ */
 export async function getTripDetailSummary(
   filter: Record<string, unknown>,
-  expenses: { date: string | Date; amount: number; amountInBaseCurrency?: number | null; travelType?: TravelType | null }[]
+  expenses: {
+    date: string | Date;
+    amount: number;
+    amountInBaseCurrency?: number | null;
+    travelType?: TravelType | null;
+    approvalStatus?: ApprovalStatus | null;
+  }[]
 ): Promise<TripDetailSummary> {
   const [result] = await Expense.aggregate(tripDetailSummaryPipeline(filter));
   const totals = result?.totals?.[0];
+  const pending = result?.pending?.[0];
   const payerRows: PayerRow[] = result?.byPayer ?? [];
 
   const payerIds = payerRows.map((row) => row._id).filter(Boolean);
@@ -290,9 +334,12 @@ export async function getTripDetailSummary(
         amount: expense.amount,
         amountInBaseCurrency: expense.amountInBaseCurrency,
         travelType: expense.travelType ?? null,
+        approvalStatus: expense.approvalStatus ?? null,
       }))
     ),
     byPayer,
+    pendingCount: pending?.pendingCount ?? 0,
+    pendingAmount: roundMoney(pending?.pendingAmount ?? 0),
   };
 }
 
