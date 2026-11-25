@@ -52,27 +52,34 @@ vi.mock("@/components/ui/Toast", () => ({
   useToast: vi.fn(() => ({ toast: toastMock })),
 }));
 
+// Tests that check which rows offer actions render the real timeline.
+let realTimeline = false;
+
 // The timeline is built separately; this stand-in exposes its callbacks.
-vi.mock("@/components/trips/TripTimeline", () => ({
-  default: (props: any) => {
-    timelineProps(props);
-    return (
-      <ul data-testid="trip-timeline">
-        {props.expenses.map((expense: ExpenseListItem) => (
-          <li key={expense._id}>
-            {expense.title}
-            <button type="button" onClick={() => props.onDelete?.(expense)}>
-              Delete {expense.title}
-            </button>
-            <button type="button" onClick={() => props.onRemoveFromTrip?.(expense)}>
-              Remove {expense.title}
-            </button>
-          </li>
-        ))}
-      </ul>
-    );
-  },
-}));
+vi.mock("@/components/trips/TripTimeline", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/trips/TripTimeline")>();
+  return {
+    default: (props: any) => {
+      timelineProps(props);
+      if (realTimeline) return <actual.default {...props} />;
+      return (
+        <ul data-testid="trip-timeline">
+          {props.expenses.map((expense: ExpenseListItem) => (
+            <li key={expense._id}>
+              {expense.title}
+              <button type="button" onClick={() => props.onDelete?.(expense)}>
+                Delete {expense.title}
+              </button>
+              <button type="button" onClick={() => props.onRemoveFromTrip?.(expense)}>
+                Remove {expense.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      );
+    },
+  };
+});
 
 const me = { _id: ME, name: "Manas", email: "manas@example.com" };
 const priya = { _id: PRIYA, name: "Priya", email: "priya@example.com" };
@@ -166,6 +173,7 @@ describe("TripDetailPage", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
     vi.clearAllMocks();
+    realTimeline = false;
     window.history.replaceState(null, "", `/dashboard/trips/${TRIP_ID}`);
     response = detail();
     vi.mocked(useAuth).mockReturnValue({ user: { ...me, role: "admin" }, isAdmin: true } as any);
@@ -625,5 +633,245 @@ describe("TripDetailPage", () => {
       vi.advanceTimersByTime(6000);
     });
     expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  describe("a shared bill on a regular user's trip page", () => {
+    // Manas (a user) sees three expenses on this trip:
+    // (a) his own pocket expense, ₹800.00;
+    const metro = makeExpense({
+      _id: "4".repeat(24),
+      title: "Metro card",
+      amount: 800,
+      amountInBaseCurrency: 800,
+      pocketAmount: 800,
+      pocketAmountInBaseCurrency: 800,
+      travelType: "cab",
+    });
+    // (b) a ₹3,000.00 dinner he submitted: he paid ₹1,250.50 from pocket and
+    //     ₹400.00 on the company card, Priya ₹1,349.50 from pocket;
+    const dinner = makeExpense({
+      _id: "5".repeat(24),
+      title: "Client dinner",
+      amount: 3000,
+      amountInBaseCurrency: 3000,
+      paymentSource: "multiple",
+      pocketAmount: 2600,
+      pocketAmountInBaseCurrency: 2600,
+      travelType: "food",
+      payments: [
+        { paidBy: me, amount: 1250.5, amountInBaseCurrency: 1250.5, source: "pocket" },
+        { paidBy: me, amount: 400, amountInBaseCurrency: 400, source: "company" },
+        { paidBy: priya, amount: 1349.5, amountInBaseCurrency: 1349.5, source: "pocket" },
+      ],
+    });
+    // (c) Priya's ₹5,500.75 hotel: she paid ₹4,000.00 from pocket, he ₹1,500.75 on the company card.
+    const pune = makeExpense({
+      _id: "6".repeat(24),
+      title: "Hotel Pune",
+      amount: 5500.75,
+      amountInBaseCurrency: 5500.75,
+      date: "2026-10-27T00:00:00.000Z",
+      paymentSource: "multiple",
+      pocketAmount: 4000,
+      pocketAmountInBaseCurrency: 4000,
+      travelType: "stay",
+      createdBy: priya,
+      payments: [
+        { paidBy: priya, amount: 4000, amountInBaseCurrency: 4000, source: "pocket" },
+        { paidBy: me, amount: 1500.75, amountInBaseCurrency: 1500.75, source: "company" },
+      ],
+    });
+
+    const statValue = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
+    const statSub = (label: string) => screen.getByText(label).nextElementSibling?.nextElementSibling?.textContent;
+    const typeTexts = () => screen.getAllByTestId("type-row").map((row) => row.textContent);
+    // Each Who-paid row reads: avatar initial, name, "<total> total · <company> company", then what's owed.
+    const payerTexts = () => screen.getAllByTestId("payer-row").map((row) => row.textContent);
+    const figures = () => ({
+      stats: ["Your spend", "Trip total", "Company paid", "From pocket", "Per traveller"]
+        .filter((label) => screen.queryByText(label))
+        .map((label) => [label, statValue(label), statSub(label)]),
+      types: typeTexts(),
+      payers: payerTexts(),
+    });
+
+    beforeEach(() => {
+      realTimeline = true;
+      vi.useRealTimers();
+      vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+    });
+
+    function signInAsUser() {
+      vi.mocked(useAuth).mockReturnValue({ user: { ...me, role: "user" }, isAdmin: false } as any);
+      const base = detail();
+      // As the server counts it for Manas: only his share, and only his own Who-paid row.
+      // Total 800 + 1,650.50 + 1,500.75 = 3,951.25; pocket 800 + 1,250.50 = 2,050.50;
+      // company 400 + 1,500.75 = 1,900.75.
+      response = detail({
+        trip: { ...base.trip, canManage: false, expenseCount: 3, totalAmount: 3951.25 },
+        expenses: [metro, dinner, pune],
+        summary: {
+          totalAmount: 3951.25,
+          expenseCount: 3,
+          pocketAmount: 2050.5,
+          companyAmount: 1900.75,
+          byType: [
+            { travelType: "food", total: 1650.5, count: 1 },
+            { travelType: "stay", total: 1500.75, count: 1 },
+            { travelType: "cab", total: 800, count: 1 },
+          ],
+          byPayer: [{ user: me, totalSpend: 3951.25, pocketSpend: 2050.5, companySpend: 1900.75 }],
+        },
+      });
+    }
+
+    it("offers edit, remove and delete only on the expenses the user submitted", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      signInAsUser();
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+
+      expect(timelineProps).toHaveBeenLastCalledWith(expect.objectContaining({ canModify: expect.any(Function) }));
+      for (const expense of [metro, dinner]) {
+        expect(screen.getByRole("link", { name: `Edit ${expense.title}` })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: `Remove ${expense.title} from trip` })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: `Delete ${expense.title}` })).toBeInTheDocument();
+      }
+      expect(screen.getByRole("button", { name: "Hotel Pune" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Edit Hotel Pune" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Remove Hotel Pune from trip" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete Hotel Pune" })).not.toBeInTheDocument();
+
+      // Opened, Priya's hotel is read-only to him.
+      await user.click(screen.getByRole("button", { name: "Hotel Pune" }));
+      const hotelDetail = document.getElementById(`expense-detail-${pune._id}`)!;
+      expect(hotelDetail).toBeInTheDocument();
+      expect(within(hotelDetail).queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+      expect(within(hotelDetail).queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+      expect(within(hotelDetail).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+
+      // His own shared dinner opens with its actions.
+      await user.click(screen.getByRole("button", { name: "Client dinner" }));
+      const dinnerDetail = document.getElementById(`expense-detail-${dinner._id}`)!;
+      expect(within(dinnerDetail).getByRole("link", { name: "Edit" })).toBeInTheDocument();
+      expect(within(dinnerDetail).getByRole("button", { name: "Remove from trip" })).toBeInTheDocument();
+      expect(within(dinnerDetail).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    });
+
+    it("takes only the user's own share of a deleted shared bill off their totals, and undo restores them", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      signInAsUser();
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+
+      // 4 days (27–30 Oct): 3,951.25 / 4 = 987.8125.
+      expect(statValue("Your spend")).toBe("₹3,951.25");
+      expect(statSub("Your spend")).toBe("3 expenses · ≈ ₹987.81 per day");
+      expect(statValue("From pocket")).toBe("₹2,050.50");
+      expect(statValue("Company paid")).toBe("₹1,900.75");
+      expect(screen.queryByText("Per traveller")).not.toBeInTheDocument();
+      const types = screen.getAllByTestId("type-row");
+      expect(types).toHaveLength(3);
+      expect(types[0]).toHaveTextContent(/^Food & drinks1 item41\.8%₹1,650\.50/);
+      expect(types[1]).toHaveTextContent(/^Stay1 item38\.0%₹1,500\.75/);
+      expect(types[2]).toHaveTextContent(/^Cab \/ local1 item20\.2%₹800\.00/);
+      expect(payerTexts()).toEqual(["MManas₹3,951.25 total · ₹1,900.75 companyOwed₹2,050.50"]);
+      const before = figures();
+
+      await user.click(screen.getByRole("button", { name: "Delete Client dinner" }));
+
+      // His share of the dinner is ₹1,650.50: ₹1,250.50 pocket + ₹400.00 company.
+      expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("Client dinner");
+      expect(statValue("Your spend")).toBe("₹2,300.75");
+      expect(statSub("Your spend")).toBe("2 expenses · ≈ ₹575.19 per day");
+      expect(statValue("From pocket")).toBe("₹800.00");
+      expect(statValue("Company paid")).toBe("₹1,500.75");
+      const after = screen.getAllByTestId("type-row");
+      expect(after).toHaveLength(2);
+      expect(after[0]).toHaveTextContent(/^Stay1 item65\.2%₹1,500\.75/);
+      expect(after[1]).toHaveTextContent(/^Cab \/ local1 item34\.8%₹800\.00/);
+      expect(payerTexts()).toEqual(["MManas₹2,300.75 total · ₹1,500.75 companyOwed₹800.00"]);
+      expect(api.delete).not.toHaveBeenCalled();
+
+      const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "Client dinner"')?.[2];
+      act(() => options.action.onClick());
+
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Client dinner");
+      expect(figures()).toEqual(before);
+      expect(statValue("Your spend")).toBe("₹3,951.25");
+      expect(statValue("From pocket")).toBe("₹2,050.50");
+      expect(statValue("Company paid")).toBe("₹1,900.75");
+      expect(payerTexts()).toEqual(["MManas₹3,951.25 total · ₹1,900.75 companyOwed₹2,050.50"]);
+      await act(async () => {
+        vi.advanceTimersByTime(6000);
+      });
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("takes the whole bill, and each payer's share, off an admin's totals", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const base = detail();
+      // Whole expenses: total 800 + 3,000 + 5,500.75 = 9,300.75; pocket 800 + 2,600 + 4,000 = 7,400;
+      // company 400 + 1,500.75 = 1,900.75. Priya: 1,349.50 + 4,000 pocket. Manas: 2,050.50 pocket,
+      // 1,900.75 company.
+      response = detail({
+        trip: { ...base.trip, expenseCount: 3, totalAmount: 9300.75 },
+        expenses: [metro, dinner, pune],
+        summary: {
+          totalAmount: 9300.75,
+          expenseCount: 3,
+          pocketAmount: 7400,
+          companyAmount: 1900.75,
+          byType: [
+            { travelType: "stay", total: 5500.75, count: 1 },
+            { travelType: "food", total: 3000, count: 1 },
+            { travelType: "cab", total: 800, count: 1 },
+          ],
+          byPayer: [
+            { user: priya, totalSpend: 5349.5, pocketSpend: 5349.5, companySpend: 0 },
+            { user: me, totalSpend: 3951.25, pocketSpend: 2050.5, companySpend: 1900.75 },
+          ],
+        },
+      });
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+
+      // An admin may change any of them.
+      for (const expense of [metro, dinner, pune]) {
+        expect(screen.getByRole("button", { name: `Delete ${expense.title}` })).toBeInTheDocument();
+      }
+      expect(statValue("Trip total")).toBe("₹9,300.75");
+      expect(statValue("From pocket")).toBe("₹7,400.00");
+      expect(statValue("Company paid")).toBe("₹1,900.75");
+      // 9,300.75 / 2 = 4,650.375.
+      expect(statValue("Per traveller")).toBe("₹4,650.38");
+      expect(payerTexts()).toEqual([
+        "PPriya₹5,349.50 total · ₹0.00 companyOwed₹5,349.50",
+        "MManas₹3,951.25 total · ₹1,900.75 companyOwed₹2,050.50",
+      ]);
+      const before = figures();
+
+      await user.click(screen.getByRole("button", { name: "Delete Client dinner" }));
+
+      expect(statValue("Trip total")).toBe("₹6,300.75");
+      expect(statSub("Trip total")).toBe("2 expenses · ≈ ₹1,575.19 per day");
+      expect(statValue("From pocket")).toBe("₹4,800.00");
+      expect(statValue("Company paid")).toBe("₹1,500.75");
+      // 6,300.75 / 2 = 3,150.375.
+      expect(statValue("Per traveller")).toBe("₹3,150.38");
+      const types = screen.getAllByTestId("type-row");
+      expect(types).toHaveLength(2);
+      expect(types[0]).toHaveTextContent(/^Stay1 item87\.3%₹5,500\.75/);
+      expect(types[1]).toHaveTextContent(/^Cab \/ local1 item12\.7%₹800\.00/);
+      expect(payerTexts()).toEqual([
+        "PPriya₹4,000.00 total · ₹0.00 companyOwed₹4,000.00",
+        "MManas₹2,300.75 total · ₹1,500.75 companyOwed₹800.00",
+      ]);
+      expect(api.delete).not.toHaveBeenCalled();
+
+      const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "Client dinner"')?.[2];
+      act(() => options.action.onClick());
+      expect(figures()).toEqual(before);
+    });
   });
 });
