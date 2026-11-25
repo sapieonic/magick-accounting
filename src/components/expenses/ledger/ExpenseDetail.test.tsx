@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import ExpenseDetail from "./ExpenseDetail";
 import { api } from "@/lib/api";
 import type { ExpenseListItem } from "@/types/expense";
@@ -73,5 +73,139 @@ describe("ExpenseDetail receipt preview", () => {
     const receipt = screen.getByRole("region", { name: "Receipt" });
     const fields = screen.getByText("Submitted by");
     expect(receipt.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("ExpenseDetail approval", () => {
+  const pending: ExpenseListItem = {
+    ...expense,
+    receiptKey: undefined,
+    receiptFilename: undefined,
+    approvalStatus: "pending",
+    createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+  };
+
+  it("gives admins Approve and Reject… on a pending expense, with who sent it and when", () => {
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    render(<ExpenseDetail expense={pending} editHref="/edit" review={{ onApprove, onReject, viewerId: "admin" }} />);
+
+    const notice = screen.getByRole("status");
+    expect(within(notice).getByText("Awaiting approval")).toBeInTheDocument();
+    expect(within(notice).getByText("Submitted by Manas Nilorout 3 days ago. Not in totals yet.")).toBeInTheDocument();
+    fireEvent.click(within(notice).getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalledWith(pending);
+    fireEvent.click(within(notice).getByRole("button", { name: "Reject…" }));
+    expect(onReject).toHaveBeenCalledWith(pending);
+  });
+
+  it("tells the submitter what happens next, without review buttons", () => {
+    render(<ExpenseDetail expense={pending} editHref="/edit" review={{ viewerId: "u1", onResubmit: vi.fn() }} />);
+    expect(screen.getByText(/An admin will review this. It isn.t included in company totals until it.s approved./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject…" })).not.toBeInTheDocument();
+  });
+
+  it("shows no review buttons on an approved expense, just who approved it", () => {
+    render(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalStatus: "approved",
+          reviewedBy: { _id: "p", name: "Priya" },
+          reviewedAt: "2026-11-12T09:00:00.000Z",
+        }}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn() }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByText("Approved by Priya on 12 Nov")).toBeInTheDocument();
+  });
+
+  it("calls a legacy expense simply approved, and an admin's own entry approved automatically", () => {
+    const { rerender } = render(<ExpenseDetail expense={{ ...pending, approvalStatus: undefined }} editHref="/edit" />);
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    rerender(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalStatus: "approved",
+          approvalHistory: [{ action: "auto_approved", by: "u1", at: "2026-11-12T09:00:00.000Z", note: null }],
+        }}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByText("Added by an admin, approved automatically")).toBeInTheDocument();
+  });
+
+  it("shows a rejection's reason and, to its submitter, Edit & resubmit and Resubmit as is…", () => {
+    const onResubmit = vi.fn();
+    const rejected: ExpenseListItem = {
+      ...pending,
+      approvalStatus: "rejected",
+      reviewedBy: { _id: "p", name: "Priya" },
+      reviewedAt: "2026-11-12T09:00:00.000Z",
+      rejectionReason: "Receipt missing or unreadable",
+    };
+    render(<ExpenseDetail expense={rejected} editHref="/edit" review={{ viewerId: "u1", onResubmit }} />);
+
+    const notice = screen.getByRole("status");
+    expect(within(notice).getByText("Priya rejected this on 12 Nov.")).toBeInTheDocument();
+    expect(within(notice).getByText("Receipt missing or unreadable")).toBeInTheDocument();
+    expect(within(notice).getByText(/What next: fix the details and resubmit/)).toBeInTheDocument();
+    expect(within(notice).getByRole("link", { name: "Edit & resubmit" })).toHaveAttribute("href", "/edit");
+    fireEvent.click(within(notice).getByRole("button", { name: "Resubmit as is…" }));
+    expect(onResubmit).toHaveBeenCalledWith(rejected);
+    // The plain Edit button would only repeat "Edit & resubmit".
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("doesn't offer an admin the submitter's resubmit actions", () => {
+    render(
+      <ExpenseDetail
+        expense={{ ...pending, approvalStatus: "rejected", rejectionReason: "Duplicate" }}
+        editHref="/edit"
+        review={{ viewerId: "admin", onApprove: vi.fn(), onReject: vi.fn(), onResubmit: vi.fn() }}
+      />
+    );
+    expect(screen.getByText("Duplicate")).toBeInTheDocument();
+    expect(screen.getByText(/Manas Nilorout can fix it and resubmit/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Edit & resubmit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("shows reviewers the submitter's note on a resubmission, and the approval history", () => {
+    render(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalHistory: [
+            { action: "submitted", by: "u1", at: "2026-11-10T09:00:00.000Z", note: null },
+            { action: "rejected", by: { _id: "p", name: "Priya" }, at: "2026-11-12T09:00:00.000Z", note: "Not a business expense" },
+            { action: "resubmitted", by: "u1", at: "2026-11-13T09:00:00.000Z", note: "Client was at the dinner" },
+          ],
+        }}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn() }}
+      />
+    );
+    expect(screen.getByText(/Note from Manas Nilorout:/)).toHaveTextContent("Note from Manas Nilorout: Client was at the dinner");
+    expect(screen.getByText("Approval history (3)")).toBeInTheDocument();
+    expect(screen.getByText("Rejected · Priya · 12 Nov")).toBeInTheDocument();
+    expect(screen.getByText("Submitted · Manas Nilorout · 10 Nov")).toBeInTheDocument();
+  });
+
+  it("turns off the buttons while a review of this expense is pending", () => {
+    render(
+      <ExpenseDetail
+        expense={pending}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn(), inFlight: { "exp-1": "approve" }, shortcuts: true }}
+      />
+    );
+    const approve = screen.getByRole("button", { name: "Approve" });
+    expect(approve).toBeDisabled();
+    expect(approve).toHaveAttribute("aria-keyshortcuts", "A");
   });
 });

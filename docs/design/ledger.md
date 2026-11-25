@@ -73,7 +73,8 @@ delete icons in rows), `size?`, `loading?` (spinner in place of the icon, disabl
 </StatBand>
 ```
 `Stat`: `label`, `value` (pre-formatted), `sub?`, `icon?`, `tone?: "default" | "amber"` (amber colours the figure
-and icon; default has an indigo icon), `headline?`. Stats are top-aligned, so one without `sub` lines up with its
+and icon; default has an indigo icon), `headline?`, `action?` (a `textButtonClass` link or button under `sub` that acts
+on the figure, e.g. "Review" on "Awaiting approval"). Stats are top-aligned, so one without `sub` lines up with its
 neighbours. Figures are nowrap and sized with container units, so they shrink instead of clipping. `BandCell` (`label`,
 children) is a band cell for content that isn't one figure: a `SplitBar`, a budget meter.
 
@@ -123,7 +124,8 @@ of fields, stacked with 16px gaps), `FieldGrid` (`min?` px, default 200: auto-fi
 every side-by-side field row), `SectionRow` (`min?`: sections side by side, split by a rule), `FormFooter`
 (the sticky action strip at the foot of a form sheet, at `bottom: var(--tabbar-h)`, so just above the mobile
 tab bar and at the edge from `lg`; while mounted it publishes its measured height, which grows when it wraps,
-as `--form-footer-h` on `<html>` for fixed layers such as toasts).
+as `--form-footer-h` on `<html>` for fixed layers such as toasts; `role?` + `aria-label?` name a strip that
+isn't a form's, as `BulkBar` does).
 
 `Checkbox` (`checked`, `partial?` for a "select all" dash, `className?`): the visual 16px box only
 (`border-control-line`; checked = accent fill + tick), `aria-hidden`. Use it wherever a checkbox shows: inside a
@@ -135,6 +137,11 @@ style a native checkbox with `accent-*` instead.
 `Chip` (44px toggle filter, `aria-pressed`): `pressed?`, `icon?` + button props; with `role="radio"` (inside a
 `radiogroup`) it reports `aria-checked` instead. `RemovableChip` (`onRemove`, `removeLabel?`, children): a picked
 value or active filter; the whole chip removes it. `Dot`: `tone?` (7px legend dot). All from `@/components/ui/Badge`.
+
+`Notice` (`@/components/ui/Notice`): `tone?: "neutral" | "danger" | "success"`, `icon?`, `title` (one line: what
+the state is), `children?` (why, and what to do next), `actions?`, `className?`. A ruled `rounded-panel border` box on
+`bg-sunk` / `bg-danger-soft` / `bg-success-soft`, no shadow, always icon + words; `role="status"` (polite) for every
+tone, since it describes the state the page loaded in.
 
 `Avatar`: `name?`, `photoURL?`, `size?: 24 | 28 | 32 | 36 | 56` (default 32), `tone?: "accent" | "amber" | "rail"`,
 `title?`. Decorative: print the name beside it. `initials(name)` → first + last initial, `"?"` when empty.
@@ -185,7 +192,8 @@ buttons), `ledgerPad(nested?)` (ledger row padding), `transition`,
 `className` can't override a class the primitive already sets; add a prop or variant instead).
 `useMediaQuery(query)` lives in `@/hooks/useMediaQuery`.
 
-Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState`, `Skeleton` (+ page skeletons),
+Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState` (`headingRef?` makes its heading
+focusable, to move focus there when a list empties), `Skeleton` (+ page skeletons),
 `Spinner` (`decorative` when visible text says what is loading; `tone?: "accent" | "current"`, `current` inside
 buttons) / `InlineLoader` (one status, named by its label),
 `Toast` (`toast(message, type?, { action?, durationMs? })` from `useToast`; at the bottom: full width with 16px
@@ -201,7 +209,11 @@ mounted `FormFooter`, so a focused field never scrolls under them,
 `dashboard/layout.tsx` renders the rail (`Sidebar`, 232px, collapsible to 72px), the top bar (`Header`:
 section context, ⌘K search, theme, New expense) and on phones the `MobileTabBar` (Overview, Expenses,
 Add, Trips, More → drawer; More is highlighted on pages only the drawer links to). Nav items live in
-`src/components/layout/nav.ts` (shared with ⌘K). Pages
+`src/components/layout/nav.ts` (shared with ⌘K). For admins the Approvals link carries the awaiting-approval count
+(`ApprovalCountContext`, provided by the layout; read on mount, route change and window focus, never polled): a
+`bg-rail-mark` pill on the wide rail ("99+" past 99), a dot on the icon-only rail (count in the tooltip), and a dot on
+the phone's More. The number is always in the accessible name ("Approvals, 4 awaiting approval", "More, 4 approvals
+waiting"); the pill and dots are `aria-hidden`. Pages
 render straight into `<main>`; **do not** add a max-width wrapper or page padding of your own, and start
 each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the page root, plus
 `animate-fade-in` (every page root fades in the same way; reduced motion turns it off).
@@ -221,6 +233,58 @@ each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the pa
   they show: they never cover the title or category.
 - Touch targets ≥ 44px (40px minimum for dense secondary controls).
 - Copy is sentence case everywhere: buttons, dialog titles, labels ("Add department", "Update rate").
+
+## Expense approvals
+
+Vocabulary (labels from `APPROVAL_LABEL` in `@/lib/approval`; never colour alone, always icon + words):
+
+| State | Badge | Where |
+| --- | --- | --- |
+| Awaiting approval | neutral + `Clock3` (not amber: amber means pocket/owed) | rows, detail |
+| Rejected | danger + `CircleX` | rows, detail |
+| Approved | success + `CircleCheck` | detail only; rows carry a badge only when *not* approved |
+
+`ApprovalBadge` (`@/components/expenses/ApprovalBadge`: `status?`, `hideApproved?` default true, `className?`) renders
+these; a missing status is legacy, so approved. Explainers say what happens next in plain words: pending (submitter)
+"An admin will review this. It isn't included in company totals until it's approved."; pending (admin) "Submitted by
+{name} {6 days ago}. Not in totals yet."; rejected "{Reviewer} rejected this on {date}." + the reason as a quote +
+"What next: …"; approved "Approved by {name} on {date}" / "Added by an admin, approved automatically" / "Approved".
+Totals count approved spend only, so anything else is shown as not counted: a pending row's amount is `text-ink-3`, a
+rejected one also `line-through`, each with sr-only "(awaiting approval, not in totals)" / "(rejected, not in totals)".
+
+`ExpenseRow` (`@/components/expenses/ledger/ExpenseRow`): the approval badge sits first in the sub-line. `variant="review"`
+(the review queue) adds "submitted {relative}" to the sub-line, drops the badge (every row there is pending), and with
+`selection?: { checked, onToggle, label, keyShortcut? }` a leading checkbox column: an sr-only native checkbox named
+"Select {title}, {amount}" in a 44px `<label>` with the `Checkbox` visual, `relative z-10` above the row's title-button
+layer, so ticking never opens the row. `LedgerHead`'s `select?` slot takes a `SelectAllCheckbox` (`selected`, `total`,
+`onToggle`; partial = indeterminate) and then stays visible at every width. Rows carry `data-expense-row={id}` and their
+title button `data-row-title`, for moving focus to a row.
+
+`ExpenseDetail` takes `review?: ExpenseReviewActions` (`onApprove?`, `onReject?`, `onResubmit?`, `viewerId?`,
+`inFlight?`, `shortcuts?`; build it with `useApprovalActions().handlers` and pass it through rows and clusters as is).
+Its approval block comes first: a `Notice` while pending (admins get Approve + Reject…, and the submitter's latest
+resubmission note) or rejected (its submitter gets "Edit & resubmit" + "Resubmit as is…"), else an "Approval" row in
+the `DetailList`. With two or more entries the approval history folds under "Approval history (n)".
+
+`@/components/approvals`: `RejectDialog` (`isOpen`, `expenses`, `onClose`, `onConfirm(reason)`: a required reason of
+3–500 characters with a counter, and quick-reason `Chip`s that toggle their phrase in the text), `ResubmitDialog`
+(optional note for the reviewer), `ApproveDialog` (confirms a bulk approve with its total; a single approve has no
+dialog, it has Undo), `BulkBar` (`summary`, actions, `label?` default "Selection": the sticky selection strip, a
+`FormFooter` with `role="region"`, above the tab bar), `ShortcutsDialog`, and `approval-format` (relative times,
+reviewer names, the latest resubmission).
+
+`useApprovalActions` (`@/hooks/useApprovalActions`) approves and rejects like a delete: the page hides or re-labels the
+expenses in `inFlight` at once, a toast offers Undo, and the request goes after `UNDO_WINDOW_MS` (or on `flush` /
+unmount; built on the generic `usePendingCommits`, which `usePendingDeletes` also wraps). Conflicts come back in words
+("Asha changed this expense after you opened it — review the latest version.", "Already approved by another admin.",
+"Approved 9 of 10. 1 changed and needs another look."), the expense is re-read and handed to `onUpdated`, and the nav
+count refreshes. Render its `dialogs` once on the page.
+
+Review queue (`/dashboard/approvals`): the Expenses layout (flat ledger + resizable detail panel with the receipt
+large). Approving moves the selection to the next expense and focus to its title (to the empty state's heading when
+none are left). Keyboard, ignored while typing or with a dialog open: J/K or ↓/↑, X, A, R, Esc, ? (listed under
+"Keyboard shortcuts"; each is also a button with `aria-keyshortcuts`). Below `lg`, "Select" shows the checkboxes and a
+sticky strip carries Approve / Reject… for the open expense.
 
 ## Amounts
 

@@ -33,6 +33,8 @@ interface StatProps {
   tone?: StatTone;
   /** The large figure with the indigo wash; use once per band, first. */
   headline?: boolean;
+  /** A link or text button under `sub` that acts on the figure (e.g. "Review"). */
+  action?: ReactNode;
   className?: string;
 }
 
@@ -40,7 +42,7 @@ interface StatProps {
  * One stat in a StatBand. Figures never clip: they are nowrap and sized from
  * the stat's own width (container query units), so long totals shrink to fit.
  */
-export function Stat({ label, value, sub, icon: Icon, tone = "default", headline = false, className }: StatProps) {
+export function Stat({ label, value, sub, icon: Icon, tone = "default", headline = false, action, className }: StatProps) {
   return (
     <div
       className={cn(
@@ -72,6 +74,7 @@ export function Stat({ label, value, sub, icon: Icon, tone = "default", headline
         {value}
       </span>
       {sub && <span className="text-[13px] text-ink-3">{sub}</span>}
+      {action && <div className="-mb-2 flex flex-wrap items-center gap-x-3">{action}</div>}
     </div>
   );
 }

@@ -99,6 +99,18 @@ describe("layout primitives", () => {
     expect(cell).toHaveClass("justify-start");
     expect(cell).not.toHaveClass("justify-between");
   });
+
+  it("puts a stat's action under its sub line", () => {
+    render(
+      <StatBand>
+        <Stat label="Awaiting approval" value="₹4,560.00" sub="3 expenses · not in total" action={<a href="/dashboard/approvals">Review</a>} />
+      </StatBand>
+    );
+    const sub = screen.getByText("3 expenses · not in total");
+    const action = screen.getByRole("link", { name: "Review" });
+    expect(sub.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(action.parentElement?.parentElement).toBe(sub.parentElement);
+  });
 });
 
 describe("SegmentedControl", () => {

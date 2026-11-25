@@ -27,7 +27,9 @@ export default function Notice({ tone = "neutral", icon: Icon, title, children, 
   const t = toneClass[tone];
   return (
     <div
-      role={tone === "danger" ? "alert" : "status"}
+      // Polite for every tone: a notice describes the state the page loaded
+      // in, and an `alert` would interrupt on every visit.
+      role="status"
       className={cn("flex gap-3 rounded-panel border p-3 text-sm text-ink", t.box, className)}
     >
       {Icon && <Icon aria-hidden="true" size={18} strokeWidth={1.75} className={cn("mt-px shrink-0", t.icon)} />}

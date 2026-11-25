@@ -5,10 +5,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import Sidebar from "./Sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePathname } from "next/navigation";
+import { useApprovalCount } from "@/contexts/ApprovalCountContext";
 import pkg from "../../../package.json";
 
 vi.mock("next/navigation", () => ({
   usePathname: vi.fn(),
+}));
+
+vi.mock("@/contexts/ApprovalCountContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/contexts/ApprovalCountContext")>()),
+  useApprovalCount: vi.fn(() => ({ count: 0, pendingAmount: 0, oldestPendingAt: null, refresh: () => {} })),
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -255,5 +261,46 @@ describe("Sidebar", () => {
     expect(active).toHaveAttribute("aria-current", "page");
     expect(active.className).toMatch(/\bring-rail-mark\/\[\.22\]/);
     expect(active.className).not.toMatch(/rgba\(/);
+  });
+
+  describe("approvals count", () => {
+    const withCount = (count: number) =>
+      vi.mocked(useApprovalCount).mockReturnValue({ count, pendingAmount: 0, oldestPendingAt: null, refresh: () => {} });
+
+    it("lists Approvals first among the admin links, with a pill and the count in its name", () => {
+      withCount(4);
+      const { container } = render(<Sidebar open={false} onClose={() => {}} />);
+      const rail = container.querySelector("aside")!;
+      const link = within(rail).getByRole("link", { name: "Approvals, 4 awaiting approval" });
+      expect(link).toHaveAttribute("href", "/dashboard/approvals");
+      expect(within(link).getByText("4")).toHaveAttribute("aria-hidden", "true");
+      const labels = within(rail).getAllByRole("link").map((a) => a.getAttribute("href"));
+      expect(labels.indexOf("/dashboard/approvals")).toBe(labels.indexOf("/dashboard/invoices") - 1);
+    });
+
+    it("shows a dot on the icon-only rail, with the count in the tooltip", () => {
+      withCount(120);
+      localStorage.setItem("sidebar-collapsed", "true");
+      const { container } = render(<Sidebar open={false} onClose={() => {}} />);
+      const link = within(container.querySelector("aside")!).getByRole("link", { name: "Approvals, 120 awaiting approval" });
+      expect(link).toHaveAttribute("title", "Approvals (120 awaiting approval)");
+      expect(within(link).getByTestId("rail-count-dot")).toBeInTheDocument();
+    });
+
+    it("caps the pill at 99+ and drops it when nothing is waiting", () => {
+      withCount(120);
+      const { container, rerender } = render(<Sidebar open={false} onClose={() => {}} />);
+      expect(within(container.querySelector("aside")!).getByText("99+")).toBeInTheDocument();
+      withCount(0);
+      rerender(<Sidebar open={false} onClose={() => {}} />);
+      expect(screen.getByRole("link", { name: "Approvals" })).toBeInTheDocument();
+    });
+
+    it("never shows Approvals to non-admins", () => {
+      withCount(0);
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as any);
+      render(<Sidebar open={false} onClose={() => {}} />);
+      expect(screen.queryByRole("link", { name: /Approvals/ })).not.toBeInTheDocument();
+    });
   });
 });
