@@ -75,7 +75,7 @@ describe("TripCluster", () => {
     ]);
 
     expect(screen.getByText("₹20,000.00")).toBeInTheDocument();
-    expect(screen.getByText("+₹650.00 pending")).toBeInTheDocument();
+    expect(screen.getByText("+₹650.00 awaiting approval")).toBeInTheDocument();
     // The count still lists every expense in the cluster.
     expect(screen.getByText("4 expenses")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Goa client visit/ })).toHaveAccessibleName(
@@ -87,7 +87,7 @@ describe("TripCluster", () => {
     renderCluster([makeExpense({ _id: "hotel", amount: 8000, amountInBaseCurrency: 8000, approvalStatus: "approved" })]);
 
     expect(screen.getByText("₹8,000.00")).toBeInTheDocument();
-    expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/awaiting approval|pending/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Goa client visit/ })).toHaveAccessibleName(/₹8,000\.00$/);
   });
 

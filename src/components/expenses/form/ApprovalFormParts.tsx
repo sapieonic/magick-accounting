@@ -1,26 +1,12 @@
 import Link from "next/link";
-import { format } from "date-fns";
 import { CircleCheck, CircleX, Clock3 } from "lucide-react";
 import Notice from "@/components/ui/Notice";
 import FormSection from "@/components/ui/FormSection";
-import { inlineLinkClass } from "@/components/ui/styles";
+import { textButtonClass } from "@/components/ui/styles";
+import { APPROVALS_HREF } from "@/components/layout/nav";
+import { approvalDate, personName, systemNoteText } from "@/components/approvals/approval-format";
 import { APPROVAL_HISTORY_LABEL, type ApprovalStatus } from "@/lib/approval";
 import type { ApprovalHistoryItem } from "@/types/expense";
-
-type PersonRef = { _id: string; name?: string; email?: string } | string | null | undefined;
-
-/** A populated person's name; ids alone (unpopulated) give `fallback`. */
-export function personName(person: PersonRef, fallback = "Someone"): string {
-  if (person && typeof person === "object") return person.name || person.email || fallback;
-  return fallback;
-}
-
-/** "12 Nov 2026"; `null` for a missing or invalid date. */
-export function approvalDate(value: string | Date | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : format(date, "d MMM yyyy");
-}
 
 /** The approval facts the edit form shows, read off `GET /api/expenses/[id]`. */
 export interface EditApprovalState {
@@ -36,6 +22,8 @@ interface EditApprovalNoticeProps {
   approval: EditApprovalState;
   /** The signed-in person can review (admin), as opposed to the submitter editing their own. */
   isReviewer: boolean;
+  /** An admin editing their own expense: another admin has to review it. */
+  ownExpense?: boolean;
   /** The accounting fields are locked (linked assets), so editing can't send it back for approval. */
   accountingLocked?: boolean;
 }
@@ -45,7 +33,12 @@ interface EditApprovalNoticeProps {
  * and what to do, what sends an approved one back for approval, or that a
  * pending one is still waiting. Nothing for an admin's approved expense.
  */
-export function EditApprovalNotice({ approval, isReviewer, accountingLocked = false }: EditApprovalNoticeProps) {
+export function EditApprovalNotice({
+  approval,
+  isReviewer,
+  ownExpense = false,
+  accountingLocked = false,
+}: EditApprovalNoticeProps) {
   const { status } = approval;
   if (status === "rejected") {
     const date = approvalDate(approval.reviewedAt);
@@ -74,15 +67,17 @@ export function EditApprovalNotice({ approval, isReviewer, accountingLocked = fa
         icon={Clock3}
         title="Awaiting approval"
         actions={
-          isReviewer ? (
-            <Link href="/dashboard/approvals" className={inlineLinkClass}>
+          isReviewer && !ownExpense ? (
+            <Link href={APPROVALS_HREF} className={textButtonClass}>
               Review it in Approvals
             </Link>
           ) : undefined
         }
       >
         {isReviewer
-          ? "Saving changes doesn't approve it. It isn't included in company totals until it's approved."
+          ? ownExpense
+            ? "Another admin needs to review this — you can't approve your own expense. It isn't included in company totals until it's approved."
+            : "Saving changes doesn't approve it. It isn't included in company totals until it's approved."
           : "An admin hasn't reviewed this expense yet. Your changes will be reviewed along with it."}
       </Notice>
     );
@@ -96,7 +91,11 @@ export function EditApprovalNotice({ approval, isReviewer, accountingLocked = fa
   );
 }
 
-/** Read-only audit trail: "Submitted · Asha · 10 Nov 2026", "Rejected · Priya · 12 Nov 2026 · “Receipt missing”". */
+/**
+ * Read-only audit trail: "Submitted · Asha · 10 Nov 2026", "Rejected · Priya ·
+ * 12 Nov 2026" with the reason quoted. A note the server wrote itself (an edit
+ * that sent it back) is a plain event, never quoted as the person's words.
+ */
 export function ApprovalHistorySection({ history }: { history: ApprovalHistoryItem[] }) {
   if (history.length === 0) return null;
   return (
@@ -104,13 +103,15 @@ export function ApprovalHistorySection({ history }: { history: ApprovalHistoryIt
       <ol className="flex flex-col gap-2 text-[13px]">
         {history.map((entry, index) => {
           const date = approvalDate(entry.at);
+          const name = personName(entry.by, "Someone");
+          const event = systemNoteText(entry.note);
           return (
             <li key={`${entry.action}-${String(entry.at)}-${index}`} className="flex flex-col gap-0.5">
               <span className="text-ink">
                 <span className="font-medium">{APPROVAL_HISTORY_LABEL[entry.action] ?? entry.action}</span>
                 <span className="text-ink-3">
                   {" · "}
-                  {personName(entry.by)}
+                  {name}
                   {date && (
                     <>
                       {" · "}
@@ -121,7 +122,11 @@ export function ApprovalHistorySection({ history }: { history: ApprovalHistoryIt
                   )}
                 </span>
               </span>
-              {entry.note && <span className="text-ink-2 [overflow-wrap:anywhere]">“{entry.note}”</span>}
+              {event ? (
+                <span className="text-ink-2">{`${name} ${event}.`}</span>
+              ) : (
+                entry.note && <span className="text-ink-2 [overflow-wrap:anywhere]">“{entry.note}”</span>
+              )}
             </li>
           );
         })}

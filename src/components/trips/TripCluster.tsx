@@ -111,7 +111,7 @@ export default function TripCluster({
     }
     return { total: roundMoney(approved), pendingTotal: roundMoney(pending) };
   }, [expenses]);
-  const pendingLabel = pendingTotal > 0 ? `+${formatBaseCurrency(pendingTotal)} pending` : null;
+  const pendingLabel = pendingTotal > 0 ? `+${formatBaseCurrency(pendingTotal)} awaiting approval` : null;
   const missingReceipts = expenses.filter((e) => !e.receiptKey).length;
   const dates = formatTripDates(trip);
   const count = expenses.length;

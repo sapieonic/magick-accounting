@@ -3,14 +3,24 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import EditExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 
-/** The Notice (a polite status region) whose text includes `text`. */
+/**
+ * The innermost Notice whose text includes `text`. Notices are found by their
+ * `data-notice` marker, or by the live role they had before it, so the test
+ * doesn't depend on which one the primitive uses.
+ */
+function queryNotice(text: string): HTMLElement | null {
+  const notices = [...document.querySelectorAll<HTMLElement>("[data-notice], [role=status]")].filter((el) =>
+    el.textContent?.includes(text)
+  );
+  // The innermost match: a notice, not a region that happens to contain one.
+  return notices.find((el) => !notices.some((other) => other !== el && el.contains(other))) ?? null;
+}
+
 async function findNotice(text: string): Promise<HTMLElement> {
   return waitFor(() => {
-    const notice = screen
-      .queryAllByRole("status")
-      .find((region) => region.textContent?.includes(text));
+    const notice = queryNotice(text);
     if (!notice) throw new Error(`No notice containing "${text}"`);
     return notice;
   });
@@ -45,10 +55,12 @@ vi.mock("@/hooks/useTitle", () => ({
   useTitle: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("@/lib/api")>()).ApiError,
   api: {
     get: vi.fn(),
     put: vi.fn(),
+    post: vi.fn(),
     delete: vi.fn(),
     postFormData: vi.fn(),
   },
@@ -559,9 +571,150 @@ describe("EditExpensePage approval", () => {
     expect(within(notice).getByText("Receipt missing")).toBeInTheDocument();
     expect(notice).toHaveTextContent("What next: fix the details below and resubmit it, or delete it if it was a mistake.");
 
+    // A fix first: the save itself resubmits it.
+    await user.type(screen.getByLabelText(/^description/i), "Receipt attached");
+    expect(screen.getByText(/saving resubmits this expense/i)).toBeInTheDocument();
     await user.click(submitButton("Resubmit for approval"));
     await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.post).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledWith("Resubmitted. An admin will review it again.");
+  });
+
+  it("resubmits an unchanged rejected expense as is, through the approval route", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({ expense: { ...rejected, approvalStatus: "pending" } });
+    mockExpense({ ...rejected, assetAllocationRevision: 4 });
+    render(<EditExpensePage />);
+
+    await findNotice("Rejected by Priya");
+    // Says what an unchanged resubmit means before it's pressed.
+    expect(screen.getByText(/you haven't changed anything, so this sends it back as it is/i)).toBeInTheDocument();
+    await user.click(submitButton("Resubmit for approval"));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/expenses/expense-1/approval", { action: "resubmit", revision: 4 })
+    );
+    expect(api.put).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith("Resubmitted. An admin will review it again.");
+    expect(router.push).toHaveBeenCalledWith("/dashboard/expenses");
+  });
+
+  it("sends the loaded revision with the save", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...ownExpense, approvalStatus: "pending", assetAllocationRevision: 7 });
+    render(<EditExpensePage />);
+
+    await user.type(await screen.findByLabelText(/^title/i), " (taxi)");
+    await user.click(submitButton("Save changes"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith("/api/expenses/expense-1", expect.objectContaining({ revision: 7 }));
+  });
+
+  it("re-reads a conflicting save, keeps the edits, shows the new status and explains", async () => {
+    const user = userEvent.setup();
+    const pending = { ...ownExpense, approvalStatus: "pending", assetAllocationRevision: 2 };
+    // An admin rejected it while the form was open.
+    const rejectedMeanwhile = { ...rejected, assetAllocationRevision: 3 };
+    let reads = 0;
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.startsWith("/api/expenses/")) {
+        reads += 1;
+        return Promise.resolve({ expense: reads === 1 ? pending : rejectedMeanwhile, assets: [] });
+      }
+      if (url.startsWith("/api/lookups")) {
+        return Promise.resolve({
+          departments: [{ _id: "department-1", name: "Engineering" }],
+          categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+          currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+        });
+      }
+      return Promise.resolve({ trips: [] });
+    });
+    vi.mocked(api.put).mockRejectedValueOnce(
+      new ApiError("This expense changed while you were editing it", 409, { code: "stale", approvalStatus: "rejected" })
+    );
+    render(<EditExpensePage />);
+
+    await findNotice("Awaiting approval");
+    const amount = screen.getByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "1200");
+    await user.click(submitButton("Save changes"));
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        "An admin rejected this while you were editing. Your changes aren't saved yet: review them and save again.",
+        "error"
+      )
+    );
+    expect(router.push).not.toHaveBeenCalled();
+    // The Notice now says why it was rejected; the edit is still there.
+    const notice = await findNotice("Rejected by Priya");
+    expect(within(notice).getByText("Receipt missing")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^amount/i)).toHaveValue(1200);
+    expect(submitButton("Resubmit for approval")).toBeInTheDocument();
+
+    // Saving again sends the new revision, and the toast follows the server's answer.
+    vi.mocked(api.put).mockResolvedValueOnce({ expense: { approvalStatus: "pending" } });
+    await user.click(submitButton("Resubmit for approval"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2));
+    expect(api.put).toHaveBeenLastCalledWith("/api/expenses/expense-1", expect.objectContaining({ revision: 3, amount: 1200 }));
+    expect(toastMock).toHaveBeenLastCalledWith("Resubmitted. An admin will review it again.");
+  });
+
+  it("builds the save message from the server's answer, not the loaded status", async () => {
+    const user = userEvent.setup();
+    // Loaded approved, title-only change: the server still says it went back for approval.
+    vi.mocked(api.put).mockResolvedValue({ expense: { approvalStatus: "pending" } });
+    mockExpense({ ...ownExpense, approvalStatus: "approved" });
+    render(<EditExpensePage />);
+
+    await user.type(await screen.findByLabelText(/^title/i), " with client");
+    await user.click(submitButton("Save changes"));
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith("Saved and sent back for approval. An admin will review your changes.")
+    );
+  });
+
+  it("tells an admin editing their own pending expense that another admin reviews it", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: true } as any);
+    mockExpense({ ...ownExpense, approvalStatus: "pending" });
+    render(<EditExpensePage />);
+
+    const notice = await findNotice("Awaiting approval");
+    expect(notice).toHaveTextContent("Another admin needs to review this — you can't approve your own expense.");
+    expect(within(notice).queryByRole("link", { name: /review it in approvals/i })).not.toBeInTheDocument();
+  });
+
+  it("links another admin to the queue with a full-size target", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: priya, isAdmin: true } as any);
+    mockExpense({ ...ownExpense, approvalStatus: "pending" });
+    render(<EditExpensePage />);
+
+    const notice = await findNotice("Awaiting approval");
+    const link = within(notice).getByRole("link", { name: "Review it in Approvals" });
+    expect(link).toHaveAttribute("href", "/dashboard/approvals");
+    expect(link).toHaveClass("min-h-10");
+  });
+
+  it("shows the server's edit notes in the history as events, not as quotes", async () => {
+    mockExpense({
+      ...ownExpense,
+      approvalStatus: "pending",
+      approvalHistory: [
+        ...rejected.approvalHistory,
+        { action: "resubmitted", by: asha, at: "2026-11-13T09:00:00.000Z", note: "Edited after rejection" },
+        { action: "reopened", by: priya, at: "2026-11-14T09:00:00.000Z", note: null },
+      ],
+    });
+    render(<EditExpensePage />);
+
+    const history = await screen.findByRole("region", { name: "Approval history" });
+    const items = within(history).getAllByRole("listitem");
+    expect(items[2]).toHaveTextContent("Resubmitted · Asha · 13 Nov 2026");
+    expect(items[2]).toHaveTextContent("Asha edited it after it was rejected.");
+    expect(items[2]).not.toHaveTextContent("“");
+    expect(items[3]).toHaveTextContent("Moved back to review · Priya · 14 Nov 2026");
   });
 
   it("lists the approval history, read-only", async () => {
@@ -621,7 +774,7 @@ describe("EditExpensePage approval", () => {
     mockExpense({ ...ownExpense, approvalStatus: "pending" });
     render(<EditExpensePage />);
 
-    const notice = (await screen.findByText("Awaiting approval")).closest("[role=status]")!;
+    const notice = await findNotice("Awaiting approval");
     expect(notice).toHaveTextContent("Your changes will be reviewed along with it.");
 
     const amount = screen.getByLabelText(/^amount/i);

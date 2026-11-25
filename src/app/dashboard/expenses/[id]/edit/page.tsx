@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { Package } from "lucide-react";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,9 +25,9 @@ import ReceiptPanel from "@/components/expenses/form/ReceiptPanel";
 import {
   ApprovalHistorySection,
   EditApprovalNotice,
-  personName,
   type EditApprovalState,
 } from "@/components/expenses/form/ApprovalFormParts";
+import { personName } from "@/components/approvals/approval-format";
 import {
   LOOKUPS_URL,
   MAX_RECEIPT_SIZE,
@@ -46,7 +46,7 @@ import {
   type ExpenseFormValues,
   type ExpenseLookups,
 } from "@/components/expenses/form/types";
-import { effectiveApprovalStatus, type ApprovalStatus } from "@/lib/approval";
+import { effectiveApprovalStatus, statusAfterEdit, type ApprovalStatus } from "@/lib/approval";
 import { formatCurrency } from "@/lib/currency";
 import { storedRateToBase } from "@/lib/expense";
 import { isTravelType } from "@/lib/trip";
@@ -82,15 +82,79 @@ function effectiveValues(values: ExpenseFormValues) {
   return { ...values, payments: paymentDraftsToPayload(values.paymentSource, values.payments) };
 }
 
-/** The toast after a save: what happened to the expense's approval, in plain words. */
-function savedMessage(before: ApprovalStatus, after: ApprovalStatus | null, isReviewer: boolean, accountingChanged: boolean) {
+const RESUBMITTED = "Resubmitted. An admin will review it again.";
+const NOT_SAVED_YET = "Your changes aren't saved yet: review them and save again.";
+
+/**
+ * The toast after a save: what happened to the expense's approval, in plain
+ * words. `after` is the status the server stored (its answer), `before` the
+ * one the form was editing.
+ */
+function savedMessage(before: ApprovalStatus, after: ApprovalStatus, isReviewer: boolean) {
+  // Admin edits never change the status.
   if (isReviewer) return "Expense updated";
-  if (before === "rejected") return "Resubmitted. An admin will review it again.";
-  if (before === "pending") return "Changes saved. It's still awaiting approval.";
-  if (after === "pending" || (after === null && accountingChanged)) {
+  if (after === "pending") {
+    if (before === "rejected") return RESUBMITTED;
+    if (before === "pending") return "Changes saved. It's still awaiting approval.";
     return "Saved and sent back for approval. An admin will review your changes.";
   }
+  if (after === "rejected") return "Changes saved. It's still rejected, so resubmit it when it's ready.";
   return "Expense updated";
+}
+
+/** Why a save was refused because the expense changed meanwhile, from what it changed to. */
+function conflictMessage(before: ApprovalStatus, after: ApprovalStatus): string {
+  if (after !== before) {
+    if (after === "approved") return `An admin approved this while you were editing. ${NOT_SAVED_YET}`;
+    if (after === "rejected") return `An admin rejected this while you were editing. ${NOT_SAVED_YET}`;
+    return `This expense was sent back for review while you were editing. ${NOT_SAVED_YET}`;
+  }
+  return `Someone else saved this expense while you were editing. ${NOT_SAVED_YET}`;
+}
+
+const errorCode = (err: unknown) => (err instanceof ApiError ? err.code : undefined);
+
+/** The approval facts the form shows, read off `GET /api/expenses/[id]`. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function approvalState(exp: any): EditApprovalState {
+  const history: EditApprovalState["history"] = Array.isArray(exp.approvalHistory) ? exp.approvalHistory : [];
+  const lastRejection = [...history].reverse().find((entry) => entry.action === "rejected");
+  return {
+    status: effectiveApprovalStatus(exp),
+    reviewer: exp.reviewedBy || lastRejection ? personName(exp.reviewedBy ?? lastRejection?.by, "an admin") : null,
+    reviewedAt: exp.reviewedAt ?? lastRejection?.at ?? null,
+    reason: exp.rejectionReason ?? lastRejection?.note ?? null,
+    history,
+    submitterName: personName(exp.createdBy, "The submitter"),
+  };
+}
+
+/** The form's values for a stored expense. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formValuesOf(exp: any): ExpenseFormValues {
+  const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
+  const storedTripId: string = (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
+  return {
+    title: exp.title,
+    amount: exp.amount.toString(),
+    gstAmount: exp.gstAmount != null ? exp.gstAmount.toString() : "",
+    currency: exp.currency?._id || "",
+    category: exp.category?._id || "",
+    department: exp.department?._id || "",
+    date: new Date(exp.date).toISOString().split("T")[0],
+    description: exp.description || "",
+    paymentSource: exp.paymentSource || "pocket",
+    pocketAmount: exp.paymentSource === "split" && exp.pocketAmount != null ? exp.pocketAmount.toString() : "",
+    payments: storedPayments.map((entry) =>
+      newPaymentDraft({
+        paidBy: entry.paidBy?._id ?? "",
+        amount: entry.amount.toString(),
+        source: entry.source,
+      })
+    ),
+    trip: storedTripId,
+    travelType: storedTripId && isTravelType(exp.travelType) ? exp.travelType : null,
+  };
 }
 
 /** Company assets bought with this expense, and the way to add more. */
@@ -186,6 +250,9 @@ export default function EditExpensePage() {
   const [savedRate, setSavedRate] = useState<{ currencyId: string; rateToBase: number } | null>(null);
   const [submitter, setSubmitter] = useState<{ _id: string; name?: string; email?: string } | null>(null);
   const [approval, setApproval] = useState<EditApprovalState | null>(null);
+  // The expense's edit revision as loaded: sent with the save, so a review
+  // (or another save) since then is a conflict rather than silently overwritten.
+  const [revision, setRevision] = useState(0);
 
   const [form, setForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
   const [initialForm, setInitialForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
@@ -209,6 +276,8 @@ export default function EditExpensePage() {
     JSON.stringify(effectiveValues(form)) !== JSON.stringify(effectiveValues(initialForm)) || receiptChanged;
   // Mirrors the server: these edits send a submitter's approved expense back for approval.
   const accountingChanged = accountingFieldsChanged(initialForm, form, receiptChanged);
+  // A submitter's rejected expense with nothing changed: "Resubmit" sends it back as it is.
+  const resubmitAsIs = !isAdmin && approval?.status === "rejected" && !isDirty;
   useUnsavedChangesWarning(isDirty && !submitting);
 
   const handleCancel = () => {
@@ -227,40 +296,11 @@ export default function EditExpensePage() {
         const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
         setLinkedAssets(expData.assets || []);
         setSubmitter(exp.createdBy?._id ? exp.createdBy : null);
-        const history: EditApprovalState["history"] = Array.isArray(exp.approvalHistory) ? exp.approvalHistory : [];
-        const lastRejection = [...history].reverse().find((entry) => entry.action === "rejected");
-        setApproval({
-          status: effectiveApprovalStatus(exp),
-          reviewer: exp.reviewedBy || lastRejection ? personName(exp.reviewedBy ?? lastRejection?.by, "an admin") : null,
-          reviewedAt: exp.reviewedAt ?? lastRejection?.at ?? null,
-          reason: exp.rejectionReason ?? lastRejection?.note ?? null,
-          history,
-          submitterName: personName(exp.createdBy, "The submitter"),
-        });
+        setApproval(approvalState(exp));
+        setRevision(exp.assetAllocationRevision ?? 0);
         setCurrencyCode(exp.currency?.code || "INR");
-        const storedTripId: string = (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
-        const loadedForm: ExpenseFormValues = {
-          title: exp.title,
-          amount: exp.amount.toString(),
-          gstAmount: exp.gstAmount != null ? exp.gstAmount.toString() : "",
-          currency: exp.currency?._id || "",
-          category: exp.category?._id || "",
-          department: exp.department?._id || "",
-          date: new Date(exp.date).toISOString().split("T")[0],
-          description: exp.description || "",
-          paymentSource: exp.paymentSource || "pocket",
-          pocketAmount:
-            exp.paymentSource === "split" && exp.pocketAmount != null ? exp.pocketAmount.toString() : "",
-          payments: storedPayments.map((entry) =>
-            newPaymentDraft({
-              paidBy: entry.paidBy?._id ?? "",
-              amount: entry.amount.toString(),
-              source: entry.source,
-            })
-          ),
-          trip: storedTripId,
-          travelType: storedTripId && isTravelType(exp.travelType) ? exp.travelType : null,
-        };
+        const loadedForm = formValuesOf(exp);
+        const storedTripId = loadedForm.trip;
         setStoredTrip(storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null);
         setForm(loadedForm);
         setInitialForm(loadedForm);
@@ -310,8 +350,67 @@ export default function EditExpensePage() {
     setExistingReceipt(null);
   };
 
+  /**
+   * After a 409: reads the expense again and makes it the form's baseline
+   * (status, reason, history, revision), keeping the person's edits on top,
+   * so the Notice and the submit button describe what saving will do now.
+   * Returns the status it is in now, or null if it couldn't be read.
+   */
+  const refreshAfterConflict = async (): Promise<ApprovalStatus | null> => {
+    try {
+      const data = await api.get(`/api/expenses/${params.id}`);
+      const exp = data.expense;
+      setLinkedAssets(data.assets || []);
+      setApproval(approvalState(exp));
+      setRevision(exp.assetAllocationRevision ?? 0);
+      setInitialForm(formValuesOf(exp));
+      // The receipt: keep a change the person made; otherwise show the stored one.
+      setInitialHadReceipt(Boolean(exp.receiptKey));
+      if (!receiptChanged) {
+        setExistingReceipt(exp.receiptKey ? { key: exp.receiptKey, filename: exp.receiptFilename || "Receipt" } : null);
+      }
+      return effectiveApprovalStatus(exp);
+    } catch {
+      return null;
+    }
+  };
+
+  /** A save or resubmit that the server refused. */
+  const handleSaveError = async (err: unknown, fallback: string) => {
+    const before = approval?.status ?? "approved";
+    const code = errorCode(err);
+    if (code === "stale" || code === "not_rejected") {
+      const now = await refreshAfterConflict();
+      if (now === null) {
+        toast(err instanceof Error ? err.message : fallback, "error");
+      } else if (code === "not_rejected") {
+        toast(`This expense isn't rejected any more, so there's nothing to resubmit. ${conflictMessage(before, now)}`, "error");
+      } else {
+        toast(conflictMessage(before, now), "error");
+      }
+      return;
+    }
+    toast(err instanceof Error ? err.message : fallback, "error");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // A submitter's rejected expense, unchanged: send it back as it is.
+    if (resubmitAsIs) {
+      setSubmitting(true);
+      try {
+        await api.post(`/api/expenses/${params.id}/approval`, { action: "resubmit", revision });
+        toast(RESUBMITTED);
+        router.push(returnTo);
+      } catch (err) {
+        await handleSaveError(err, "Couldn't resubmit. Check your connection and try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const formError = getSubmitError(form);
     if (formError) {
       toast(formError, "error");
@@ -320,9 +419,10 @@ export default function EditExpensePage() {
 
     setSubmitting(true);
     let uploadedReceiptKey: string | null = null;
+    const before = approval?.status ?? "approved";
 
     try {
-      const updateData: Record<string, unknown> = toExpensePayload(form);
+      const updateData: Record<string, unknown> = { ...toExpensePayload(form), revision };
 
       if (newReceipt?.file) {
         const uploaded = await upload(newReceipt.file);
@@ -338,12 +438,20 @@ export default function EditExpensePage() {
         `/api/expenses/${params.id}`,
         updateData
       );
-      const after = result?.expense ? effectiveApprovalStatus(result.expense) : null;
-      toast(savedMessage(approval?.status ?? "approved", after, isAdmin, accountingChanged));
+      // The server's answer decides the message; predict it only if it didn't say.
+      const after = result?.expense
+        ? effectiveApprovalStatus(result.expense)
+        : statusAfterEdit({
+            role: user?.role ?? (isAdmin ? "admin" : "user"),
+            isOwner: !submitter || submitter._id === user?._id,
+            current: before,
+            accountingChanged,
+          }) ?? before;
+      toast(savedMessage(before, after, isAdmin));
       router.push(returnTo);
     } catch (err) {
       await discardUploadedReceipt(uploadedReceiptKey);
-      toast(err instanceof Error ? err.message : "Failed to update expense", "error");
+      await handleSaveError(err, "Failed to update expense");
     } finally {
       setSubmitting(false);
     }
@@ -418,12 +526,21 @@ export default function EditExpensePage() {
       busyLabel={resubmits ? "Resubmitting…" : "Saving…"}
       busy={submitting || uploadingReceipt}
       notice={
-        approval && <EditApprovalNotice approval={approval} isReviewer={isAdmin} accountingLocked={accountingLocked} />
+        approval && (
+          <EditApprovalNotice
+            approval={approval}
+            isReviewer={isAdmin}
+            ownExpense={isAdmin && Boolean(submitter && user && submitter._id === user._id)}
+            accountingLocked={accountingLocked}
+          />
+        )
       }
       footerNote={
         resubmits
           ? status === "rejected"
-            ? "Saving resubmits this expense. An admin will review it again before it counts in company totals."
+            ? resubmitAsIs
+              ? "You haven't changed anything, so this sends it back as it is. If the reason above asks for a fix, make it first."
+              : "Saving resubmits this expense. An admin will review it again before it counts in company totals."
             : "You changed an accounting detail, so saving sends this expense back to an admin. It won't count in company totals until it's approved again."
           : undefined
       }

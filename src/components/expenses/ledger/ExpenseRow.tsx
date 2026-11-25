@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Luggage, Package, Paperclip, Pencil, Trash2, Unlink } from "lucide-react";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
-import { effectiveApprovalStatus } from "@/lib/approval";
+import { NOT_IN_TOTALS_SR, effectiveApprovalStatus } from "@/lib/approval";
 import { travelTypeLabel } from "@/lib/trip";
 import { IconButton } from "@/components/ui/Button";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
@@ -158,6 +158,11 @@ export interface RowSelection {
   label: string;
   /** e.g. "X" on the queue page. */
   keyShortcut?: string;
+  /**
+   * The row can't be part of a selection (the viewer's own expense in the
+   * queue): its checkbox cell stays empty, so the columns still line up.
+   */
+  unavailable?: boolean;
 }
 
 interface ExpenseRowProps extends ExpenseActions {
@@ -232,8 +237,13 @@ export default function ExpenseRow({
     ? [kindLabel, showDate && date, payer].filter(Boolean).join(" · ")
     : [expense.category?.name, date, payer].filter(Boolean).join(" · ");
   const submittedText = submitted ? `submitted ${submitted}` : null;
-  const narrowSubText = [narrowSub, submittedText].filter(Boolean).join(" · ");
-  const wideSub = [payer, isTrip && showDate && date, submittedText].filter(Boolean).join(" · ");
+  // In the queue, an admin's own expense waits for another admin.
+  const ownText =
+    isReview && review?.viewerId && review.viewerId === expense.createdBy?._id && (review.onApprove || review.onReject)
+      ? "yours — another admin reviews it"
+      : null;
+  const narrowSubText = [narrowSub, submittedText, ownText].filter(Boolean).join(" · ");
+  const wideSub = [payer, isTrip && showDate && date, submittedText, ownText].filter(Boolean).join(" · ");
 
   return (
     <div className={cn(selected && inlineDetail && "border-b border-rule-2")} data-expense-row={expense._id}>
@@ -247,7 +257,7 @@ export default function ExpenseRow({
           selected && rowSelectedClass
         )}
       >
-        {checkable && selection && (
+        {checkable && selection && !selection.unavailable && (
           <SelectBox
             checked={selection.checked}
             onToggle={selection.onToggle}
@@ -255,6 +265,7 @@ export default function ExpenseRow({
             keyShortcut={selection.keyShortcut}
           />
         )}
+        {checkable && selection?.unavailable && <span aria-hidden="true" />}
         {isTrip ? (
           <span className="flex min-w-0 items-center gap-2.5 text-ink-2">
             <TravelGlyph type={expense.travelType} />
@@ -354,11 +365,7 @@ export default function ExpenseRow({
               )}
             >
               {formatCurrency(expense.amount, code)}
-              {flagStatus && (
-                <span className="sr-only">
-                  {status === "rejected" ? " (rejected, not in totals)" : " (awaiting approval, not in totals)"}
-                </span>
-              )}
+              {flagStatus && <span className="sr-only">{NOT_IN_TOTALS_SR[status]}</span>}
             </span>
             {isForeign(expense) && (
               <span className={cn("num whitespace-nowrap text-xs text-ink-3", flagStatus && status === "rejected" && "line-through")}>

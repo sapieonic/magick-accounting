@@ -140,8 +140,11 @@ value or active filter; the whole chip removes it. `Dot`: `tone?` (7px legend do
 
 `Notice` (`@/components/ui/Notice`): `tone?: "neutral" | "danger" | "success"`, `icon?`, `title` (one line: what
 the state is), `children?` (why, and what to do next), `actions?`, `className?`. A ruled `rounded-panel border` box on
-`bg-sunk` / `bg-danger-soft` / `bg-success-soft`, no shadow, always icon + words; `role="status"` (polite) for every
-tone, since it describes the state the page loaded in.
+`bg-sunk` / `bg-danger-soft` / `bg-success-soft`, no shadow, always icon + words. It is a `role="group"` named by its
+title, **not** a live region: it describes the state a page or detail opened in, holds buttons, and is re-mounted as a
+reviewer moves between expenses (J/K), so announcing it would only repeat what is on screen. Announce something that
+just happened with a toast. The root carries `data-notice` and `data-tone` (tests find notices by `[data-notice]` or
+`getByRole("group", { name: title })`).
 
 `Avatar`: `name?`, `photoURL?`, `size?: 24 | 28 | 32 | 36 | 56` (default 32), `tone?: "accent" | "amber" | "rail"`,
 `title?`. Decorative: print the name beside it. `initials(name)` → first + last initial, `"?"` when empty.
@@ -196,7 +199,8 @@ Also in `ui`: `Modal` (bottom sheet below `sm`; `maxWidth?`), `EmptyState` (`hea
 focusable, to move focus there when a list empties), `Skeleton` (+ page skeletons),
 `Spinner` (`decorative` when visible text says what is loading; `tone?: "accent" | "current"`, `current` inside
 buttons) / `InlineLoader` (one status, named by its label),
-`Toast` (`toast(message, type?, { action?, durationMs? })` from `useToast`; at the bottom: full width with 16px
+`Toast` (`toast(message, type?, { action?, durationMs? })` from `useToast` returns the toast's id, and `dismiss(id)`
+closes it early, e.g. an Undo that no longer applies; at the bottom: full width with 16px
 gutters on phones, bottom-right and at most 24rem wide from `sm`; it sits 12px above the mobile tab bar and any
 mounted `FormFooter` (`--tabbar-h` + `--form-footer-h`), at every width; pages without a `FormFooter` end with
 `--toast-room` to spare, so it never covers Save, a total, "Load more" or page-header actions). `#main` has scroll padding for the tab bar and a
@@ -212,8 +216,9 @@ Add, Trips, More → drawer; More is highlighted on pages only the drawer links 
 `src/components/layout/nav.ts` (shared with ⌘K). For admins the Approvals link carries the awaiting-approval count
 (`ApprovalCountContext`, provided by the layout; read on mount, route change and window focus, never polled): a
 `bg-rail-mark` pill on the wide rail ("99+" past 99), a dot on the icon-only rail (count in the tooltip), and a dot on
-the phone's More. The number is always in the accessible name ("Approvals, 4 awaiting approval", "More, 4 approvals
-waiting"); the pill and dots are `aria-hidden`. Pages
+the phone's More. The number is always in the accessible name, worded by `approvalCountLabel` ("Approvals, 4 awaiting
+approval", "More, 4 awaiting approval"); the pill and dots are `aria-hidden`. Link to the queue with `APPROVALS_HREF`
+from `nav.ts`. Pages
 render straight into `<main>`; **do not** add a max-width wrapper or page padding of your own, and start
 each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the page root, plus
 `animate-fade-in` (every page root fades in the same way; reduced motion turns it off).
@@ -244,50 +249,83 @@ Vocabulary (labels from `APPROVAL_LABEL` in `@/lib/approval`; never colour alone
 | Rejected | danger + `CircleX` | rows, detail |
 | Approved | success + `CircleCheck` | detail only; rows carry a badge only when *not* approved |
 
-`ApprovalBadge` (`@/components/expenses/ApprovalBadge`: `status?`, `hideApproved?` default true, `className?`) renders
+`ApprovalBadge` (`@/components/expenses/ApprovalBadge`: `status?`, `showApproved?` default false, `className?`) renders
 these; a missing status is legacy, so approved. Explainers say what happens next in plain words: pending (submitter)
 "An admin will review this. It isn't included in company totals until it's approved."; pending (admin) "Submitted by
-{name} {6 days ago}. Not in totals yet."; rejected "{Reviewer} rejected this on {date}." + the reason as a quote +
-"What next: …"; approved "Approved by {name} on {date}" / "Added by an admin, approved automatically" / "Approved".
+{name} {6 days ago}. Not in totals yet."; pending (an admin's own) "Another admin needs to review this — you can't
+approve your own expense." with no buttons; pending after a reopen adds "{Admin} moved it back to review: “{note}”";
+rejected "{Reviewer} rejected this on {date}." + the reason as a quote + "What next: …". Approved shows in the detail's
+`DetailList` as an "Approval" row: the Approved badge (`showApproved`) then "by {name} on {date}", "automatically, added
+by an admin", or nothing (legacy). Approval dates are always "12 Nov 2026" (`approvalDate`).
 Totals count approved spend only, so anything else is shown as not counted: a pending row's amount is `text-ink-3`, a
-rejected one also `line-through`, each with sr-only "(awaiting approval, not in totals)" / "(rejected, not in totals)".
+rejected one also `line-through`, each with sr-only `NOT_IN_TOTALS_SR[status]` from `@/lib/approval` ("(awaiting
+approval, not in totals)" / "(rejected, not in totals)").
+
+Who may review: admins (`canReviewExpense(viewer, expense)`), never their own expense. Their own pending expense shows
+the notice above instead of Approve / Reject…; in the queue it has no checkbox (`RowSelection.unavailable`), says
+"yours — another admin reviews it" in the sub-line, gets no phone strip, and A / R / X on it explain why in a toast.
 
 `ExpenseRow` (`@/components/expenses/ledger/ExpenseRow`): the approval badge sits first in the sub-line. `variant="review"`
 (the review queue) adds "submitted {relative}" to the sub-line, drops the badge (every row there is pending), and with
-`selection?: { checked, onToggle, label, keyShortcut? }` a leading checkbox column: an sr-only native checkbox named
-"Select {title}, {amount}" in a 44px `<label>` with the `Checkbox` visual, `relative z-10` above the row's title-button
-layer, so ticking never opens the row. `LedgerHead`'s `select?` slot takes a `SelectAllCheckbox` (`selected`, `total`,
-`onToggle`; partial = indeterminate) and then stays visible at every width. Rows carry `data-expense-row={id}` and their
-title button `data-row-title`, for moving focus to a row.
+`selection?: { checked, onToggle, label, keyShortcut?, unavailable? }` a leading checkbox column: an sr-only native
+checkbox named "Select {title}, {amount}" in a 44px `<label>` with the `Checkbox` visual, `relative z-10` above the row's
+title-button layer, so ticking never opens the row (`unavailable` leaves the cell empty, so the columns still line up).
+`LedgerHead`'s `select?` slot takes a `SelectAllCheckbox` (`selected`, `total`, `onToggle`; partial = indeterminate) and
+then stays visible at every width. Rows carry `data-expense-row={id}` and their title button `data-row-title`, for moving
+focus to a row.
 
-`ExpenseDetail` takes `review?: ExpenseReviewActions` (`onApprove?`, `onReject?`, `onResubmit?`, `viewerId?`,
-`inFlight?`, `shortcuts?`; build it with `useApprovalActions().handlers` and pass it through rows and clusters as is).
-Its approval block comes first: a `Notice` while pending (admins get Approve + Reject…, and the submitter's latest
-resubmission note) or rejected (its submitter gets "Edit & resubmit" + "Resubmit as is…"), else an "Approval" row in
-the `DetailList`. With two or more entries the approval history folds under "Approval history (n)".
+`ExpenseDetail` takes `review?: ExpenseReviewActions` (`onApprove?`, `onReject?`, `onReopen?`, `onResubmit?`,
+`viewerId?`, `viewerRole?`, `inFlight?`, `shortcuts?`; build it with `useApprovalActions().handlers` and pass it through
+rows and clusters as is). Its approval block comes first: a `Notice` while pending (admins get Approve + Reject…, and the
+submitter's latest resubmission note) or rejected (its submitter gets "Edit & resubmit" + "Resubmit as is…"), else the
+"Approval" row in the `DetailList`. With two or more entries the approval history folds under "Approval history (n)":
+"{Action} · {name} · {date}" per entry, a person's note as a quote, and the server's edit marker (`isSystemNote`) as a
+plain event ("Asha edited it after it was approved."), never as somebody's words.
+
+**Move back to review.** An admin who isn't the submitter gets a secondary "Move back to review…" (`RotateCcw`) in the
+detail's action row on an approved (or legacy) or rejected expense with no linked assets and no review of it under way.
+It opens `ReopenDialog` (optional note for the history; "It will stop counting in totals until it's approved again." /
+for a rejection, that it is withdrawn and needn't be resubmitted). Confirmed there, so it is sent at once (no undo
+window); the page gets the server's pending expense through `onUpdated`. Refusals come back in words: already awaiting
+approval, assets registered against it, changed meanwhile (re-read), or the admin's own.
 
 `@/components/approvals`: `RejectDialog` (`isOpen`, `expenses`, `onClose`, `onConfirm(reason)`: a required reason of
 3–500 characters with a counter, and quick-reason `Chip`s that toggle their phrase in the text), `ResubmitDialog`
-(optional note for the reviewer), `ApproveDialog` (confirms a bulk approve with its total; a single approve has no
-dialog, it has Undo), `BulkBar` (`summary`, actions, `label?` default "Selection": the sticky selection strip, a
-`FormFooter` with `role="region"`, above the tab bar), `ShortcutsDialog`, and `approval-format` (relative times,
-reviewer names, the latest resubmission).
+(optional note for the reviewer), `ReopenDialog` (above), `ApproveDialog` (confirms a bulk approve with its total; a
+single approve has no dialog, it has Undo), `BulkBar` (`summary`, actions, `label?` default "Selection": the sticky
+selection strip, a `FormFooter` with `role="region"`, above the tab bar), `ShortcutsDialog`, and `approval-format`
+(`personName(ref, fallback?)`, `expensePersonName(ref, expense)`, `approvalDate`, relative times, `historyLine`, the
+latest resubmission). Use these rather than formatting names or dates again.
 
 `useApprovalActions` (`@/hooks/useApprovalActions`) approves and rejects like a delete: the page hides or re-labels the
 expenses in `inFlight` at once, a toast offers Undo, and the request goes after `UNDO_WINDOW_MS` (or on `flush` /
-unmount; built on the generic `usePendingCommits`, which `usePendingDeletes` also wraps). Conflicts come back in words
-("Asha changed this expense after you opened it — review the latest version.", "Already approved by another admin.",
-"Approved 9 of 10. 1 changed and needs another look."), the expense is re-read and handed to `onUpdated`, and the nav
-count refreshes. Render its `dialogs` once on the page. The review queue hides expenses in `inFlight`; Expenses and the
-trip page show them with the status they're heading for and move the totals with them (Undo just drops them from
-`inFlight`), and on `onUpdated` replace the row and move the band for the status change (the trip page then reloads
-its summary, so "Who paid" is the server's figure). An expense that no longer matches the Status filter leaves the list.
+unmount; built on the generic `usePendingCommits`, which `usePendingDeletes` also wraps). When the request goes out its
+Undo toast closes (`onSent`); an Undo that still lands says "Too late to undo — it's already approved. You can move it
+back to review from its details." Conflicts come back in words ("This expense changed after you opened it — review the
+latest version.", "Already approved by another admin.", "Approved 9 of 10. 1 changed and needs another look."; a
+request that never got through: "… 3 couldn't be sent. Check your connection and try again."), the expense is re-read
+and handed to `onUpdated`, and the nav count refreshes. Members: `inFlight`, `approve`, `openReject`, `openResubmit`,
+`resubmit` (no dialog, e.g. from the edit form), `flush`, `handlers`, `dialogs` (render once on the page). Options:
+`onUpdated`, `onRemoved`, `onScheduled`, `onReturned` (a single review that didn't go through, the expense pending
+again), `shortcuts`. The review queue hides expenses in `inFlight`; Expenses and the trip page show them with the status
+they're heading for and move the totals with them (Undo just drops them from `inFlight`), and on `onUpdated` replace the
+row and move the band for the status change, including approved/rejected → pending after a reopen (the trip page then
+reloads its summary, so "Who paid" is the server's figure). An expense that no longer matches the Status filter leaves
+the list.
 
 Review queue (`/dashboard/approvals`): the Expenses layout (flat ledger + resizable detail panel with the receipt
 large). Approving moves the selection to the next expense and focus to its title (to the empty state's heading when
-none are left). Keyboard, ignored while typing or with a dialog open: J/K or ↓/↑, X, A, R, Esc, ? (listed under
-"Keyboard shortcuts"; each is also a button with `aria-keyshortcuts`). Below `lg`, "Select" shows the checkboxes and a
-sticky strip carries Approve / Reject… for the open expense.
+none are left; while the next page loads, to its first row once it arrives). If that review then doesn't go through and
+the reviewer is still on the expense the queue moved them to, the expense opens again (focus follows only if it was in
+the list); otherwise they're left where they are. The header's count and total are the server's figures with the
+loaded rows counted as they are now, so re-reads and removals keep them right. A page emptied by reviews fetches the
+next one by itself once per cursor; if that fails it shows "Couldn't load the next expenses" with Retry (no retry loop).
+Keyboard, ignored while typing or with a dialog open: ↓/↑ (only from the list or with nothing focused, and only when
+there are rows; elsewhere they scroll as usual) and Esc always; the single-key shortcuts J/K, X, A, R and ? can be
+switched off under "Keyboard shortcuts" (WCAG 2.1.4; remembered per browser in localStorage, and then nothing advertises
+them in `aria-keyshortcuts`). The shortcuts button is a ghost `Button` from `lg`, an `IconButton` below. Below `lg`,
+"Select" shows the checkboxes; without the side panel (below 1280px) a sticky strip carries Approve / Reject… for the
+open expense.
 
 ## Amounts
 

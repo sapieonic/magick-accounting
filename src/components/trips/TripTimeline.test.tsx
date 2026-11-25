@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import TripTimeline from "./TripTimeline";
 import { api } from "@/lib/api";
 import type { ExpenseListItem } from "@/types/expense";
@@ -86,9 +86,12 @@ describe("TripTimeline", () => {
     const [day, after] = screen.getAllByRole("listitem");
     // Every expense is listed, rejected ones too.
     expect(day).toHaveTextContent("3 expenses");
-    const total = day.querySelector("[title^='Section total']")!;
-    expect(total).toHaveTextContent("₹600.00 · ₹1,400.00 pending approval, not in the total");
-    expect(after.querySelector("[title^='Section total']")).toHaveTextContent(/^₹300\.00$/);
+    const total = within(day).getByTestId("day-total");
+    expect(total).toHaveTextContent(/^₹600\.00.*₹1,400\.00 awaiting approval, not in the total$/);
+    expect(within(total).getByText("₹1,400.00").parentElement).toHaveTextContent(", plus ₹1,400.00 awaiting approval");
+    // The same words as the trip band and the totals ("awaiting approval", never "pending").
+    expect(total).not.toHaveTextContent(/pending/i);
+    expect(within(after).getByTestId("day-total")).toHaveTextContent(/^₹300\.00$/);
   });
 
   it("opens one expense at a time and fetches its receipt lazily", async () => {
@@ -138,6 +141,19 @@ describe("TripTimeline", () => {
       "href",
       "/dashboard/expenses/taxi/edit?returnTo=%2Fdashboard%2Ftrips%2Ftrip-1"
     );
+  });
+
+  it("withdraws Delete while the expense's approve or reject can still be undone", () => {
+    const onDelete = vi.fn();
+    const pending = makeExpense({ _id: "cab", title: "Airport cab", date: "2026-10-13T00:00:00.000Z", approvalStatus: "pending" });
+    const { rerender } = render(
+      <TripTimeline trip={trip} expenses={[pending]} initialExpandedId="cab" onDelete={onDelete} review={{ inFlight: { cab: "approve" } }} />
+    );
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
+
+    // Undone (or saved): Delete is back.
+    rerender(<TripTimeline trip={trip} expenses={[pending]} initialExpandedId="cab" onDelete={onDelete} review={{ inFlight: {} }} />);
+    expect(screen.getByRole("button", { name: /^Delete$/ })).toBeInTheDocument();
   });
 
   it("forwards the approval actions to an opened expense", () => {

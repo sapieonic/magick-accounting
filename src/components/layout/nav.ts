@@ -29,18 +29,18 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/categories", label: "Categories", icon: Tag },
 ];
 
+/** The admin review queue; its nav links carry the awaiting-approval count. */
+export const APPROVALS_HREF = "/dashboard/approvals";
+
 /** Admin-only links. */
 export const ADMIN_ITEMS: NavItem[] = [
-  { href: "/dashboard/approvals", label: "Approvals", icon: ClipboardCheck },
+  { href: APPROVALS_HREF, label: "Approvals", icon: ClipboardCheck },
   { href: "/dashboard/invoices", label: "Invoices", icon: FileText },
   { href: "/dashboard/admin/users", label: "Users", icon: Users },
   { href: "/dashboard/admin/settings", label: "Settings", icon: SlidersHorizontal },
 ];
 
 export const PROFILE_ITEM: NavItem = { href: "/dashboard/profile", label: "Profile", icon: UserRound };
-
-/** The admin review queue; its nav links carry the awaiting-approval count. */
-export const APPROVALS_HREF = "/dashboard/approvals";
 
 export const NEW_EXPENSE_HREF = "/dashboard/expenses/new";
 

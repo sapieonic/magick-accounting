@@ -18,7 +18,8 @@ import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import EmptyState from "@/components/ui/EmptyState";
 import Notice from "@/components/ui/Notice";
 import { DashboardSkeleton } from "@/components/ui/Skeleton";
-import { ICON_STROKE, inlineLinkClass, linkClass } from "@/components/ui/styles";
+import { ICON_STROKE, linkClass, textButtonClass } from "@/components/ui/styles";
+import { APPROVALS_HREF } from "@/components/layout/nav";
 import MonthlySpendPanel from "@/components/dashboard/overview/MonthlySpendPanel";
 import RankedList, { type RankedItem } from "@/components/dashboard/overview/RankedList";
 import LatestEntries from "@/components/dashboard/overview/LatestEntries";
@@ -170,7 +171,7 @@ export default function DashboardPage() {
           icon={Clock3}
           title={`Awaiting approval: ${plural(pendingCount, "expense")} · ${formatBaseCurrency(pendingAmount)}`}
           actions={
-            <Link className={inlineLinkClass} href="/dashboard/approvals">
+            <Link className={textButtonClass} href={APPROVALS_HREF}>
               Review
             </Link>
           }
@@ -188,7 +189,7 @@ export default function DashboardPage() {
               : `${rejectedCount.toLocaleString("en-IN")} of your expenses were rejected`
           }
           actions={
-            <Link className={inlineLinkClass} href="/dashboard/expenses?approval=rejected">
+            <Link className={textButtonClass} href="/dashboard/expenses?approval=rejected">
               {rejectedCount === 1 ? "See the rejected expense" : "See rejected expenses"}
             </Link>
           }

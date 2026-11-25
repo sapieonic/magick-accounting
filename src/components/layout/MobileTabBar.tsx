@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Plus } from "lucide-react";
-import { useApprovalCount } from "@/contexts/ApprovalCountContext";
+import { approvalCountLabel, useApprovalCount } from "@/contexts/ApprovalCountContext";
 import { NAV_ITEMS, NEW_EXPENSE_HREF, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
 
@@ -71,7 +71,7 @@ export default function MobileTabBar({ onMore, moreOpen }: MobileTabBarProps) {
         onClick={onMore}
         aria-haspopup="dialog"
         aria-expanded={moreOpen}
-        aria-label={approvals > 0 ? `More, ${approvals} approval${approvals !== 1 ? "s" : ""} waiting` : undefined}
+        aria-label={approvals > 0 ? `More, ${approvalCountLabel(approvals)}` : undefined}
         className={cn(tab, "cursor-pointer", moreActive ? tabActive : tabIdle)}
       >
         <span className="relative flex">

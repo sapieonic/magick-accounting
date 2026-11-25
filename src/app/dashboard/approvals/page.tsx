@@ -25,6 +25,7 @@ import { useApprovalCount } from "@/contexts/ApprovalCountContext";
 import { useTitle } from "@/hooks/useTitle";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useApprovalActions } from "@/hooks/useApprovalActions";
+import { useStoredFlag } from "@/hooks/useStoredFlag";
 import { useToast } from "@/components/ui/Toast";
 import PageHeader from "@/components/ui/PageHeader";
 import Button, { IconButton } from "@/components/ui/Button";
@@ -41,7 +42,8 @@ import ExpenseRow, { LEDGER_CONTAINER, LedgerHead, SelectAllCheckbox } from "@/c
 import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
 import ApproveDialog from "@/components/approvals/ApproveDialog";
 import BulkBar from "@/components/approvals/BulkBar";
-import ShortcutsDialog from "@/components/approvals/ShortcutsDialog";
+import ShortcutsDialog, { SINGLE_KEY_SHORTCUTS_KEY } from "@/components/approvals/ShortcutsDialog";
+import { APPROVALS_HREF } from "@/components/layout/nav";
 import type { ExpenseListItem } from "@/types/expense";
 
 type Expense = ExpenseListItem;
@@ -53,7 +55,6 @@ interface UserOption {
 }
 
 const PAGE_SIZE = 50;
-const QUEUE_PATH = "/dashboard/approvals";
 /** Wide enough for the ledger plus the detail side panel (as on Expenses). */
 const SIDE_PANEL_QUERY = "(min-width: 1280px)";
 /** From here up the row checkboxes always show; below, "Select" turns them on. */
@@ -87,7 +88,8 @@ function oldestAge(iso: string | null): string | null {
 export default function ApprovalsPage() {
   useTitle("Approvals");
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const viewerId = user?._id;
   const { toast } = useToast();
   const queue = useApprovalCount();
   const sidePanel = useMediaQuery(SIDE_PANEL_QUERY);
@@ -95,15 +97,25 @@ export default function ApprovalsPage() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  /** Pending expenses matching the filters, as the server first counted them (less removals since). */
+  /** Pending expenses matching the filters, as the server counted them on the first page. */
   const [total, setTotal] = useState(0);
-  /** Their base-currency total, from the list's summary. */
+  /** Their base-currency total, from the first page's summary. */
   const [pendingAmount, setPendingAmount] = useState<number | null>(null);
+  /**
+   * The loaded expenses as they were when loaded (how many, and their total):
+   * the part of `total` / `pendingAmount` the loaded rows stand for. The
+   * header swaps that part for what is still waiting among them, so it stays
+   * right after reviews, removals and re-reads that change an amount.
+   */
+  const [counted, setCounted] = useState({ count: 0, amount: 0 });
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  /** Single-key shortcuts (J, K, A, R, X, ?) are on; each viewer can turn them off (WCAG 2.1.4). */
+  const [singleKeys, setSingleKeys] = useStoredFlag(SINGLE_KEY_SHORTCUTS_KEY, true);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [searchInput, setSearchInput] = useState("");
@@ -120,24 +132,38 @@ export default function ApprovalsPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const nextCursor = useRef<string | null>(null);
+  /** The cursor the queue last fetched by itself (once per cursor, so a failure can't loop). */
+  const autoLoadedCursor = useRef<string | null>(null);
   /** Bumped per reload: a Load more begun for an earlier list is dropped. */
   const listGeneration = useRef(0);
   const hasLoaded = useRef(false);
   const ledgerRef = useRef<HTMLElement>(null);
   const emptyHeadingRef = useRef<HTMLHeadingElement>(null);
-  /** A row (by id) or the empty state to focus after the next render. */
+  /**
+   * A row (by id) or "empty" to focus after the next render. "empty" waits
+   * while the next page loads, then lands on its first row or the empty state.
+   */
   const pendingFocus = useRef<string | null>(null);
+  /** The pending focus outlived a render (the next page was loading): don't take focus from where the reviewer went. */
+  const focusDeferred = useRef(false);
+  /** Reviewed expense → the one the selection moved on to, to bring it back if the review doesn't go through. */
+  const advancedFrom = useRef(new Map<string, string | null>());
   const visibleRef = useRef<Expense[]>([]);
+  const expensesRef = useRef<Expense[]>([]);
+  expensesRef.current = expenses;
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
 
+  /** Focus is on nothing in particular, or in the list: moving it won't pull the reviewer away from something. */
+  const focusIsFree = useCallback(() => {
+    const active = document.activeElement;
+    return !active || active === document.body || Boolean(ledgerRef.current?.contains(active));
+  }, []);
+
   const review = useApprovalActions({
-    shortcuts: true,
+    shortcuts: singleKeys,
     onUpdated: (expense) => setExpenses((prev) => prev.map((e) => (e._id === expense._id ? expense : e))),
-    onRemoved: (id) => {
-      setExpenses((prev) => prev.filter((e) => e._id !== id));
-      setTotal((prev) => Math.max(0, prev - 1));
-    },
+    onRemoved: (id) => setExpenses((prev) => prev.filter((e) => e._id !== id)),
     // The reviewed expenses leave the queue now: open the next one and keep the keyboard there.
     onScheduled: (reviewed) => {
       const ids = new Set(reviewed.map((e) => e._id));
@@ -150,11 +176,26 @@ export default function ApprovalsPage() {
           list.slice(index + 1).find((e) => !ids.has(e._id)) ??
           list.slice(0, Math.max(0, index)).reverse().find((e) => !ids.has(e._id)) ??
           null;
+        advancedFrom.current.set(current, next?._id ?? null);
         setSelectedId(next?._id ?? null);
         pendingFocus.current = next?._id ?? "empty";
       } else {
         const stillOpen = current && remaining.some((e) => e._id === current) ? current : null;
         pendingFocus.current = stillOpen ?? remaining[0]?._id ?? "empty";
+      }
+      focusDeferred.current = false;
+    },
+    // A review that didn't go through (changed meanwhile, offline, refused): if the reviewer is still on
+    // the expense the queue moved them to, open this one again; if they've moved on, leave them be.
+    onReturned: (expense) => {
+      if (!advancedFrom.current.has(expense._id)) return;
+      const movedTo = advancedFrom.current.get(expense._id) ?? null;
+      advancedFrom.current.delete(expense._id);
+      if (selectedRef.current !== movedTo) return;
+      setSelectedId(expense._id);
+      if (focusIsFree()) {
+        pendingFocus.current = expense._id;
+        focusDeferred.current = false;
       }
     },
   });
@@ -216,8 +257,12 @@ export default function ApprovalsPage() {
         const loaded: Expense[] = data?.expenses ?? [];
         setExpenses(loaded);
         setTotal(data?.pagination?.total ?? loaded.length);
+        setCounted({ count: loaded.length, amount: loaded.reduce((sum, e) => sum + baseAmount(e), 0) });
         setHasMore(Boolean(data?.pagination?.hasMore));
+        setLoadMoreFailed(false);
         nextCursor.current = data?.pagination?.nextCursor ?? null;
+        autoLoadedCursor.current = null;
+        advancedFrom.current.clear();
         const amount = data?.summary?.pendingAmount;
         setPendingAmount(typeof amount === "number" ? amount : null);
         setLoadError(false);
@@ -249,14 +294,20 @@ export default function ApprovalsPage() {
     try {
       const data = await api.get(`/api/expenses?${buildParams(nextCursor.current).toString()}`);
       if (!isCurrent()) return;
-      setExpenses((prev) => {
-        const seen = new Set(prev.map((e) => e._id));
-        return [...prev, ...(data?.expenses ?? []).filter((e: Expense) => !seen.has(e._id))];
-      });
+      const seen = new Set(expensesRef.current.map((e) => e._id));
+      const added: Expense[] = (data?.expenses ?? []).filter((e: Expense) => !seen.has(e._id));
+      setExpenses((prev) => [...prev, ...added]);
+      setCounted((prev) => ({
+        count: prev.count + added.length,
+        amount: prev.amount + added.reduce((sum, e) => sum + baseAmount(e), 0),
+      }));
       nextCursor.current = data?.pagination?.nextCursor ?? null;
       setHasMore(Boolean(data?.pagination?.hasMore));
+      setLoadMoreFailed(false);
     } catch {
-      if (isCurrent()) toast("Failed to load more expenses", "error");
+      if (!isCurrent()) return;
+      setLoadMoreFailed(true);
+      toast("Couldn't load more expenses. Check your connection and try again.", "error");
     } finally {
       if (isCurrent()) setLoadingMore(false);
     }
@@ -266,28 +317,30 @@ export default function ApprovalsPage() {
   const visible = useMemo(() => expenses.filter((e) => isPending(e) && !inFlight[e._id]), [expenses, inFlight]);
   visibleRef.current = visible;
 
-  // Loaded expenses that have left the queue (reviewed, or in their undo window).
-  const left = expenses.length - visible.length;
-  const leftAmount = useMemo(
-    () => expenses.filter((e) => !isPending(e) || inFlight[e._id]).reduce((sum, e) => sum + baseAmount(e), 0),
-    [expenses, inFlight]
-  );
-  const remaining = Math.max(0, total - left);
+  // The server's figures, with the loaded rows counted as they are now rather than as they were loaded.
+  const visibleAmount = visible.reduce((sum, e) => sum + baseAmount(e), 0);
+  const remaining = Math.max(visible.length, total - counted.count + visible.length);
   const remainingAmount =
-    pendingAmount != null ? Math.max(0, pendingAmount - leftAmount) : visible.reduce((sum, e) => sum + baseAmount(e), 0);
+    pendingAmount != null ? Math.max(visibleAmount, pendingAmount - counted.amount + visibleAmount) : visibleAmount;
 
-  const checkedVisible = useMemo(() => visible.filter((e) => checked.has(e._id)), [visible, checked]);
+  /** The viewer's own expenses wait for another admin: they can't be ticked, approved or rejected here. */
+  const isOwn = useCallback((expense: Expense) => Boolean(viewerId && expense.createdBy?._id === viewerId), [viewerId]);
+  const selectable = useMemo(() => visible.filter((e) => !isOwn(e)), [visible, isOwn]);
+  const checkedVisible = useMemo(() => selectable.filter((e) => checked.has(e._id)), [selectable, checked]);
   const checkedAmount = checkedVisible.reduce((sum, e) => sum + baseAmount(e), 0);
   const showCheckboxes = desktop || selectMode;
   const selected = selectedId ? visible.find((e) => e._id === selectedId) ?? null : null;
   const selectedIndex = selected ? visible.indexOf(selected) : -1;
   const isFiltered = Boolean(search || filterUser);
 
-  // A page cleared entirely while more wait on the server: fetch them.
+  // A page cleared entirely while more wait on the server: fetch them, once per cursor (a failure
+  // leaves a Retry button rather than trying again by itself).
   useEffect(() => {
-    if (!loading && !loadingMore && hasMore && visible.length === 0 && Object.keys(inFlight).length === 0) {
-      void loadMore();
-    }
+    if (loading || loadingMore || !hasMore || visible.length > 0 || Object.keys(inFlight).length > 0) return;
+    const cursor = nextCursor.current;
+    if (!cursor || autoLoadedCursor.current === cursor) return;
+    autoLoadedCursor.current = cursor;
+    void loadMore();
   }, [loading, loadingMore, hasMore, visible.length, inFlight, loadMore]);
 
   // The opened expense was reviewed elsewhere or filtered out: close it.
@@ -301,14 +354,24 @@ export default function ApprovalsPage() {
   useEffect(() => {
     const target = pendingFocus.current;
     if (!target) return;
-    pendingFocus.current = null;
+    const rowTitle = (id: string) =>
+      ledgerRef.current?.querySelector<HTMLElement>(`[data-expense-row="${CSS.escape(id)}"] [data-row-title]`);
+    let element: HTMLElement | null | undefined;
     if (target === "empty") {
-      emptyHeadingRef.current?.focus();
-      return;
+      // Rows arrived (the next page, or an Undo): the first one. Else the empty state, once it shows.
+      element = visible.length > 0 ? rowTitle(visible[0]._id) : emptyHeadingRef.current;
+      if (!element) {
+        focusDeferred.current = true;
+        return;
+      }
+    } else {
+      element = rowTitle(target);
     }
-    ledgerRef.current
-      ?.querySelector<HTMLElement>(`[data-expense-row="${CSS.escape(target)}"] [data-row-title]`)
-      ?.focus();
+    pendingFocus.current = null;
+    const deferred = focusDeferred.current;
+    focusDeferred.current = false;
+    if (deferred && !focusIsFree()) return;
+    element?.focus();
   });
 
   const open = useCallback((expense: Expense | null, focus = false) => {
@@ -326,7 +389,7 @@ export default function ApprovalsPage() {
   }, []);
 
   const toggleAll = () => {
-    setChecked(checkedVisible.length === visible.length ? new Set() : new Set(visible.map((e) => e._id)));
+    setChecked(checkedVisible.length === selectable.length ? new Set() : new Set(selectable.map((e) => e._id)));
   };
 
   const move = useCallback(
@@ -358,25 +421,38 @@ export default function ApprovalsPage() {
     });
   };
 
-  // Keyboard: J/K or ↓/↑ move, X ticks, A approves, R rejects, Esc closes, ? lists them.
+  // Keyboard: ↓/↑ (in the list) and Esc always; J/K, X, A, R and ? while single-key shortcuts are on.
   const keyActions = useRef<(event: KeyboardEvent) => void>(() => {});
   keyActions.current = (event: KeyboardEvent) => {
     if (shortcutsPaused(event)) return;
     const current = selected;
-    switch (event.key) {
-      case "j":
+    const hasRows = visibleRef.current.length > 0;
+    // Arrows move through the queue only from the list itself (or nothing focused); elsewhere they scroll.
+    const target = event.target instanceof Node ? event.target : null;
+    const inList = target === document.body || Boolean(target && ledgerRef.current?.contains(target));
+    const key = event.key;
+    // Turned off: character keys do nothing here.
+    if (key.length === 1 && !singleKeys) return;
+    switch (key) {
       case "ArrowDown":
-        event.preventDefault();
-        move(1);
-        break;
-      case "k":
       case "ArrowUp":
+        if (!hasRows || !inList) return;
         event.preventDefault();
-        move(-1);
+        move(key === "ArrowDown" ? 1 : -1);
+        break;
+      case "j":
+      case "k":
+        if (!hasRows) return;
+        event.preventDefault();
+        move(key === "j" ? 1 : -1);
         break;
       case "x":
         if (!current) return;
         event.preventDefault();
+        if (isOwn(current)) {
+          toast("This is your own expense — another admin needs to review it, so it can't be selected.", "info");
+          return;
+        }
         if (!showCheckboxes) setSelectMode(true);
         toggleChecked(current._id);
         break;
@@ -433,7 +509,7 @@ export default function ApprovalsPage() {
             onSelect={() => open(selectedId === expense._id ? null : expense)}
             inlineDetail={!sidePanel}
             detailId={DETAIL_PANEL_ID}
-            editHref={expenseEditHref(expense._id, QUEUE_PATH)}
+            editHref={expenseEditHref(expense._id, APPROVALS_HREF)}
             showTripLink
             review={review.handlers}
             selection={
@@ -442,7 +518,8 @@ export default function ApprovalsPage() {
                     checked: checked.has(expense._id),
                     onToggle: () => toggleChecked(expense._id),
                     label: `Select ${expense.title}, ${formatCurrency(expense.amount, expense.currency?.code)}`,
-                    keyShortcut: "X",
+                    keyShortcut: singleKeys ? "X" : undefined,
+                    unavailable: isOwn(expense),
                   }
                 : undefined
             }
@@ -479,6 +556,18 @@ export default function ApprovalsPage() {
           </Button>
         }
       />
+    ) : loadMoreFailed && !loadingMore ? (
+      <EmptyState
+        headingRef={emptyHeadingRef}
+        icon={<AlertCircle />}
+        title="Couldn't load the next expenses"
+        description="More are waiting for approval. Check your connection and try again."
+        action={
+          <Button variant="secondary" icon={RotateCcw} onClick={loadMore}>
+            Retry
+          </Button>
+        }
+      />
     ) : hasMore || loadingMore ? (
       <div className="py-14">
         <InlineLoader label="Loading the next expenses..." />
@@ -502,7 +591,12 @@ export default function ApprovalsPage() {
         <LedgerHead
           select={
             showCheckboxes ? (
-              <SelectAllCheckbox selected={checkedVisible.length} total={visible.length} onToggle={toggleAll} />
+              selectable.length > 0 ? (
+                <SelectAllCheckbox selected={checkedVisible.length} total={selectable.length} onToggle={toggleAll} />
+              ) : (
+                // Only the viewer's own are listed: nothing to select, but keep the column.
+                <span aria-hidden="true" />
+              )
             ) : undefined
           }
         />
@@ -510,8 +604,13 @@ export default function ApprovalsPage() {
         <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", panelPadX)}>
           <span>{`Showing ${visible.length} of ${remaining} awaiting approval`}</span>
           {hasMore && (
-            <Button variant="secondary" icon={ChevronDown} loading={loadingMore} onClick={loadMore}>
-              {loadingMore ? "Loading..." : "Load more"}
+            <Button
+              variant="secondary"
+              icon={loadMoreFailed ? RotateCcw : ChevronDown}
+              loading={loadingMore}
+              onClick={loadMore}
+            >
+              {loadingMore ? "Loading..." : loadMoreFailed ? "Retry loading more" : "Load more"}
             </Button>
           )}
         </div>
@@ -537,11 +636,19 @@ export default function ApprovalsPage() {
               variant="ghost"
               icon={Keyboard}
               onClick={() => setShowShortcuts(true)}
-              aria-keyshortcuts="Shift+?"
+              aria-keyshortcuts={singleKeys ? "Shift+?" : undefined}
               className="hidden lg:inline-flex"
             >
               Keyboard shortcuts
             </Button>
+            {/* Narrow windows (and zoomed-in ones) still reach the list and its on/off switch. */}
+            <IconButton
+              icon={Keyboard}
+              variant="ghost"
+              onClick={() => setShowShortcuts(true)}
+              aria-label="Keyboard shortcuts"
+              className="lg:hidden"
+            />
             {!desktop && visible.length > 0 && (
               <Button variant="secondary" icon={ListChecks} aria-pressed={selectMode} onClick={toggleSelectMode}>
                 {selectMode ? "Done" : "Select"}
@@ -602,7 +709,7 @@ export default function ApprovalsPage() {
                       onClick={() => move(-1)}
                       disabled={selectedIndex <= 0}
                       aria-label="Previous expense"
-                      aria-keyshortcuts="K ArrowUp"
+                      aria-keyshortcuts={singleKeys ? "K ArrowUp" : "ArrowUp"}
                     />
                     <IconButton
                       icon={ChevronDown}
@@ -610,14 +717,14 @@ export default function ApprovalsPage() {
                       onClick={() => move(1)}
                       disabled={selectedIndex >= visible.length - 1}
                       aria-label="Next expense"
-                      aria-keyshortcuts="J ArrowDown"
+                      aria-keyshortcuts={singleKeys ? "J ArrowDown" : "ArrowDown"}
                     />
                   </span>
                 </div>
                 <ExpenseDetail
                   key={selected._id}
                   expense={selected}
-                  editHref={expenseEditHref(selected._id, QUEUE_PATH)}
+                  editHref={expenseEditHref(selected._id, APPROVALS_HREF)}
                   review={review.handlers}
                   onClose={() => open(null)}
                   showHeader
@@ -630,7 +737,7 @@ export default function ApprovalsPage() {
                 title="No expense selected"
                 description={
                   visible.length > 0
-                    ? "Pick one to see its receipt and approve or reject it. Or press J to start from the top."
+                    ? `Pick one to see its receipt and approve or reject it. Or press ${singleKeys ? "J" : "↓"} to start from the top.`
                     : "Nothing to review right now."
                 }
               />
@@ -659,7 +766,8 @@ export default function ApprovalsPage() {
         </BulkBar>
       ) : (
         !sidePanel &&
-        selected && (
+        selected &&
+        !isOwn(selected) && (
           <BulkBar label="Selected expense" summary={selectedName(selected)}>
             <Button variant="danger" icon={X} onClick={() => review.openReject([selected])}>
               Reject…
@@ -681,7 +789,12 @@ export default function ApprovalsPage() {
           review.approve(targets);
         }}
       />
-      <ShortcutsDialog isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <ShortcutsDialog
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+        singleKeys={singleKeys}
+        onSingleKeysChange={setSingleKeys}
+      />
       {review.dialogs}
     </div>
   );

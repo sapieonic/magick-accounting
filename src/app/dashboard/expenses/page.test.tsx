@@ -485,7 +485,7 @@ describe("ExpensesPage", () => {
     listedExpenses = [expense, splitExpense];
     render(<ExpensesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^export/i }));
     await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
 
     const [header, companyRow, splitRow] = vi.mocked(downloadCsv).mock.calls[0][1].split("\r\n");
@@ -510,7 +510,7 @@ describe("ExpensesPage", () => {
     });
     render(<ExpensesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^export/i }));
     await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
 
     const exportUrls = expenseRequests().filter((url) => url.includes("limit=10000"));
@@ -521,7 +521,7 @@ describe("ExpensesPage", () => {
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain("AWS India Cloud Services");
     expect(lines[2]).toContain("Team offsite hotel");
-    expect(toastMock).toHaveBeenCalledWith("Exported 2 expenses");
+    expect(toastMock).toHaveBeenCalledWith("Exported 2 approved expenses");
   });
 
   it("fails the export rather than cut it short when the server gives no cursor to continue from", async () => {
@@ -530,8 +530,49 @@ describe("ExpensesPage", () => {
     });
     render(<ExpensesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^export/i }));
     await waitFor(() => expect(toastMock).toHaveBeenCalledWith("Failed to export expenses", "error"));
+    expect(downloadCsv).not.toHaveBeenCalled();
+  });
+
+  it("exports approved expenses when Status is 'All statuses', and says so on the button", async () => {
+    render(<ExpensesPage />);
+
+    const button = await screen.findByRole("button", { name: "Export approved (CSV)" });
+    expect(button).toHaveAttribute("title", expect.stringMatching(/pick a status to export the others/i));
+    fireEvent.click(button);
+    await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
+    const exportUrl = expenseRequests().find((url) => url.includes("limit=10000"))!;
+    expect(new URL(exportUrl, "http://localhost").searchParams.get("approval")).toBe("approved");
+    expect(vi.mocked(downloadCsv).mock.calls[0][0]).toMatch(/^expenses-approved-/);
+    // The list itself still shows every status.
+    expect(new URL(expenseRequests()[0], "http://localhost").searchParams.get("approval")).toBeNull();
+  });
+
+  it("exports the picked status, and nothing approved-only, once a Status is chosen", async () => {
+    window.history.replaceState(null, "", "/dashboard/expenses?approval=pending");
+    render(<ExpensesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
+    const exportUrl = expenseRequests().find((url) => url.includes("limit=10000"))!;
+    expect(new URL(exportUrl, "http://localhost").searchParams.getAll("approval")).toEqual(["pending"]);
+    expect(toastMock).toHaveBeenCalledWith("Exported 1 expense");
+  });
+
+  it("says there's nothing approved to export rather than download an empty file", async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url.includes("limit=10000")
+        ? Promise.resolve({ expenses: [], pagination: { total: 0, hasMore: false, nextCursor: null } })
+        : defaultGet(url)
+    );
+    render(<ExpensesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export approved (CSV)" }));
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith("No approved expenses to export. Pick a Status to export the others.", "info")
+    );
     expect(downloadCsv).not.toHaveBeenCalled();
   });
 
@@ -691,7 +732,7 @@ describe("ExpensesPage", () => {
       const totals = screen.getByRole("region", { name: "Totals" });
       expect(within(totals).getByText("1 approved expense · rejected expenses aren't in totals")).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
+      fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
       await waitFor(() => expect(downloadCsv).toHaveBeenCalledTimes(1));
       expect(expenseRequests().find((url) => url.includes("limit=10000"))).toContain("approval=rejected");
 
@@ -818,7 +859,8 @@ describe("ExpensesPage", () => {
       expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
       const ledger = screen.getByRole("region", { name: "Expense ledger" });
       expect(within(ledger).queryByText("Awaiting approval")).not.toBeInTheDocument();
-      expect(within(detail("pending-1")).getByText("Approved by Priya on 25 Nov")).toBeInTheDocument();
+      // Who approved it and when (the detail words it; the date format is the detail's own).
+      expect(detail("pending-1")).toHaveTextContent(/Approved.*Priya.*25 Nov/);
     });
 
     it("puts everything back on Undo", async () => {
@@ -881,6 +923,121 @@ describe("ExpensesPage", () => {
       expect(api.post).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("button", { name: "Taxi to client" })).not.toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Nothing awaiting approval" })).toBeInTheDocument();
+    });
+
+    it("withdraws Delete while an approve can still be undone, and brings it back on Undo", async () => {
+      render(<ExpensesPage />);
+      await screen.findByRole("region", { name: "Totals" });
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      expect(within(detail("pending-1")).getByRole("button", { name: /^Delete$/ })).toBeInTheDocument();
+      vi.useFakeTimers();
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: "Approve" }));
+
+      // Neither the row's quick action nor the detail offers it meanwhile.
+      expect(screen.queryByRole("button", { name: "Delete Taxi to client" })).not.toBeInTheDocument();
+      expect(within(detail("pending-1")).queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+      // Other expenses can still be deleted.
+      expect(screen.getByRole("button", { name: "Delete AWS India Cloud Services" })).toBeInTheDocument();
+
+      act(() => toastMock.mock.calls.at(-1)![2].action.onClick());
+      expect(screen.getByRole("button", { name: "Delete Taxi to client" })).toBeInTheDocument();
+      await lapseUndoWindow();
+      expect(api.delete).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("keeps focus on the expense's row after Approve turns itself off", async () => {
+      render(<ExpensesPage />);
+      await screen.findByRole("region", { name: "Totals" });
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      const approve = within(detail("pending-1")).getByRole("button", { name: "Approve" });
+      approve.focus();
+      vi.useFakeTimers();
+      fireEvent.click(approve);
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+
+      // Approve is off (or gone) during the undo window; focus didn't drop to the page.
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Taxi to client" }));
+    });
+
+    it("moves focus to the ledger when the approved row leaves the Status filter", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?approval=pending");
+      listedExpenses = [taxi];
+      listedSummary = { totalAmount: 0, totalExpenses: 0, companyAmount: 0, pocketAmount: 0, pendingCount: 1, pendingAmount: 450 };
+      render(<ExpensesPage />);
+      fireEvent.click(await screen.findByRole("button", { name: "Taxi to client" }));
+      const approve = within(detail("pending-1")).getByRole("button", { name: "Approve" });
+      approve.focus();
+      vi.useFakeTimers();
+      fireEvent.click(approve);
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+
+      expect(document.activeElement).toBe(screen.getByRole("region", { name: "Expense ledger" }));
+    });
+
+    it("moves an expense moved back to review out of the total and into Awaiting approval", async () => {
+      const approvedTaxi = {
+        ...taxi,
+        approvalStatus: "approved",
+        reviewedBy: { _id: "admin-2", name: "Ravi" },
+        reviewedAt: "2026-11-20T10:00:00.000Z",
+        assetAllocationRevision: 2,
+      };
+      listedExpenses = [expense, approvedTaxi];
+      listedSummary = {
+        totalAmount: 6128.76,
+        totalExpenses: 2,
+        companyAmount: 6128.76,
+        pocketAmount: 0,
+        pendingCount: 0,
+        pendingAmount: 0,
+        rejectedCount: 0,
+      };
+      vi.mocked(api.post).mockResolvedValue({
+        expense: { ...approvedTaxi, approvalStatus: "pending", reviewedBy: null, reviewedAt: null, assetAllocationRevision: 3 },
+      });
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(statValue(totals, "All time total")).toBe("₹6,128.76");
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: /move back to review/i }));
+      const dialog = screen.getByRole("dialog", { name: "Move back to review" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Move back to review" }));
+
+      await waitFor(() =>
+        expect(api.post).toHaveBeenCalledWith("/api/expenses/pending-1/approval", expect.objectContaining({ action: "reopen", revision: 2 }))
+      );
+      await waitFor(() => expect(statValue(totals, "All time total")).toBe("₹5,678.76"));
+      expect(within(totals).getByText("1 approved expense")).toBeInTheDocument();
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+      expect(within(totals).getByText("1 expense · not in total")).toBeInTheDocument();
+      // Still listed (no Status filter), now badged.
+      const ledger = screen.getByRole("region", { name: "Expense ledger" });
+      expect(within(ledger).getAllByText("Awaiting approval").length).toBeGreaterThan(0);
+    });
+
+    it("drops a reopened expense from the 'Approved' filter, and from its total", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?approval=approved");
+      const approvedTaxi = { ...taxi, approvalStatus: "approved", assetAllocationRevision: 2 };
+      listedExpenses = [expense, approvedTaxi];
+      listedSummary = { totalAmount: 6128.76, totalExpenses: 2, companyAmount: 6128.76, pocketAmount: 0, pendingCount: 0, pendingAmount: 0 };
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...approvedTaxi, approvalStatus: "pending" } });
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      fireEvent.click(within(detail("pending-1")).getByRole("button", { name: /move back to review/i }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Move back to review" })).getByRole("button", { name: "Move back to review" }));
+
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Taxi to client" })).not.toBeInTheDocument());
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+      expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
     });
 
     it("lets the submitter resubmit a rejected expense as is", async () => {
@@ -1103,6 +1260,72 @@ describe("ExpensesPage", () => {
       expect(await screen.findByText("Team offsite hotel")).toBeInTheDocument();
       expect(lastCursor()).toBe("after-aws");
       expect(screen.getByText("Showing 2 of 2 items · each trip counts as one")).toBeInTheDocument();
+    });
+
+    it("fetches and opens an ?expand= expense that isn't on the first page, above the list", async () => {
+      const older = { ...expense, _id: "expense-9", title: "Printer ink", amount: 1500, amountInBaseCurrency: 1500, approvalStatus: "pending" };
+      const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+      vi.mocked(api.get).mockImplementation((url: string) =>
+        url === "/api/expenses/expense-9" ? Promise.resolve({ expense: older, assets: [] }) : defaultGet(url)
+      );
+      window.history.replaceState(null, "", "/dashboard/expenses?expand=expense-9");
+      render(<ExpensesPage />);
+
+      const pinned = await screen.findByTestId("pinned-expense");
+      expect(pinned).toHaveTextContent("The expense you opened · further down the list");
+      const row = within(pinned).getByRole("button", { name: "Printer ink" });
+      expect(row).toHaveAttribute("aria-expanded", "true");
+      // Its detail is open under it, with its approval state.
+      expect(pinned.querySelector("#expense-detail-panel")).toHaveTextContent("Awaiting approval");
+      // The list itself is unchanged.
+      expect(screen.getByText("Showing 2 of 2 items · each trip counts as one")).toBeInTheDocument();
+    });
+
+    it("moves the totals when the opened expense from a link is approved", async () => {
+      const older = {
+        ...expense,
+        _id: "expense-9",
+        title: "Printer ink",
+        amount: 1500,
+        amountInBaseCurrency: 1500,
+        approvalStatus: "pending",
+        createdBy: { _id: "user-2", name: "Asha Rao", email: "asha@example.com" },
+      };
+      listedSummary = { ...DEFAULT_SUMMARY, pendingCount: 1, pendingAmount: 1500, rejectedCount: 0 };
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: true, user: { _id: "admin-1", name: "Priya", role: "admin" } } as any);
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...older, approvalStatus: "approved" } });
+      const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+      vi.mocked(api.get).mockImplementation((url: string) =>
+        url === "/api/expenses/expense-9" ? Promise.resolve({ expense: older, assets: [] }) : defaultGet(url)
+      );
+      window.history.replaceState(null, "", "/dashboard/expenses?expand=expense-9");
+      render(<ExpensesPage />);
+
+      const pinned = await screen.findByTestId("pinned-expense");
+      const totals = screen.getByRole("region", { name: "Totals" });
+      vi.useFakeTimers();
+      fireEvent.click(within(pinned).getByRole("button", { name: "Approve" }));
+      expect(statValue(totals, "All time total")).toBe("₹7,178.76");
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+
+      await lapseUndoWindow();
+      expect(api.post).toHaveBeenCalledWith("/api/expenses/expense-9/approval", { action: "approve", revision: 0 });
+      expect(statValue(totals, "All time total")).toBe("₹7,178.76");
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+    });
+
+    it("says so when an ?expand= expense can't be fetched", async () => {
+      const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+      vi.mocked(api.get).mockImplementation((url: string) =>
+        url === "/api/expenses/gone-1" ? Promise.reject(new Error("Expense not found")) : defaultGet(url)
+      );
+      window.history.replaceState(null, "", "/dashboard/expenses?expand=gone-1");
+      render(<ExpensesPage />);
+
+      await waitFor(() =>
+        expect(toastMock).toHaveBeenCalledWith("That expense couldn't be opened. It may have been deleted.", "info")
+      );
+      expect(screen.queryByTestId("pinned-expense")).not.toBeInTheDocument();
     });
 
     it("opens the cluster and the expense for an ?expand= deep link", async () => {

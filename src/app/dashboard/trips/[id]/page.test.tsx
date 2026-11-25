@@ -73,6 +73,11 @@ vi.mock("@/components/trips/TripTimeline", () => ({
                 Approve {expense.title}
               </button>
             )}
+            {props.review?.onReopen && expense.approvalStatus === "approved" && (
+              <button type="button" onClick={() => props.review.onReopen(expense)}>
+                Reopen {expense.title}
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -653,6 +658,8 @@ describe("TripDetailPage", () => {
     });
 
     beforeEach(() => {
+      // Another admin reviews: the cab is Manas's own (admins can't review their own).
+      vi.mocked(useAuth).mockReturnValue({ user: { ...priya, role: "admin" }, isAdmin: true } as any);
       response = detail({
         expenses: [flight, hotel, cab, dinner],
         summary: { ...detail().summary, pendingCount: 1, pendingAmount: 800 },
@@ -704,7 +711,7 @@ describe("TripDetailPage", () => {
       render(<TripDetailPage />);
       const totals = await screen.findByRole("region", { name: "Trip totals" });
       expect(timelineProps).toHaveBeenLastCalledWith(
-        expect.objectContaining({ review: expect.objectContaining({ viewerId: ME }) })
+        expect.objectContaining({ review: expect.objectContaining({ viewerId: PRIYA }) })
       );
 
       // Fake the undo window's timer too (the suite fakes only Date).
@@ -758,6 +765,78 @@ describe("TripDetailPage", () => {
       act(() => toastMock.mock.calls.at(-1)![2].action.onClick());
       expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
+    });
+
+    it("won't delete an expense while its approve can still be undone", async () => {
+      render(<TripDetailPage />);
+      await screen.findByRole("region", { name: "Trip totals" });
+      act(() => {
+        screen.getByRole("button", { name: "Approve Airport cab" }).click();
+      });
+      // The timeline withdraws Delete meanwhile; a stale click is refused in words.
+      act(() => {
+        screen.getByRole("button", { name: "Delete Airport cab" }).click();
+      });
+      expect(toastMock).toHaveBeenLastCalledWith(
+        "This expense's review is still being saved. Undo it first, or wait a few seconds, then delete it.",
+        "info"
+      );
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Airport cab");
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("moves an expense moved back to review out of the trip total", async () => {
+      const approvedCab = { ...cab, approvalStatus: "approved" as const };
+      response = detail({
+        expenses: [flight, hotel, approvedCab, dinner],
+        summary: {
+          ...detail().summary,
+          totalAmount: 13300,
+          expenseCount: 3,
+          pocketAmount: 7800,
+          byType: [
+            { travelType: "flight", total: 7000, count: 1 },
+            { travelType: "stay", total: 5500, count: 1 },
+            { travelType: "cab", total: 800, count: 1 },
+          ],
+          byPayer: [
+            { user: me, totalSpend: 7800, pocketSpend: 7800, companySpend: 0 },
+            { user: priya, totalSpend: 5500, pocketSpend: 0, companySpend: 5500 },
+          ],
+          pendingCount: 0,
+          pendingAmount: 0,
+        },
+      });
+      render(<TripDetailPage />);
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...approvedCab, approvalStatus: "pending" } });
+      // The summary the page reloads afterwards: the server agrees.
+      const reloaded = detail({
+        expenses: [flight, hotel, cab, dinner],
+        summary: { ...detail().summary, pendingCount: 1, pendingAmount: 800 },
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Reopen Airport cab" }));
+      const dialog = screen.getByRole("dialog", { name: "Move back to review" });
+      const before = vi.mocked(api.get).mock.calls.length;
+      // Hold the reload so the optimistic figures can be checked first.
+      let release!: () => void;
+      vi.mocked(api.get).mockImplementationOnce(
+        () => new Promise((resolve) => (release = () => resolve(reloaded)))
+      );
+      await userEvent.click(within(dialog).getByRole("button", { name: "Move back to review" }));
+
+      await waitFor(() =>
+        expect(api.post).toHaveBeenCalledWith(`/api/expenses/${cab._id}/approval`, expect.objectContaining({ action: "reopen" }))
+      );
+      await waitFor(() => expect(vi.mocked(api.get).mock.calls.length).toBeGreaterThan(before));
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval (1 expense)`);
+      expect(screen.getAllByTestId("type-row")).toHaveLength(2);
+      expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7000));
+      await act(async () => release());
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
     });
 
     it("leaves every total alone when a rejected expense is deleted", async () => {

@@ -24,7 +24,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: vi.fn() }));
 vi.mock("@/hooks/useTitle", () => ({ useTitle: vi.fn() }));
 vi.mock("@/hooks/useMediaQuery", () => ({ useMediaQuery: vi.fn() }));
-vi.mock("@/components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock }) }));
+vi.mock("@/components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock, dismiss: vi.fn() }) }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -92,6 +92,7 @@ async function lapseUndoWindow() {
 describe("ApprovalsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     setViewport(true);
     listed = [lunch, taxi, hotel];
     vi.mocked(useAuth).mockReturnValue({
@@ -238,7 +239,7 @@ describe("ApprovalsPage", () => {
 
   it("lists the shortcuts", async () => {
     await renderQueue();
-    fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Keyboard shortcuts" })[0]);
     const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     expect(within(dialog).getByText("Approve the open expense")).toBeInTheDocument();
     expect(within(dialog).getByText("Reject the open expense (asks for a reason)")).toBeInTheDocument();
@@ -276,7 +277,13 @@ describe("ApprovalsPage", () => {
     vi.mocked(api.post).mockRejectedValue(
       new ApiError("This expense changed after you opened it.", 409, { code: "stale", approvalStatus: "pending" })
     );
-    const updated = { ...lunch, title: "Client lunch (corrected)", amount: 1100, assetAllocationRevision: 3 };
+    const updated = {
+      ...lunch,
+      title: "Client lunch (corrected)",
+      amount: 1100,
+      amountInBaseCurrency: 1100,
+      assetAllocationRevision: 3,
+    };
     const defaultGet = vi.mocked(api.get).getMockImplementation()!;
     vi.mocked(api.get).mockImplementation(async (url: string) =>
       url === "/api/expenses/e1" ? { expense: updated } : defaultGet(url)
@@ -292,12 +299,15 @@ describe("ApprovalsPage", () => {
     });
     vi.useRealTimers();
 
-    await waitFor(() => expect(within(queue).getByRole("button", { name: "Client lunch (corrected)" })).toBeInTheDocument());
+    // Back in the queue, open again and focused (the reviewer hadn't moved on), with the latest figures.
+    const back = await within(queue).findByRole("button", { name: "Client lunch (corrected)" });
     expect(api.get).toHaveBeenCalledWith("/api/expenses/e1");
-    expect(toastMock).toHaveBeenCalledWith(
-      "Asha Rao changed this expense after you opened it — review the latest version.",
-      "error"
-    );
+    expect(toastMock).toHaveBeenCalledWith("This expense changed after you opened it — review the latest version.", "error");
+    await waitFor(() => expect(back).toHaveFocus());
+    expect(back).toHaveAttribute("aria-expanded", "true");
+    expect(within(queue).getByRole("button", { name: "Taxi" })).toHaveAttribute("aria-expanded", "false");
+    // The header counts its new amount, not the one first loaded.
+    expect(screen.getByText(/3 awaiting approval · ₹4,550.00/)).toBeInTheDocument();
   });
 
   it("drops an expense another admin already reviewed", async () => {
@@ -373,5 +383,164 @@ describe("ApprovalsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Select" }));
     expect(within(queue).getByRole("checkbox", { name: "Select Taxi, ₹450.00" })).toBeInTheDocument();
+  });
+
+  it("leaves the reviewer where they are if they moved on before a stale review came back", async () => {
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError("This expense changed after you opened it.", 409, { code: "stale", approvalStatus: "pending" })
+    );
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url: string) =>
+      url === "/api/expenses/e1" ? { expense: { ...lunch, assetAllocationRevision: 3 } } : defaultGet(url)
+    );
+    const queue = await renderQueue();
+    vi.useFakeTimers();
+    fireEvent.click(within(queue).getByRole("button", { name: "Client lunch" }));
+    fireEvent.click(within(screen.getByRole("complementary", { name: "Selected expense" })).getByRole("button", { name: "Approve" }));
+    // Taxi opened automatically; the reviewer moves on to Hotel.
+    fireEvent.keyDown(document.body, { key: "j" });
+    expect(within(queue).getByRole("button", { name: "Hotel" })).toHaveAttribute("aria-expanded", "true");
+    await lapseUndoWindow();
+    vi.useRealTimers();
+
+    const back = await within(queue).findByRole("button", { name: "Client lunch" });
+    expect(back).toHaveAttribute("aria-expanded", "false");
+    expect(within(queue).getByRole("button", { name: "Hotel" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("fetches the next page by itself once, and offers Retry instead of looping when that fails", async () => {
+    listed = [];
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/users")) return { users: [] };
+      if (url.includes("cursor=")) throw new Error("offline");
+      return { expenses: [], pagination: { total: 4, hasMore: true, nextCursor: "c1" }, summary: { pendingAmount: 900 } };
+    });
+    await renderQueue();
+    const heading = await screen.findByRole("heading", { name: "Couldn't load the next expenses" });
+    expect(heading).toBeInTheDocument();
+    const pageCalls = () => vi.mocked(api.get).mock.calls.filter(([u]) => u.includes("cursor=c1")).length;
+    // Give a loop every chance to show itself.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(pageCalls()).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(pageCalls()).toBe(2));
+  });
+
+  it("focuses the first newly loaded expense when the last one on the page was reviewed", async () => {
+    vi.mocked(api.post).mockResolvedValue({ expense: { ...lunch, approvalStatus: "approved" } });
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/users")) return { users: [] };
+      if (url.includes("cursor=c1")) {
+        return { expenses: [taxi], pagination: { total: null, hasMore: false, nextCursor: null } };
+      }
+      return { expenses: [lunch], pagination: { total: 2, hasMore: true, nextCursor: "c1" }, summary: { pendingAmount: 1650 } };
+    });
+    const queue = await renderQueue();
+    vi.useFakeTimers();
+    fireEvent.click(within(queue).getByRole("button", { name: "Client lunch" }));
+    fireEvent.click(within(screen.getByRole("complementary", { name: "Selected expense" })).getByRole("button", { name: "Approve" }));
+    await lapseUndoWindow();
+    vi.useRealTimers();
+
+    const next = await within(queue).findByRole("button", { name: "Taxi" });
+    await waitFor(() => expect(next).toHaveFocus());
+    expect(screen.getByText(/1 awaiting approval · ₹450.00/)).toBeInTheDocument();
+  });
+
+  it("moves with the arrows only from the list, and leaves them alone elsewhere", async () => {
+    const queue = await renderQueue();
+    const down = (target: Element) => fireEvent.keyDown(target, { key: "ArrowDown" });
+
+    expect(down(document.body)).toBe(false); // handled: default prevented
+    expect(within(queue).getByRole("button", { name: "Client lunch" })).toHaveAttribute("aria-expanded", "true");
+
+    // In the detail panel the arrows scroll it, as usual.
+    const close = within(screen.getByRole("complementary", { name: "Selected expense" })).getByRole("button", {
+      name: "Close details",
+    });
+    expect(down(close)).toBe(true);
+    expect(within(queue).getByRole("button", { name: "Client lunch" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("doesn't take the arrows when there's nothing to move through", async () => {
+    listed = [];
+    await renderQueue();
+    expect(fireEvent.keyDown(document.body, { key: "ArrowDown" })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: "j" })).toBe(true);
+  });
+
+  it("can switch single-key shortcuts off, remembers it, and keeps the arrows", async () => {
+    const queue = await renderQueue();
+    fireEvent.click(screen.getAllByRole("button", { name: "Keyboard shortcuts" })[0]);
+    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const toggle = within(dialog).getByRole("checkbox", { name: "Single-key shortcuts" });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(within(dialog).queryByText("Approve the open expense")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("approvals.singleKeyShortcuts")).toBe("off");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    fireEvent.keyDown(document.body, { key: "j" });
+    expect(within(queue).getByRole("button", { name: "Client lunch" })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(within(queue).getByRole("button", { name: "Client lunch" })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(document.body, { key: "a" });
+    expect(within(queue).getByRole("button", { name: "Client lunch" })).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+
+    // The buttons no longer advertise letters.
+    const panel = screen.getByRole("complementary", { name: "Selected expense" });
+    expect(within(panel).getByRole("button", { name: "Approve" })).not.toHaveAttribute("aria-keyshortcuts");
+    expect(within(panel).getByRole("button", { name: "Next expense" })).toHaveAttribute("aria-keyshortcuts", "ArrowDown");
+  });
+
+  it("starts with single-key shortcuts off when this browser remembers that", async () => {
+    window.localStorage.setItem("approvals.singleKeyShortcuts", "off");
+    const queue = await renderQueue();
+    await waitFor(() =>
+      expect(within(queue).getByRole("checkbox", { name: "Select Client lunch, ₹1,200.00" })).not.toHaveAttribute(
+        "aria-keyshortcuts"
+      )
+    );
+    fireEvent.keyDown(document.body, { key: "j" });
+    expect(within(queue).getByRole("button", { name: "Client lunch" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("lists the admin's own expense for another admin, without a checkbox or review buttons", async () => {
+    const mine = pendingExpense("e4", "Conference pass", 5000, {
+      createdBy: { _id: "u-priya", name: "Priya", email: "priya@example.com" },
+    });
+    listed = [lunch, mine];
+    const queue = await renderQueue();
+    expect(within(queue).queryByRole("checkbox", { name: /Conference pass/ })).not.toBeInTheDocument();
+    expect(within(queue).getAllByText(/yours — another admin reviews it/).length).toBeGreaterThan(0);
+    expect(within(queue).getByRole("checkbox", { name: "Select all 1" })).toBeInTheDocument();
+
+    fireEvent.click(within(queue).getByRole("button", { name: "Conference pass" }));
+    const panel = screen.getByRole("complementary", { name: "Selected expense" });
+    expect(within(panel).getByRole("group", { name: "Awaiting approval" })).toHaveTextContent(
+      "Another admin needs to review this — you can't approve your own expense."
+    );
+    expect(within(panel).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, { key: "a" });
+    expect(within(queue).getByRole("button", { name: "Conference pass" })).toBeInTheDocument();
+    expect(lastToast()).toEqual([
+      "You can't review your own expense. Another admin needs to approve or reject it.",
+      "info",
+    ]);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("gives no approve strip for the admin's own expense on phones", async () => {
+    setViewport(false);
+    listed = [pendingExpense("e4", "Conference pass", 5000, { createdBy: { _id: "u-priya", name: "Priya" } })];
+    const queue = await renderQueue();
+    fireEvent.click(within(queue).getByRole("button", { name: "Conference pass" }));
+    expect(screen.queryByRole("region", { name: "Selected expense" })).not.toBeInTheDocument();
   });
 });

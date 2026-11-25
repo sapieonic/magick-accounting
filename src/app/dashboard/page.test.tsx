@@ -5,12 +5,22 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
 
-/** The Notice (a polite status region) whose text includes `text`. */
+/**
+ * The innermost Notice whose text includes `text`. Notices are found by their
+ * `data-notice` marker, or by the live role they had before it, so the test
+ * doesn't depend on which one the primitive uses.
+ */
+function queryNotice(text: string): HTMLElement | null {
+  const notices = [...document.querySelectorAll<HTMLElement>("[data-notice], [role=status]")].filter((el) =>
+    el.textContent?.includes(text)
+  );
+  // The innermost match: a notice, not a region that happens to contain one.
+  return notices.find((el) => !notices.some((other) => other !== el && el.contains(other))) ?? null;
+}
+
 async function findNotice(text: string): Promise<HTMLElement> {
   return waitFor(() => {
-    const notice = screen
-      .queryAllByRole("status")
-      .find((region) => region.textContent?.includes(text));
+    const notice = queryNotice(text);
     if (!notice) throw new Error(`No notice containing "${text}"`);
     return notice;
   });
@@ -334,9 +344,12 @@ describe("DashboardPage", () => {
         within(totals).getByText(`3 approved expenses · 1 department · 2 categories · ${formatBaseCurrency(650)} awaiting approval`)
       ).toBeInTheDocument();
       // Admins get the queue's size and a way in.
-      const notice = screen.getByText(`Awaiting approval: 2 expenses · ${formatBaseCurrency(650)}`).closest("[role=status]")!;
+      const notice = await findNotice(`Awaiting approval: 2 expenses · ${formatBaseCurrency(650)}`);
       expect(notice).toHaveTextContent("They aren't in these totals until an admin approves them.");
-      expect(within(notice as HTMLElement).getByRole("link", { name: "Review" })).toHaveAttribute("href", "/dashboard/approvals");
+      const review = within(notice).getByRole("link", { name: "Review" });
+      expect(review).toHaveAttribute("href", "/dashboard/approvals");
+      // A full-size target (40px), not an inline text link.
+      expect(review).toHaveClass("min-h-10");
       expect(screen.getByRole("link", { name: "All expenses" })).toHaveAttribute("href", "/dashboard/expenses");
     });
 
@@ -358,10 +371,9 @@ describe("DashboardPage", () => {
       const notice = await findNotice("2 of your expenses were rejected");
       expect(notice).toHaveTextContent("2 of your expenses were rejected");
       expect(notice).toHaveTextContent("Open them to see why, then fix and resubmit them.");
-      expect(within(notice).getByRole("link", { name: "See rejected expenses" })).toHaveAttribute(
-        "href",
-        "/dashboard/expenses?approval=rejected"
-      );
+      const see = within(notice).getByRole("link", { name: "See rejected expenses" });
+      expect(see).toHaveAttribute("href", "/dashboard/expenses?approval=rejected");
+      expect(see).toHaveClass("min-h-10");
       // The admin queue line isn't for users.
       expect(screen.queryByRole("link", { name: "Review" })).not.toBeInTheDocument();
       expect(screen.getByText(/· ₹450\.00 awaiting approval$/)).toBeInTheDocument();

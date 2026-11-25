@@ -56,7 +56,7 @@ describe("MobileTabBar", () => {
   it("dots More while approvals are waiting, and says so in its name", () => {
     vi.mocked(useApprovalCount).mockReturnValue({ count: 3, pendingAmount: 0, oldestPendingAt: null, refresh: () => {} });
     render(<MobileTabBar onMore={() => {}} moreOpen={false} />);
-    const button = screen.getByRole("button", { name: "More, 3 approvals waiting" });
+    const button = screen.getByRole("button", { name: "More, 3 awaiting approval" });
     expect(screen.getByTestId("more-count-dot")).toHaveAttribute("aria-hidden", "true");
     expect(button).toContainElement(screen.getByTestId("more-count-dot"));
   });

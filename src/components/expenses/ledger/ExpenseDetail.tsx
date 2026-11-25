@@ -18,6 +18,7 @@ import {
   Paperclip,
   Pencil,
   Percent,
+  RotateCcw,
   Send,
   Tag,
   Trash2,
@@ -27,7 +28,13 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { APPROVAL_HISTORY_LABEL, effectiveApprovalStatus, type ReviewAction } from "@/lib/approval";
+import {
+  canReview,
+  canReviewExpense,
+  effectiveApprovalStatus,
+  type ReviewAction,
+  type Role,
+} from "@/lib/approval";
 import { formatCurrency } from "@/lib/currency";
 import { payerName } from "@/lib/expense-csv";
 import { travelTypeLabel } from "@/lib/trip";
@@ -40,12 +47,14 @@ import { linkClass } from "@/components/ui/styles";
 import DetailList, { type DetailItem } from "@/components/ui/DetailList";
 import Notice from "@/components/ui/Notice";
 import {
-  historyParts,
+  expensePersonName,
+  historyLine,
   latestResubmission,
   relativeTime,
   reviewInfo,
   submittedAt,
 } from "@/components/approvals/approval-format";
+import ApprovalBadge from "@/components/expenses/ApprovalBadge";
 import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import { conversionNote, expenseDate, isImageFile, paymentSourceDetail } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
@@ -59,10 +68,21 @@ export interface ExpenseReviewActions {
   onApprove?: (expense: ExpenseListItem) => void;
   /** Admins: ask for a reason, then reject. Omitted hides Reject…. */
   onReject?: (expense: ExpenseListItem) => void;
+  /**
+   * Admins: "Move back to review…" on an approved (or legacy) or rejected
+   * expense without linked assets; asks to confirm, then it is pending again.
+   * Omitted hides it.
+   */
+  onReopen?: (expense: ExpenseListItem) => void;
   /** Submitter: "Resubmit as is…" for their rejected expense. Omitted hides it. */
   onResubmit?: (expense: ExpenseListItem) => void;
-  /** The signed-in user's id: submitter-only actions show on their own expenses. */
+  /**
+   * The signed-in user's id: submitter-only actions show on their own
+   * expenses, and admins can't review their own (`canReviewExpense`).
+   */
   viewerId?: string;
+  /** The signed-in user's role; without it, a viewer given review handlers counts as an admin. */
+  viewerRole?: Role;
   /** Expenses whose approve/reject is in its undo window or being sent: their buttons are off. */
   inFlight?: Record<string, ReviewAction>;
   /** The review queue's keyboard shortcuts: A approves, R rejects (shown on the buttons). */
@@ -216,6 +236,37 @@ function KeyHint({ children }: { children: string }) {
   );
 }
 
+/** Admin review handlers were given: the viewer is an admin (whether or not they may review this one). */
+const isAdminView = (review?: ExpenseReviewActions) => Boolean(review?.onApprove || review?.onReject || review?.onReopen);
+
+/** The viewer may approve, reject or reopen this expense: an admin, and not its submitter. */
+function mayReview(expense: ExpenseListItem, review?: ExpenseReviewActions): boolean {
+  if (!isAdminView(review)) return false;
+  const role = review?.viewerRole ?? "admin";
+  if (!review?.viewerId) return canReview(role);
+  return canReviewExpense({ _id: review.viewerId, role }, expense);
+}
+
+/** "Priya moved it back to review: “Approved by mistake”" while it waits again after a reopen. */
+function ReopenedNote({ expense }: { expense: ExpenseListItem }) {
+  const history = expense.approvalHistory ?? [];
+  const last = history[history.length - 1];
+  if (last?.action !== "reopened") return null;
+  const name = expensePersonName(last.by, expense) || "An admin";
+  return (
+    <p className="mt-1.5">
+      {name} moved it back to review
+      {last.note ? (
+        <>
+          : <q className="text-ink">{last.note}</q>
+        </>
+      ) : (
+        "."
+      )}
+    </p>
+  );
+}
+
 /**
  * Where the expense stands and what happens next, for an expense that isn't
  * approved: awaiting approval (with Approve / Reject… for admins) or rejected
@@ -223,13 +274,16 @@ function KeyHint({ children }: { children: string }) {
  */
 function ApprovalNotice({ expense, editHref, review }: { expense: ExpenseListItem; editHref: string; review?: ExpenseReviewActions }) {
   const status = effectiveApprovalStatus(expense);
-  const isReviewer = Boolean(review?.onApprove || review?.onReject);
+  const isAdmin = isAdminView(review);
+  const isReviewer = mayReview(expense, review);
   const isOwner = Boolean(review?.viewerId && review.viewerId === expense.createdBy?._id);
   const busy = Boolean(review?.inFlight?.[expense._id]);
   const submitter = expense.createdBy?.name || "the submitter";
 
   if (status === "pending") {
-    const when = relativeTime(submittedAt(expense));
+    // After a reopen, the admin's move (ReopenedNote) says when; "submitted just now" would mislead.
+    const reopened = expense.approvalHistory?.[expense.approvalHistory.length - 1]?.action === "reopened";
+    const when = reopened ? null : relativeTime(submittedAt(expense));
     const resubmission = isReviewer ? latestResubmission(expense) : null;
     return (
       <Notice
@@ -272,9 +326,15 @@ function ApprovalNotice({ expense, editHref, review }: { expense: ExpenseListIte
             Submitted by {expense.createdBy?.name || "a team member"}
             {when ? ` ${when}` : ""}. Not in totals yet.
           </p>
+        ) : isAdmin && isOwner ? (
+          <p>
+            Another admin needs to review this — you can&apos;t approve your own expense. It isn&apos;t included in
+            company totals until it&apos;s approved.
+          </p>
         ) : (
           <p>An admin will review this. It isn&apos;t included in company totals until it&apos;s approved.</p>
         )}
+        <ReopenedNote expense={expense} />
         {resubmission?.note && (
           <p className="mt-1.5">
             Note from {resubmission.name || submitter}:{" "}
@@ -327,7 +387,7 @@ function ApprovalNotice({ expense, editHref, review }: { expense: ExpenseListIte
           </blockquote>
         )}
         <p>
-          {isOwner || !review
+          {isOwner || !isAdmin
             ? "What next: fix the details and resubmit, or delete it if it was a mistake."
             : `What next: ${submitter} can fix it and resubmit. It isn't in company totals.`}
         </p>
@@ -338,18 +398,31 @@ function ApprovalNotice({ expense, editHref, review }: { expense: ExpenseListIte
   return null;
 }
 
-/** "Approved by Priya on 12 Nov", "Added by an admin, approved automatically", or (legacy) "Approved". */
-function approvedText(expense: ExpenseListItem): string {
+/** After the "Approved" badge: "by Priya on 12 Nov 2026", "automatically, added by an admin", or nothing (legacy). */
+function approvedDetail(expense: ExpenseListItem): string | null {
   const history = expense.approvalHistory ?? [];
   const last = history[history.length - 1];
-  if (last?.action === "auto_approved") return APPROVAL_HISTORY_LABEL.auto_approved;
+  if (last?.action === "auto_approved") return "automatically, added by an admin";
   const { name, date } = reviewInfo(expense);
-  if (name && date) return `Approved by ${name} on ${date}`;
-  if (name) return `Approved by ${name}`;
-  return "Approved";
+  if (name && date) return `by ${name} on ${date}`;
+  if (name) return `by ${name}`;
+  return null;
 }
 
-/** Every submit, review and resubmit, oldest first, folded away. */
+function ApprovedValue({ expense }: { expense: ExpenseListItem }) {
+  const detail = approvedDetail(expense);
+  return (
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+      <ApprovalBadge status="approved" showApproved />
+      {detail && <span>{detail}</span>}
+    </span>
+  );
+}
+
+/**
+ * Every submit, review, resubmit and reopen, oldest first, folded away. A
+ * person's note is quoted; the server's own edit marker reads as an event.
+ */
 function ApprovalHistory({ expense }: { expense: ExpenseListItem }) {
   const history = expense.approvalHistory ?? [];
   return (
@@ -359,13 +432,12 @@ function ApprovalHistory({ expense }: { expense: ExpenseListItem }) {
       </summary>
       <ol className="flex flex-col divide-y divide-rule-2 border-y border-rule-2">
         {history.map((entry, index) => {
-          const { name, date } = historyParts(entry, expense);
+          const { summary, quote, event } = historyLine(entry, expense);
           return (
             <li key={index} className="flex flex-col gap-0.5 py-2">
-              <span className="text-ink">
-                {[APPROVAL_HISTORY_LABEL[entry.action] ?? entry.action, name, date].filter(Boolean).join(" · ")}
-              </span>
-              {entry.note && <span className="whitespace-pre-line text-ink-3">&ldquo;{entry.note}&rdquo;</span>}
+              <span className="text-ink">{summary}</span>
+              {event && <span className="text-ink-3">{event}</span>}
+              {quote && <span className="whitespace-pre-line text-ink-3">&ldquo;{quote}&rdquo;</span>}
             </li>
           );
         })}
@@ -398,9 +470,16 @@ export default function ExpenseDetail({
   const status = effectiveApprovalStatus(expense);
   const ownerCanResubmit = status === "rejected" && Boolean(review?.viewerId && review.viewerId === expense.createdBy?._id);
   const historyCount = expense.approvalHistory?.length ?? 0;
+  // Approved or rejected, by someone else, nothing registered against it, and no review of it under way.
+  const canReopen =
+    Boolean(review?.onReopen) &&
+    status !== "pending" &&
+    assets === 0 &&
+    !review?.inFlight?.[expense._id] &&
+    mayReview(expense, review);
 
   const items: DetailItem[] = [
-    ...(status === "approved" ? [{ label: "Approval", icon: CircleCheck, value: approvedText(expense) }] : []),
+    ...(status === "approved" ? [{ label: "Approval", icon: CircleCheck, value: <ApprovedValue expense={expense} /> }] : []),
     ...(!showHeader && conversion ? [{ label: "Converted", icon: ArrowLeftRight, value: <span className="num text-xs">{conversion}</span> }] : []),
     ...(expense.gstAmount != null && expense.gstAmount > 0
       ? [{ label: "GST (incl.)", icon: Percent, value: <span className="num">{formatCurrency(expense.gstAmount, code)}</span> }]
@@ -491,6 +570,16 @@ export default function ExpenseDetail({
         {!ownerCanResubmit && (
           <Button href={editHref} icon={Pencil} className="grow basis-[100px]">
             Edit
+          </Button>
+        )}
+        {canReopen && (
+          <Button
+            variant="secondary"
+            icon={RotateCcw}
+            onClick={() => review?.onReopen?.(expense)}
+            className="grow basis-[180px]"
+          >
+            Move back to review…
           </Button>
         )}
         {onRemoveFromTrip && (

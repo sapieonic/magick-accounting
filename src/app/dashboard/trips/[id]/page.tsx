@@ -48,15 +48,13 @@ import AddExistingExpensesModal from "@/components/trips/AddExistingExpensesModa
 import { BudgetMeter, TripStatusBadge } from "@/components/trips/TripMeta";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
+import { DELETE_WHILE_REVIEWING, asReviewed, useFocusAfterReview } from "@/components/expenses/review-status";
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
 
 /** Suggestions shown in the "Might belong here" panel. */
 const SUGGESTIONS = 3;
-
-/** The status an approve or reject in its undo window will leave the expense in. */
-const REVIEWED_STATUS = { approve: "approved", reject: "rejected" } as const;
 
 /** An expense's amounts added to (1) or taken out of (-1) the trip summary. */
 interface SummaryChange {
@@ -233,7 +231,11 @@ export default function TripDetailPage() {
   // Approve / reject (admins) and resubmit (submitters) from an expense's detail.
   // Once saved, the expense is replaced and the summary reloaded, so "Who paid"
   // is the server's own figure rather than a guess.
+  // Approve/Reject turn off during the undo window: keep focus on the expense's row.
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const focusAfterReview = useFocusAfterReview(timelineRef);
   const review = useApprovalActions({
+    onScheduled: (reviewed) => focusAfterReview(reviewed),
     onUpdated: (updated) => {
       setData((prev) => {
         const old = prev?.expenses.find((e) => e._id === updated._id);
@@ -272,7 +274,7 @@ export default function TripDetailPage() {
       data
         ? data.expenses
             .filter((e) => !pendingSet.has(e._id))
-            .map((e) => (inFlight[e._id] ? { ...e, approvalStatus: REVIEWED_STATUS[inFlight[e._id]] } : e))
+            .map((e) => (inFlight[e._id] ? asReviewed(e, inFlight[e._id]) : e))
         : [],
     [data, pendingSet, inFlight]
   );
@@ -283,7 +285,7 @@ export default function TripDetailPage() {
       if (pendingSet.has(e._id)) changes.push({ expense: e, sign: -1 });
       else if (inFlight[e._id]) {
         changes.push({ expense: e, sign: -1 });
-        changes.push({ expense: { ...e, approvalStatus: REVIEWED_STATUS[inFlight[e._id]] }, sign: 1 });
+        changes.push({ expense: asReviewed(e, inFlight[e._id]), sign: 1 });
       }
     }
     return shiftTripSummary(data.summary, changes);
@@ -293,6 +295,11 @@ export default function TripDetailPage() {
     (expense: ExpenseListItem) => {
       if ((expense.linkedAssetCount || 0) > 0) {
         toast("Linked asset purchases cannot be deleted from Expenses", "error");
+        return;
+      }
+      // The timeline withdraws Delete while a review can be undone; this guards a stale click.
+      if (inFlight[expense._id]) {
+        toast(DELETE_WHILE_REVIEWING, "info");
         return;
       }
       // Hidden (via `hiddenIds`) until it is undone, deleted or fails.
@@ -319,7 +326,7 @@ export default function TripDetailPage() {
         action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
       });
     },
-    [load, scheduleDelete, undoDelete, toast]
+    [inFlight, load, scheduleDelete, undoDelete, toast]
   );
 
   const handleRemoveFromTrip = useCallback(
@@ -550,15 +557,17 @@ export default function TripDetailPage() {
               />
             </div>
           ) : (
-            <TripTimeline
-              trip={trip}
-              expenses={expenses}
-              onDelete={handleDelete}
-              onRemoveFromTrip={handleRemoveFromTrip}
-              review={review.handlers}
-              initialExpandedId={expandId}
-              returnTo={`/dashboard/trips/${trip._id}`}
-            />
+            <div ref={timelineRef} tabIndex={-1}>
+              <TripTimeline
+                trip={trip}
+                expenses={expenses}
+                onDelete={handleDelete}
+                onRemoveFromTrip={handleRemoveFromTrip}
+                review={review.handlers}
+                initialExpandedId={expandId}
+                returnTo={`/dashboard/trips/${trip._id}`}
+              />
+            </div>
           )}
         </Panel>
 

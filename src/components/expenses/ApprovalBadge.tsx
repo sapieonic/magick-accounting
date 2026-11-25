@@ -11,15 +11,15 @@ const STYLE: Record<ApprovalStatus, { tone: Tone; icon: LucideIcon }> = {
 
 interface ApprovalBadgeProps {
   status?: ApprovalStatus | null;
-  /** Rows only flag what isn't approved; set false to also show "Approved" (detail views). */
-  hideApproved?: boolean;
+  /** Rows only flag what isn't approved; set to also show "Approved" (the expense detail). */
+  showApproved?: boolean;
   className?: string;
 }
 
 /** An expense's approval state as icon + plain-language text. Missing status = legacy = approved. */
-export default function ApprovalBadge({ status, hideApproved = true, className }: ApprovalBadgeProps) {
+export default function ApprovalBadge({ status, showApproved = false, className }: ApprovalBadgeProps) {
   const effective = effectiveApprovalStatus({ approvalStatus: status });
-  if (effective === "approved" && hideApproved) return null;
+  if (effective === "approved" && !showApproved) return null;
   const { tone, icon } = STYLE[effective];
   return (
     <Badge tone={tone} icon={icon} className={className}>

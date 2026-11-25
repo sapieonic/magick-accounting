@@ -8,6 +8,11 @@ export const UNDO_WINDOW_MS = 5000;
 export interface PendingCommitHandlers<T = unknown> {
   /** Undone inside the window: put things back. */
   onUndo?: () => void;
+  /**
+   * The window is over (it lapsed, or a flush sent it early) and the request
+   * is going out: Undo no longer applies, so close whatever offered it.
+   */
+  onSent?: () => void;
   /** The request succeeded, with its result. */
   onCommitted?: (result: T) => void;
   /** The request was refused or didn't answer: put things back. */
@@ -47,6 +52,7 @@ export function usePendingCommits(undoWindowMs: number = UNDO_WINDOW_MS) {
       clearTimeout(entry.timer);
       // Out of the undo window before the request: no undo or resend from here.
       pending.current.delete(key);
+      entry.handlers.onSent?.();
       const request = (async () => {
         try {
           const result = await entry.run();

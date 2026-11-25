@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 
@@ -13,7 +13,7 @@ const toneClass: Record<NoticeTone, { box: string; icon: string }> = {
 interface NoticeProps {
   tone?: NoticeTone;
   icon?: LucideIcon;
-  /** One plain-language line: what the state is. */
+  /** One plain-language line: what the state is. Also names the notice. */
   title: ReactNode;
   /** Optional detail: why, and what to do next. */
   children?: ReactNode;
@@ -22,19 +22,30 @@ interface NoticeProps {
   className?: string;
 }
 
-/** A ruled in-place message (status, rejection reason, what happens next); no shadow, never colour-only. */
+/**
+ * A ruled in-place message (status, rejection reason, what happens next); no
+ * shadow, never colour-only. A named `group` (its title), not a live region:
+ * it describes the state the page or detail opened in, and is re-mounted as
+ * the reviewer moves between expenses, so announcing it would only repeat
+ * what is on screen. Announcements of something that just happened are toasts.
+ * The root carries `data-notice` (and `data-tone`) for tests and styling hooks.
+ */
 export default function Notice({ tone = "neutral", icon: Icon, title, children, actions, className }: NoticeProps) {
   const t = toneClass[tone];
+  const titleId = useId();
   return (
     <div
-      // Polite for every tone: a notice describes the state the page loaded
-      // in, and an `alert` would interrupt on every visit.
-      role="status"
+      role="group"
+      aria-labelledby={titleId}
+      data-notice=""
+      data-tone={tone}
       className={cn("flex gap-3 rounded-panel border p-3 text-sm text-ink", t.box, className)}
     >
       {Icon && <Icon aria-hidden="true" size={18} strokeWidth={1.75} className={cn("mt-px shrink-0", t.icon)} />}
       <div className="min-w-0 flex-1 space-y-1.5">
-        <p className="font-semibold">{title}</p>
+        <p id={titleId} className="font-semibold">
+          {title}
+        </p>
         {children && <div className="text-ink-2">{children}</div>}
         {actions && <div className="flex flex-wrap gap-2 pt-1">{actions}</div>}
       </div>

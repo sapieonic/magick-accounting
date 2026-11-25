@@ -6,16 +6,10 @@ import EmptyState from "@/components/ui/EmptyState";
 import { cn } from "@/components/ui/cn";
 import { focusRing, panelPadX, rowClass } from "@/components/ui/styles";
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
-import { effectiveApprovalStatus, type ApprovalStatus } from "@/lib/approval";
+import { NOT_IN_TOTALS_SR, effectiveApprovalStatus } from "@/lib/approval";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import { expenseDate, isForeign } from "@/components/expenses/ledger/format";
 import type { RecentExpense } from "./types";
-
-/** Screen-reader note after an amount that isn't in the totals (the strike/mute is visual only). */
-const NOT_IN_TOTALS: Partial<Record<ApprovalStatus, string>> = {
-  pending: " (awaiting approval, not in totals)",
-  rejected: " (rejected, not in totals)",
-};
 
 /**
  * Ledger rows for the caller's latest expenses, any approval status; each
@@ -76,7 +70,8 @@ export default function LatestEntries({ expenses }: { expenses: RecentExpense[] 
                   )}
                 >
                   {formatCurrency(expense.amount, expense.currency?.code)}
-                  {!counted && <span className="sr-only">{NOT_IN_TOTALS[status]}</span>}
+                  {/* The strike/mute is visual only: say it too. */}
+                  {status !== "approved" && <span className="sr-only">{NOT_IN_TOTALS_SR[status]}</span>}
                 </span>
                 {isForeign(expense) && (
                   <span className={cn("num whitespace-nowrap text-xs text-ink-3", status === "rejected" && "line-through")}>
