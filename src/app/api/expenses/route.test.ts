@@ -606,3 +606,206 @@ describe("GET /api/expenses", () => {
     expect(Expense.aggregate).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /api/expenses with shared expenses", () => {
+  const id = (hex: string) => new mongoose.Types.ObjectId(hex);
+  const ASHA = "66c1884c0853f8a76a4da201";
+  const RAVI = "66c1884c0853f8a76a4da202";
+  const ADMIN = "66c1884c0853f8a76a4da203";
+  const goa = id("66c1884c0853f8a76a4da301");
+
+  let counter = 0;
+  function stored(
+    title: string,
+    day: string,
+    createdBy: string,
+    base: number,
+    paymentSource: "pocket" | "company" | "split" | "multiple",
+    pocketBase: number,
+    payments: { paidBy: string; amountInBaseCurrency: number; source: "pocket" | "company" }[] = [],
+    trip: mongoose.Types.ObjectId | null = null
+  ) {
+    counter += 1;
+    return {
+      _id: id(`66c1884c0853f8a76a4d${(0x900 + counter).toString(16).padStart(4, "0")}`),
+      title,
+      date: new Date(`${day}T00:00:00.000Z`),
+      createdAt: new Date(`${day}T10:00:00.000Z`),
+      createdBy: id(createdBy),
+      amount: base,
+      amountInBaseCurrency: base,
+      paymentSource,
+      pocketAmountInBaseCurrency: pocketBase,
+      payments: payments.map((entry) => ({ ...entry, paidBy: id(entry.paidBy), amount: entry.amountInBaseCurrency })),
+      trip,
+    };
+  }
+
+  // Asha's ₹10,000 bill: she paid ₹2,000, Ravi ₹8,000.
+  const sharedBill = stored("Offsite venue", "2026-10-10", ASHA, 10000, "multiple", 10000, [
+    { paidBy: ASHA, amountInBaseCurrency: 2000, source: "pocket" },
+    { paidBy: RAVI, amountInBaseCurrency: 8000, source: "pocket" },
+  ]);
+  const ravisLicense = stored("Licence", "2026-10-11", RAVI, 500, "company", 0);
+  // Split: ₹100.10 from her pocket, ₹150.15 on the company card.
+  const ashasBooks = stored("Books", "2026-10-09", ASHA, 250.25, "split", 100.1);
+  // In Goa, Asha's ₹3,000 dinner: she paid ₹1,000.50 on the company card, Ravi ₹1,999.50.
+  const goaDinner = stored(
+    "Goa dinner",
+    "2026-10-05",
+    ASHA,
+    3000,
+    "multiple",
+    1999.5,
+    [
+      { paidBy: ASHA, amountInBaseCurrency: 1000.5, source: "company" },
+      { paidBy: RAVI, amountInBaseCurrency: 1999.5, source: "pocket" },
+    ],
+    goa
+  );
+  const goaCab = stored("Goa cab", "2026-10-06", RAVI, 300.3, "pocket", 300.3, [], goa);
+  const docs = [sharedBill, ravisLicense, ashasBooks, goaDinner, goaCab];
+
+  function chain(result: unknown) {
+    const query = {
+      populate: vi.fn(() => query),
+      select: vi.fn(() => query),
+      sort: vi.fn(() => query),
+      limit: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue(result),
+    };
+    return query;
+  }
+
+  function findChain(filter: Record<string, unknown>) {
+    let cursor = new Query(filter).find(docs);
+    const query = {
+      populate: vi.fn(() => query),
+      sort: vi.fn((spec: Record<string, 1 | -1>) => {
+        cursor = cursor.sort(spec);
+        return query;
+      }),
+      limit: vi.fn((n: number) => {
+        cursor = cursor.limit(n);
+        return query;
+      }),
+      lean: vi.fn(() => Promise.resolve(cursor.all())),
+    };
+    return query;
+  }
+
+  function signIn(_id: string, role: "admin" | "user") {
+    vi.mocked(verifyAuth).mockResolvedValue({ _id, email: "x@example.com", name: "X", role });
+  }
+
+  async function get(query: string) {
+    return (await GET({ url: `http://localhost/api/expenses${query}` } as NextRequest)).json();
+  }
+
+  const titles = (body: { expenses: { title: string }[] }) => body.expenses.map((e) => e.title);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined as never);
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
+    );
+    vi.mocked(Expense.find).mockImplementation(((filter: Record<string, unknown>) => findChain(filter)) as never);
+    vi.mocked(Expense.countDocuments).mockImplementation(((filter: Record<string, unknown>) =>
+      Promise.resolve(new Query(filter).find(docs).count())) as never);
+    vi.mocked(Asset.aggregate).mockResolvedValue([] as never);
+    vi.mocked(Trip.find).mockReturnValue(
+      chain([
+        {
+          _id: goa,
+          name: "Goa offsite",
+          destinations: ["Goa"],
+          startDate: new Date("2026-10-04T00:00:00.000Z"),
+          endDate: new Date("2026-10-06T00:00:00.000Z"),
+          travelers: [
+            { _id: id(ASHA), name: "Asha", email: "asha@example.com" },
+            { _id: id(RAVI), name: "Ravi", email: "ravi@example.com" },
+          ],
+          createdBy: id(ASHA),
+        },
+      ]) as never
+    );
+  });
+
+  // Ravi: ₹8,000 of Asha's bill + his ₹500 licence + ₹1,999.50 of the dinner + his ₹300.30 cab.
+  const ravisSummary = {
+    totalExpenses: 4,
+    totalAmount: 10799.8,
+    pocketAmount: 10299.8,
+    companyAmount: 500,
+  };
+
+  it("lists a payer the shared bills others submitted, and sums only their share", async () => {
+    signIn(RAVI, "user");
+
+    const flat = await get("?limit=20&includeSummary=true");
+    expect(titles(flat)).toEqual(["Licence", "Offsite venue", "Goa cab", "Goa dinner"]);
+    expect(flat.pagination).toEqual({ total: 4, hasMore: false, nextCursor: null });
+    expect(flat.summary).toEqual(ravisSummary);
+
+    const grouped = await get("?groupTrips=true&limit=20&includeSummary=true");
+    // The trip is one item, its expenses oldest first.
+    expect(titles(grouped)).toEqual(["Licence", "Offsite venue", "Goa dinner", "Goa cab"]);
+    expect(Object.keys(grouped.trips)).toEqual([String(goa)]);
+    expect(grouped.pagination).toEqual({ total: 3, hasMore: false, nextCursor: null });
+    expect(grouped.summary).toEqual(ravisSummary);
+  });
+
+  it("gives the submitter of a shared bill only the part they paid", async () => {
+    signIn(ASHA, "user");
+    // ₹2,000 of her bill + her ₹250.25 books (₹100.10 pocket) + her ₹1,000.50 (company) of the dinner.
+    const summary = { totalExpenses: 3, totalAmount: 3250.75, pocketAmount: 2100.1, companyAmount: 1150.65 };
+
+    const flat = await get("?limit=20&includeSummary=true");
+    expect(titles(flat)).toEqual(["Offsite venue", "Books", "Goa dinner"]);
+    expect(flat.summary).toEqual(summary);
+
+    const grouped = await get("?groupTrips=true&limit=20&includeSummary=true");
+    expect(titles(grouped)).toEqual(["Offsite venue", "Books", "Goa dinner"]);
+    expect(grouped.summary).toEqual(summary);
+  });
+
+  it("ignores a user's paidBy, so they can't read someone else's share", async () => {
+    signIn(RAVI, "user");
+
+    const body = await get(`?limit=20&includeSummary=true&paidBy=${ASHA}`);
+
+    expect(titles(body)).toEqual(["Licence", "Offsite venue", "Goa cab", "Goa dinner"]);
+    expect(body.summary).toEqual(ravisSummary);
+    expect(body.summary).not.toHaveProperty("payerSpend");
+  });
+
+  it("gives an admin whole expenses, and with paidBy the payer's own share too", async () => {
+    signIn(ADMIN, "admin");
+
+    const all = await get("?limit=20&includeSummary=true");
+    expect(all.summary).toEqual({
+      totalExpenses: 5,
+      totalAmount: 14050.55,
+      pocketAmount: 12399.9,
+      companyAmount: 1650.65,
+    });
+
+    // Ravi's credited expenses, whole, with his share as Spend by User counts it.
+    const payerSummary = {
+      totalExpenses: 4,
+      totalAmount: 13800.3,
+      pocketAmount: 12299.8,
+      companyAmount: 1500.5,
+      payerSpend: { totalSpend: 10799.8, pocketSpend: 10299.8, companySpend: 500 },
+    };
+    const flat = await get(`?limit=20&includeSummary=true&paidBy=${RAVI}`);
+    expect(titles(flat)).toEqual(["Licence", "Offsite venue", "Goa cab", "Goa dinner"]);
+    expect(flat.summary).toEqual(payerSummary);
+
+    const grouped = await get(`?groupTrips=true&limit=20&includeSummary=true&paidBy=${RAVI}`);
+    expect(titles(grouped)).toEqual(["Licence", "Offsite venue", "Goa dinner", "Goa cab"]);
+    expect(grouped.summary).toEqual(payerSummary);
+  });
+});

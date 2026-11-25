@@ -161,6 +161,103 @@ describe("GET /api/trips", () => {
   });
 });
 
+describe("GET /api/trips with shared expenses", () => {
+  // Every payer of a shared ("several people") expense is a traveler, so the
+  // travelers' shares add up to the whole trip.
+  const shared = (
+    createdBy: string,
+    trip: string,
+    total: number,
+    payments: { paidBy: string; amountInBaseCurrency: number; source: "pocket" | "company" }[]
+  ) => ({
+    _id: new mongoose.Types.ObjectId(),
+    trip: oid(trip),
+    createdBy: oid(createdBy),
+    amount: total,
+    amountInBaseCurrency: total,
+    paymentSource: "multiple",
+    pocketAmountInBaseCurrency: payments
+      .filter((entry) => entry.source === "pocket")
+      .reduce((sum, entry) => sum + entry.amountInBaseCurrency, 0),
+    payments: payments.map((entry) => ({ ...entry, paidBy: oid(entry.paidBy), amount: entry.amountInBaseCurrency })),
+  });
+  const single = (createdBy: string, trip: string | null, base: number, paymentSource: "pocket" | "company") => ({
+    _id: new mongoose.Types.ObjectId(),
+    trip: trip ? oid(trip) : null,
+    createdBy: oid(createdBy),
+    amount: base,
+    amountInBaseCurrency: base,
+    paymentSource,
+    pocketAmountInBaseCurrency: paymentSource === "pocket" ? base : 0,
+    payments: [],
+  });
+
+  const tripExpenses = [
+    // Ravi's hotel: Asha paid ₹8,000.25 of it, Ravi ₹4,000.25 on the company card.
+    shared(RAVI, GOA, 12000.5, [
+      { paidBy: RAVI, amountInBaseCurrency: 4000.25, source: "company" },
+      { paidBy: ASHA, amountInBaseCurrency: 8000.25, source: "pocket" },
+    ]),
+    // Asha's flight ($100 at 83.0137).
+    { ...single(ASHA, GOA, 8301.37, "pocket"), amount: 100 },
+    single(RAVI, GOA, 450.5, "company"),
+    // Asha's dinner: she paid ₹1,250.33, Ravi ₹1,749.67.
+    shared(ASHA, GOA, 3000, [
+      { paidBy: ASHA, amountInBaseCurrency: 1250.33, source: "pocket" },
+      { paidBy: RAVI, amountInBaseCurrency: 1749.67, source: "company" },
+    ]),
+    single(ASHA, null, 999, "pocket"),
+    single(RAVI, PUNE, 999.99, "company"),
+  ];
+
+  beforeEach(() => {
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(tripExpenses))) as never
+    );
+  });
+
+  async function cards(trips: unknown[]) {
+    vi.mocked(Trip.find).mockReturnValue(chain(trips) as never);
+    const { trips: items } = await (await get()).json();
+    return Object.fromEntries(
+      (items as { _id: string; expenseCount: number; totalAmount: number }[]).map((item) => [
+        item._id,
+        { expenseCount: item.expenseCount, totalAmount: item.totalAmount },
+      ])
+    );
+  }
+
+  it("totals a traveler's own share, including their part of a bill someone else submitted", async () => {
+    signIn(ASHA, "user");
+    // Hotel (her ₹8,000.25 of Ravi's bill) + her flight + her ₹1,250.33 of the dinner; not Ravi's cab.
+    expect(await cards([goaTrip])).toEqual({ [GOA]: { expenseCount: 3, totalAmount: 17551.95 } });
+
+    signIn(RAVI, "user");
+    // His ₹4,000.25 of the hotel + his cab + his ₹1,749.67 of Asha's dinner; not Asha's flight.
+    expect(await cards([goaTrip, puneTrip])).toEqual({
+      [GOA]: { expenseCount: 3, totalAmount: 6200.42 },
+      [PUNE]: { expenseCount: 1, totalAmount: 999.99 },
+    });
+  });
+
+  it("totals whole expenses for an admin, which the travelers' shares add up to exactly", async () => {
+    signIn(ADMIN, "admin");
+    const admin = await cards([goaTrip, puneTrip]);
+    expect(admin).toEqual({
+      [GOA]: { expenseCount: 4, totalAmount: 23752.37 },
+      [PUNE]: { expenseCount: 1, totalAmount: 999.99 },
+    });
+
+    signIn(ASHA, "user");
+    const asha = await cards([goaTrip]);
+    signIn(RAVI, "user");
+    const ravi = await cards([goaTrip]);
+    const paise = (value: number) => Math.round(value * 100);
+    expect(paise(asha[GOA].totalAmount) + paise(ravi[GOA].totalAmount)).toBe(paise(admin[GOA].totalAmount));
+  });
+});
+
 describe("POST /api/trips", () => {
   beforeEach(() => {
     signIn(ASHA, "user");
