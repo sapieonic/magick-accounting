@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CircleCheck, CircleX, Clock3 } from "lucide-react";
+import { CircleCheck, CircleX, Clock3, Package } from "lucide-react";
 import Notice from "@/components/ui/Notice";
 import FormSection from "@/components/ui/FormSection";
 import { textButtonClass } from "@/components/ui/styles";
@@ -24,7 +24,7 @@ interface EditApprovalNoticeProps {
   isReviewer: boolean;
   /** An admin editing their own expense: another admin has to review it. */
   ownExpense?: boolean;
-  /** The accounting fields are locked (linked assets), so editing can't send it back for approval. */
+  /** The reviewed fields are locked (linked assets), so editing can't send it back for approval. */
   accountingLocked?: boolean;
 }
 
@@ -85,8 +85,19 @@ export function EditApprovalNotice({
   if (isReviewer || accountingLocked) return null;
   return (
     <Notice icon={CircleCheck} title="This expense is approved">
-      Changing the amount, date, category, department, payment or receipt sends it back for approval. Title,
-      description and trip changes don&apos;t.
+      Saving changes sends it back for approval (moving it to a trip doesn&apos;t).
+    </Notice>
+  );
+}
+
+/**
+ * Why a submitter can't change most of an expense: assets are registered
+ * against it, so only an admin may change its details. The trip stays theirs to set.
+ */
+export function LinkedAssetsLockNotice() {
+  return (
+    <Notice icon={Package} title="Assets are registered against this expense">
+      So only an admin can change its details. You can still move it to a trip.
     </Notice>
   );
 }

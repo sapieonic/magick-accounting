@@ -21,7 +21,14 @@ import {
 import { format, endOfMonth } from "date-fns";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { APPROVAL_LABEL, effectiveApprovalStatus, parseApprovalFilter, type ApprovalStatus } from "@/lib/approval";
+import {
+  APPROVAL_LABEL,
+  APPROVED_DELETE_MESSAGE,
+  canDeleteExpense,
+  effectiveApprovalStatus,
+  parseApprovalFilter,
+  type ApprovalStatus,
+} from "@/lib/approval";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
@@ -48,7 +55,13 @@ import { focusRing, panelClass, panelPadX, textButtonClass, transition } from "@
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseDetailPanel from "@/components/expenses/ledger/ExpenseDetailPanel";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
-import { DELETE_WHILE_REVIEWING, asReviewed, useFocusAfterReview } from "@/components/expenses/review-status";
+import {
+  DELETE_FAILED,
+  DELETE_WHILE_REVIEWING,
+  asReviewed,
+  deleteRefusal,
+  useFocusAfterReview,
+} from "@/components/expenses/review-status";
 import { baseAmount, expenseEditHref } from "@/components/expenses/ledger/format";
 import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -228,7 +241,7 @@ function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: (
 export default function ExpensesPage() {
   useTitle("Expenses");
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const sidePanel = useMediaQuery(SIDE_PANEL_QUERY);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   /** Trips on the loaded pages, keyed by id (grouped view only). */
@@ -322,7 +335,14 @@ export default function ExpensesPage() {
       dropExpense(old);
     },
   });
-  const { flush: flushReviews, inFlight } = review;
+  const { flush: flushReviews, inFlight, refresh: refreshExpense } = review;
+  /** Expenses whose delete the server refused, to re-read once they are back in the list. */
+  const [toReread, setToReread] = useState<Expense[]>([]);
+  useEffect(() => {
+    if (toReread.length === 0) return;
+    setToReread([]);
+    for (const expense of toReread) void refreshExpense(expense);
+  }, [toReread, refreshExpense]);
   /** The server's cursor for the page after the loaded ones. */
   const nextCursor = useRef<string | null>(null);
   /**
@@ -730,6 +750,11 @@ export default function ExpensesPage() {
     }
     // The loaded version: a row in a review's undo window shows the status it's heading for.
     const expense = expenses[index];
+    // The detail offers Delete only where it is allowed; this guards a stale click.
+    if (user && !canDeleteExpense(user, expense)) {
+      toast(APPROVED_DELETE_MESSAGE, "info");
+      return;
+    }
 
     // The item leaves the list (and the count) with its last listed expense:
     // deleting one expense of a trip cluster keeps the cluster.
@@ -755,9 +780,9 @@ export default function ExpensesPage() {
 
     scheduleDelete(expense._id, {
       onUndo: restore,
-      onFailed: () => {
+      onFailed: (error) => {
         restore();
-        toast("Failed to delete expense", "error");
+        deleteFailed(expense, error);
       },
     });
 
@@ -767,9 +792,26 @@ export default function ExpensesPage() {
     });
   };
 
+  /**
+   * After a delete the server refused (the expense is back in the list and the
+   * totals): its reason in words and, when it gave one (e.g. an admin approved
+   * the expense meanwhile, so only the master admin may delete it now), the
+   * expense re-read, so the row shows what the server has.
+   */
+  const deleteFailed = (expense: Expense, error: unknown) => {
+    const refusal = deleteRefusal(error);
+    toast(refusal ?? DELETE_FAILED, "error");
+    // Once the restore has rendered: the re-read replaces the restored row.
+    if (refusal) setToReread((prev) => [...prev, expense]);
+  };
+
   /** Deletes the expense opened from a link (not on the loaded pages), with the same undo. */
   const deletePinned = (pin: PinnedExpense) => {
     const { expense } = pin;
+    if (user && !canDeleteExpense(user, expense)) {
+      toast(APPROVED_DELETE_MESSAGE, "info");
+      return;
+    }
     setPinned(null);
     if (pin.counted) adjustTotals(expense, -1);
     setSelectedId((prev) => (prev === expense._id ? null : prev));
@@ -779,9 +821,9 @@ export default function ExpensesPage() {
     };
     scheduleDelete(expense._id, {
       onUndo: restore,
-      onFailed: () => {
+      onFailed: (error) => {
         restore();
-        toast("Failed to delete expense", "error");
+        deleteFailed(expense, error);
       },
     });
     toast(`Deleted "${expense.title}"`, "info", {

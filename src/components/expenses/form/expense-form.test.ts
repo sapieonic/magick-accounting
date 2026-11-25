@@ -28,19 +28,26 @@ describe("accountingFieldsChanged", () => {
     expect(accountingFieldsChanged(initial, { ...initial })).toBe(false);
   });
 
-  it("ignores title, description and trip edits", () => {
+  it("ignores moving it into a trip", () => {
+    expect(accountingFieldsChanged(initial, { ...initial, trip: "trip-1", travelType: "food" })).toBe(false);
+  });
+
+  it("compares the title and description trimmed, like the server", () => {
     expect(
-      accountingFieldsChanged(initial, {
-        ...initial,
-        title: "Team dinner",
-        description: "With the client",
-        trip: "trip-1",
-        travelType: "food",
-      })
+      accountingFieldsChanged(
+        { ...initial, description: "With the client" },
+        { ...initial, title: "  Client dinner ", description: "With the client\n" }
+      )
     ).toBe(false);
+    // Clearing a description is a change; blanking it to spaces is clearing it.
+    expect(accountingFieldsChanged({ ...initial, description: "With the client" }, { ...initial, description: "  " })).toBe(
+      true
+    );
   });
 
   it.each<[string, Partial<ExpenseFormValues>]>([
+    ["title", { title: "Team dinner" }],
+    ["description", { description: "With the client" }],
     ["amount", { amount: "1200" }],
     ["GST", { gstAmount: "180" }],
     ["currency", { currency: "currency-2" }],

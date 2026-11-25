@@ -156,6 +156,23 @@ describe("TripTimeline", () => {
     expect(screen.getByRole("button", { name: /^Delete$/ })).toBeInTheDocument();
   });
 
+  it("explains, instead of offering Delete, on an approved expense the viewer may not delete", () => {
+    const approved = makeExpense({ _id: "cab", title: "Airport cab", date: "2026-10-13T00:00:00.000Z", approvalStatus: "approved" });
+    render(
+      <TripTimeline
+        trip={trip}
+        expenses={[approved]}
+        initialExpandedId="cab"
+        onDelete={vi.fn()}
+        review={{ viewerId: "someone", viewerRole: "admin", inFlight: {} }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Approved expenses are part of the books, so only the master admin can delete them.")
+    ).toBeInTheDocument();
+  });
+
   it("forwards the approval actions to an opened expense", () => {
     const onApprove = vi.fn();
     const pending = makeExpense({ _id: "cab", title: "Airport cab", date: "2026-10-13T00:00:00.000Z", approvalStatus: "pending" });

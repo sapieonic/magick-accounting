@@ -85,6 +85,37 @@ describe("ExpenseRow", () => {
     expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ _id: "exp-1" }));
   });
 
+  it("offers the Delete quick action only where the viewer may delete the expense", () => {
+    const submitter = { viewerId: "u1", viewerRole: "user" as const };
+    const { rerender } = render(
+      <ExpenseRow
+        expense={makeExpense({ approvalStatus: "pending" })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+        onDelete={vi.fn()}
+        review={submitter}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Delete Team dinner" })).toBeInTheDocument();
+
+    // Approved: only the master admin deletes it; opening the row says why.
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({ approvalStatus: "approved" })}
+        selected
+        onSelect={vi.fn()}
+        editHref="/edit"
+        onDelete={vi.fn()}
+        review={submitter}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Approved expenses are part of the books, so only the master admin can delete them.")
+    ).toBeInTheDocument();
+  });
+
   it("opens the detail under the row with every payer of a shared bill", () => {
     renderRow({
       selected: true,

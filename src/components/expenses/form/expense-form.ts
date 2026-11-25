@@ -62,9 +62,10 @@ export function toExpensePayload(values: ExpenseFormValues) {
 }
 
 /**
- * The accounting fields of a form, normalised the way `PUT /api/expenses/:id`
- * compares them (amounts in cents, payer rows order-free). Title, description
- * and trip are left out: changing them never needs re-approval.
+ * The reviewed fields of a form, normalised the way `PUT /api/expenses/:id`
+ * compares them (title and description trimmed, amounts in cents, payer rows
+ * order-free). The trip and travel type are left out: moving an expense into
+ * or out of a trip never needs re-approval.
  */
 function accountingSnapshot(values: ExpenseFormValues): string {
   const payments =
@@ -72,6 +73,8 @@ function accountingSnapshot(values: ExpenseFormValues): string {
       ?.map((entry) => `${entry.paidBy.trim().toLowerCase()}:${entry.source}:${moneyToCents(entry.amount)}`)
       .sort() ?? [];
   return JSON.stringify([
+    values.title.trim(),
+    values.description.trim(),
     moneyToCents(values.amount),
     values.gstAmount === "" ? null : moneyToCents(values.gstAmount),
     values.currency,
@@ -85,11 +88,13 @@ function accountingSnapshot(values: ExpenseFormValues): string {
 }
 
 /**
- * Whether saving `current` over `initial` changes an accounting field: amount,
- * GST, currency, date, category, department, who paid (source, pocket share,
- * payers) or the receipt (`receiptChanged`). Client mirror of the server's
- * protected-field check, which sends an approved expense its submitter edits
- * back for approval.
+ * Whether saving `current` over `initial` changes a reviewed field: title,
+ * description (both trimmed), amount, GST, currency, date, category,
+ * department, who paid (source, pocket share, payers) or the receipt
+ * (`receiptChanged`). Client mirror of the server's protected-field check
+ * (`changedProtectedField`), which sends an approved expense its submitter
+ * edits back for approval and which a user can't pass on an expense with
+ * linked assets. The trip and travel type aren't reviewed.
  */
 export function accountingFieldsChanged(
   initial: ExpenseFormValues,

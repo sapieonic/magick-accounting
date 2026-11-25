@@ -20,7 +20,7 @@ import {
 } from "@/lib/approval-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
-import type { ApprovalStatus } from "@/lib/approval";
+import { APPROVED_DELETE_MESSAGE, canDeleteExpense, type ApprovalStatus } from "@/lib/approval";
 import { normalizeTravelType } from "@/lib/trip";
 import { resolveTripAssignment } from "@/lib/trip-server";
 import mongoose from "mongoose";
@@ -187,10 +187,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       paymentSplit.paymentSource !== expense.paymentSource ||
       paymentSplit.pocketAmount !== getPaymentBreakdown(expense).pocket ||
       !paymentEntriesEqual(paymentSplit.payments ?? [], storedPayments) ||
-      (body.receiptKey !== undefined && body.receiptKey !== (expense.receiptKey || null));
+      (body.receiptKey !== undefined && body.receiptKey !== (expense.receiptKey || null)) ||
+      // What the expense says it was for is reviewed too, so an approved
+      // expense can't be relabelled without another look.
+      // Both sides trimmed: older documents may have stored stray spaces.
+      (body.title !== undefined && String(body.title ?? "").trim() !== String(expense.title ?? "").trim()) ||
+      (body.description !== undefined &&
+        String(body.description ?? "").trim() !== String(expense.description ?? "").trim());
     if (hasLinkedAssets && authResult.role === "user" && changedProtectedField) {
       return NextResponse.json(
-        { error: "An administrator must approve accounting changes to a linked asset purchase" },
+        { error: "Assets are registered against this expense, so only an admin can change its details" },
         { status: 403 }
       );
     }
@@ -326,6 +332,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (authResult.role === "user" && expense.createdBy.toString() !== authResult._id) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
+  // Approved spend (legacy included) is in the books: only the master admin removes it.
+  if (!canDeleteExpense(authResult, expense)) {
+    return NextResponse.json({ error: APPROVED_DELETE_MESSAGE, code: "approved_locked" }, { status: 403 });
+  }
 
   const linkedAssetCount = await Asset.countDocuments({ purchaseExpense: id });
   if (linkedAssetCount > 0) return NextResponse.json(DELETE_ASSET_LINKED, { status: 409 });
@@ -335,6 +345,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     _id: expense._id,
     $and: [
       revisionCondition,
+      // Everyone but the master admin may only delete what isn't approved;
+      // the revision check already loses to a review, this states the rule.
+      ...(authResult.role === "master_admin" ? [] : [{ approvalStatus: { $in: ["pending", "rejected"] } }]),
       {
         $or: [
           { assetAllocatedAmount: { $exists: false } },
@@ -354,6 +367,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
     if (Number(current.assetAllocatedAmount || 0) > 0) {
       return NextResponse.json(DELETE_ASSET_LINKED, { status: 409 });
+    }
+    if (!canDeleteExpense(authResult, current)) {
+      return NextResponse.json({ error: APPROVED_DELETE_MESSAGE, code: "approved_locked" }, { status: 403 });
     }
     return NextResponse.json(
       {

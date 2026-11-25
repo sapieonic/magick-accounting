@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TripDetailPage from "./page";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatBaseCurrency } from "@/lib/currency";
 import type { ExpenseListItem } from "@/types/expense";
@@ -167,6 +167,10 @@ function detail(overrides: Partial<TripDetailResponse> = {}): TripDetailResponse
 }
 
 let response: TripDetailResponse;
+
+function asMasterAdmin() {
+  vi.mocked(useAuth).mockReturnValue({ user: { ...me, role: "master_admin" }, isAdmin: true, isMasterAdmin: true } as any);
+}
 
 // The fixtures' trip dates are fixed, while the pages derive each trip's
 // status from today's date, so pin "today" to keep the expectations stable.
@@ -441,6 +445,8 @@ describe("TripDetailPage", () => {
   });
 
   it("deletes an expense after the undo window, updating totals immediately", async () => {
+    // The fixtures are approved (legacy), which only the master admin may delete.
+    asMasterAdmin();
     // Swap the Date-only fake clock for one that also controls timers.
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
@@ -480,6 +486,8 @@ describe("TripDetailPage", () => {
   });
 
   it("takes a shared bill's delete off each payer's own row", async () => {
+    // The fixtures are approved (legacy), which only the master admin may delete.
+    asMasterAdmin();
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -529,6 +537,8 @@ describe("TripDetailPage", () => {
   });
 
   it("refreshes the suggestions once per reload, not on every change to the loaded trip", async () => {
+    // The fixtures are approved (legacy), which only the master admin may delete.
+    asMasterAdmin();
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -570,6 +580,8 @@ describe("TripDetailPage", () => {
   });
 
   it("sends a delete once, and keeps it hidden, when Undo or leaving the page comes while it is in flight", async () => {
+    // The fixtures are approved (legacy), which only the master admin may delete.
+    asMasterAdmin();
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -602,6 +614,8 @@ describe("TripDetailPage", () => {
   });
 
   it("commits a delete still in its undo window when leaving the page", async () => {
+    // The fixtures are approved (legacy), which only the master admin may delete.
+    asMasterAdmin();
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -619,6 +633,8 @@ describe("TripDetailPage", () => {
   });
 
   it("restores an expense when the delete is undone", async () => {
+    // The fixtures are approved (legacy), which only the master admin may delete.
+    asMasterAdmin();
     // Swap the Date-only fake clock for one that also controls timers.
     vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
@@ -837,6 +853,59 @@ describe("TripDetailPage", () => {
       expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7000));
       await act(async () => release());
       expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+    });
+
+    it("won't delete an approved expense for an admin, and says only the master admin can", async () => {
+      const user = userEvent.setup();
+      render(<TripDetailPage />);
+      await screen.findByTestId("trip-timeline");
+
+      await user.click(screen.getByRole("button", { name: "Delete IndiGo BOM" }));
+
+      expect(toastMock).toHaveBeenCalledWith(
+        "Approved expenses are part of the books, so only the master admin can delete them.",
+        "info"
+      );
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("IndiGo BOM");
+      expect(toastMock).not.toHaveBeenCalledWith('Deleted "IndiGo BOM"', expect.anything(), expect.anything());
+    });
+
+    it("puts the expense and the totals back when the server refuses the delete (approved meanwhile)", async () => {
+      vi.useRealTimers();
+      vi.useFakeTimers({ shouldAdvanceTime: true, now: TODAY });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      vi.mocked(api.delete).mockRejectedValue(
+        new ApiError("Approved expenses are part of the books, so only the master admin can delete them.", 403, {
+          code: "approved_locked",
+        })
+      );
+      render(<TripDetailPage />);
+      const totals = await screen.findByRole("region", { name: "Trip totals" });
+      const tripLoads = () => vi.mocked(api.get).mock.calls.filter(([url]) => url === `/api/trips/${TRIP_ID}`).length;
+      expect(tripLoads()).toBe(1);
+
+      await user.click(screen.getByRole("button", { name: "Delete Team dinner" }));
+      expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("Team dinner");
+      await user.click(screen.getByRole("button", { name: "Delete Airport cab" }));
+      expect(totals).not.toHaveTextContent(/awaiting approval/);
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      await waitFor(() =>
+        expect(toastMock).toHaveBeenCalledWith(
+          "Approved expenses are part of the books, so only the master admin can delete them.",
+          "error"
+        )
+      );
+      // Both are listed again, and the pending figure is back.
+      await waitFor(() => expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Airport cab"));
+      expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Team dinner");
+      expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
+      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      // And the trip is read again, so the rows show what the server has now.
+      await waitFor(() => expect(tripLoads()).toBeGreaterThan(1));
     });
 
     it("leaves every total alone when a rejected expense is deleted", async () => {

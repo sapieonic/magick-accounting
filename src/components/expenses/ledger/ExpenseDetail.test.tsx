@@ -296,3 +296,82 @@ describe("ExpenseDetail move back to review", () => {
     expect(screen.queryByRole("button", { name: "Move back to review…" })).not.toBeInTheDocument();
   });
 });
+
+describe("ExpenseDetail delete", () => {
+  const LOCKED = "Approved expenses are part of the books, so only the master admin can delete them.";
+  const base: ExpenseListItem = { ...expense, receiptKey: undefined, receiptFilename: undefined };
+  const pending = { ...base, approvalStatus: "pending" as const };
+  const rejected = { ...base, approvalStatus: "rejected" as const, rejectionReason: "Duplicate" };
+  const approved = { ...base, approvalStatus: "approved" as const };
+  const legacy = { ...base, approvalStatus: undefined };
+  // u1 submitted every one of them.
+  const submitter = { viewerId: "u1", viewerRole: "user" as const, onResubmit: vi.fn() };
+  const admin = { viewerId: "admin", viewerRole: "admin" as const, onApprove: vi.fn(), onReject: vi.fn(), onReopen: vi.fn() };
+  const master = { ...admin, viewerId: "master", viewerRole: "master_admin" as const };
+
+  it.each([
+    ["their own pending expense", pending],
+    ["their own rejected expense", rejected],
+  ])("lets a user delete %s", (_label, target) => {
+    const onDelete = vi.fn();
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={onDelete} review={submitter} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/ }));
+    expect(onDelete).toHaveBeenCalledWith(target);
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a user, on their own approved expense", approved, submitter],
+    ["a user, on their own legacy expense", legacy, submitter],
+    ["an admin, on an approved expense", approved, admin],
+    ["an admin, on a legacy expense", legacy, admin],
+  ])("explains instead of offering Delete to %s", (_label, target, review) => {
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={vi.fn()} review={review} />);
+
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.getByText(LOCKED)).toBeInTheDocument();
+    // Editing is still offered.
+    expect(screen.getByRole("link", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a pending", pending],
+    ["a rejected", rejected],
+  ])("lets an admin delete %s expense", (_label, target) => {
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={vi.fn()} review={admin} />);
+    expect(screen.getByRole("button", { name: /^Delete$/ })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["an approved", approved],
+    ["a legacy", legacy],
+  ])("lets the master admin delete %s expense", (_label, target) => {
+    const onDelete = vi.fn();
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={onDelete} review={master} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/ }));
+    expect(onDelete).toHaveBeenCalledWith(target);
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+
+  it("says nothing about deleting while a review is in its undo window, whatever status it shows", () => {
+    // Shown as approved (the approve in its window), stored as pending: neither Delete nor the lock line.
+    render(
+      <ExpenseDetail
+        expense={approved}
+        editHref="/edit"
+        onDelete={vi.fn()}
+        review={{ ...admin, inFlight: { "exp-1": "approve" } }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+
+  it("shows neither where the page offers no Delete", () => {
+    render(<ExpenseDetail expense={approved} editHref="/edit" review={submitter} />);
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+});

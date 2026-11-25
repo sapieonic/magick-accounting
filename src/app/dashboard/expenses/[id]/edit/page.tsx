@@ -26,6 +26,7 @@ import ReceiptPanel from "@/components/expenses/form/ReceiptPanel";
 import {
   ApprovalHistorySection,
   EditApprovalNotice,
+  LinkedAssetsLockNotice,
   type EditApprovalState,
 } from "@/components/expenses/form/ApprovalFormParts";
 import { personName } from "@/components/approvals/approval-format";
@@ -312,7 +313,7 @@ export default function EditExpensePage() {
   const receiptChanged = newReceipt !== null || (initialHadReceipt && !existingReceipt);
   const isDirty =
     JSON.stringify(effectiveValues(form)) !== JSON.stringify(effectiveValues(initialForm)) || receiptChanged;
-  // Mirrors the server: these edits send a submitter's approved expense back for approval.
+  // Mirrors the server: any change but the trip sends a submitter's approved expense back for approval.
   const accountingChanged = accountingFieldsChanged(initialForm, form, receiptChanged);
   // A submitter's rejected expense with nothing changed: "Resubmit" sends it back as it is.
   const resubmitAsIs = !isAdmin && approval?.status === "rejected" && !isDirty;
@@ -591,6 +592,7 @@ export default function EditExpensePage() {
               accountingLocked={accountingLocked}
             />
           )}
+          {accountingLocked && <LinkedAssetsLockNotice />}
         </>
       }
       footerNote={
@@ -599,7 +601,7 @@ export default function EditExpensePage() {
             ? resubmitAsIs
               ? "You haven't changed anything, so this sends it back as it is. If the reason above asks for a fix, make it first."
               : "Saving resubmits this expense. An admin will review it again before it counts in company totals."
-            : "You changed an accounting detail, so saving sends this expense back to an admin. It won't count in company totals until it's approved again."
+            : "You changed an approved expense, so saving sends it back to an admin. It won't count in company totals until it's approved again."
           : undefined
       }
       extraSections={approval && <ApprovalHistorySection history={approval.history} />}

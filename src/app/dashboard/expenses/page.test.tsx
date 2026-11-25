@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ExpensesPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { downloadCsv } from "@/lib/csv";
 
 const toastMock = vi.fn();
@@ -926,6 +926,8 @@ describe("ExpensesPage", () => {
     });
 
     it("withdraws Delete while an approve can still be undone, and brings it back on Undo", async () => {
+      const cab = { ...taxi, _id: "pending-2", title: "Cab home", amount: 300, amountInBaseCurrency: 300 };
+      listedExpenses = [expense, taxi, cab];
       render(<ExpensesPage />);
       await screen.findByRole("region", { name: "Totals" });
       fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
@@ -937,7 +939,7 @@ describe("ExpensesPage", () => {
       expect(screen.queryByRole("button", { name: "Delete Taxi to client" })).not.toBeInTheDocument();
       expect(within(detail("pending-1")).queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
       // Other expenses can still be deleted.
-      expect(screen.getByRole("button", { name: "Delete AWS India Cloud Services" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Delete Cab home" })).toBeInTheDocument();
 
       act(() => toastMock.mock.calls.at(-1)![2].action.onClick());
       expect(screen.getByRole("button", { name: "Delete Taxi to client" })).toBeInTheDocument();
@@ -1127,6 +1129,147 @@ describe("ExpensesPage", () => {
       expect(within(detail("rejected-1")).getByText(/An admin will review this/)).toBeInTheDocument();
       // "Resubmit as is…" is gone with the rejection: focus goes to the row rather than the page.
       await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Team lunch" })));
+    });
+  });
+
+  describe("delete permissions", () => {
+    const LOCKED = "Approved expenses are part of the books, so only the master admin can delete them.";
+    const manas = { _id: "user-1", name: "Manas Nilorout", email: "manas@example.com" };
+    // `expense` (AWS) is Manas's, legacy: no status, so approved.
+    const taxi = {
+      ...expense,
+      _id: "pending-1",
+      title: "Taxi to client",
+      amount: 450,
+      amountInBaseCurrency: 450,
+      approvalStatus: "pending",
+      assetAllocationRevision: 0,
+    };
+    const lunch = {
+      ...expense,
+      _id: "rejected-1",
+      title: "Team lunch",
+      amount: 900,
+      amountInBaseCurrency: 900,
+      approvalStatus: "rejected",
+      rejectionReason: "Receipt missing",
+    };
+    const approvedDinner = { ...expense, _id: "approved-1", title: "Client dinner", amount: 1200, amountInBaseCurrency: 1200, approvalStatus: "approved" };
+    const detail = () => document.getElementById("expense-detail-panel")!;
+
+    beforeEach(() => {
+      listedExpenses = [expense, approvedDinner, taxi, lunch];
+      listedSummary = {
+        totalAmount: 6878.76,
+        totalExpenses: 2,
+        companyAmount: 6878.76,
+        pocketAmount: 0,
+        pendingCount: 1,
+        pendingAmount: 450,
+        rejectedCount: 1,
+      };
+      vi.mocked(useAuth).mockReturnValue({ isAdmin: false, user: { ...manas, role: "user" } } as any);
+    });
+
+    it("lets a user delete their own pending or rejected expense, and explains why not on an approved one", async () => {
+      render(<ExpensesPage />);
+      await screen.findByRole("region", { name: "Totals" });
+
+      expect(screen.getByRole("button", { name: "Delete Taxi to client" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Delete Team lunch" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete Client dinner" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete AWS India Cloud Services" })).not.toBeInTheDocument();
+
+      for (const title of ["Client dinner", "AWS India Cloud Services"]) {
+        fireEvent.click(screen.getByRole("button", { name: title }));
+        expect(within(detail()).queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+        expect(within(detail()).getByText(LOCKED)).toBeInTheDocument();
+      }
+
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      expect(within(detail()).getByRole("button", { name: /^Delete$/ })).toBeInTheDocument();
+      expect(within(detail()).queryByText(LOCKED)).not.toBeInTheDocument();
+    });
+
+    it("gives an admin the same rule on someone else's approved expense", async () => {
+      vi.mocked(useAuth).mockReturnValue({
+        isAdmin: true,
+        user: { _id: "admin-1", name: "Priya", email: "priya@example.com", role: "admin" },
+      } as any);
+      render(<ExpensesPage />);
+      await screen.findByRole("region", { name: "Totals" });
+
+      expect(screen.getByRole("button", { name: "Delete Taxi to client" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Delete Team lunch" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete Client dinner" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Client dinner" }));
+      expect(within(detail()).getByText(LOCKED)).toBeInTheDocument();
+    });
+
+    it("lets the master admin delete an approved expense, out of the total", async () => {
+      vi.mocked(useAuth).mockReturnValue({
+        isAdmin: true,
+        isMasterAdmin: true,
+        user: { _id: "master-1", name: "Owner", email: "owner@example.com", role: "master_admin" },
+      } as any);
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Client dinner" }));
+      expect(within(detail()).queryByText(LOCKED)).not.toBeInTheDocument();
+      vi.useFakeTimers();
+      fireEvent.click(within(detail()).getByRole("button", { name: /^Delete$/ }));
+      expect(statValue(totals, "All time total")).toBe("₹5,678.76");
+
+      await lapseUndoWindow();
+      expect(api.delete).toHaveBeenCalledWith("/api/expenses/approved-1");
+    });
+
+    it("puts the row and the totals back when the server refuses (approved meanwhile), then shows what it has", async () => {
+      vi.mocked(api.delete).mockRejectedValueOnce(new ApiError(LOCKED, 403, { error: LOCKED, code: "approved_locked" }));
+      const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+      vi.mocked(api.get).mockImplementation((url: string) =>
+        url === "/api/expenses/pending-1"
+          ? Promise.resolve({ expense: { ...taxi, approvalStatus: "approved", assetAllocationRevision: 1 } })
+          : defaultGet(url)
+      );
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+
+      vi.useFakeTimers();
+      fireEvent.click(screen.getByRole("button", { name: "Delete Taxi to client" }));
+      expect(screen.queryByRole("button", { name: "Taxi to client" })).not.toBeInTheDocument();
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+
+      await lapseUndoWindow();
+      vi.useRealTimers();
+
+      expect(api.delete).toHaveBeenCalledWith("/api/expenses/pending-1");
+      expect(toastMock).toHaveBeenCalledWith(LOCKED, "error");
+      expect(screen.getByRole("button", { name: "Taxi to client" })).toBeInTheDocument();
+      // Re-read: it is approved now, so it moves into the total, and only the master admin may delete it.
+      await waitFor(() => expect(statValue(totals, "All time total")).toBe("₹7,328.76"));
+      expect(within(totals).queryByText("Awaiting approval")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete Taxi to client" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      expect(within(detail()).getByText(LOCKED)).toBeInTheDocument();
+    });
+
+    it("puts the row and its awaiting-approval figure back when the server refuses for another reason", async () => {
+      vi.mocked(api.delete).mockRejectedValueOnce(new Error("offline"));
+      render(<ExpensesPage />);
+      const totals = await screen.findByRole("region", { name: "Totals" });
+
+      vi.useFakeTimers();
+      fireEvent.click(screen.getByRole("button", { name: "Delete Taxi to client" }));
+      await lapseUndoWindow();
+
+      expect(toastMock).toHaveBeenCalledWith("Failed to delete expense", "error");
+      expect(screen.getByRole("button", { name: "Taxi to client" })).toBeInTheDocument();
+      expect(statValue(totals, "Awaiting approval")).toBe("₹450.00");
+      // No reason was given, so there is nothing to re-read.
+      expect(api.get).not.toHaveBeenCalledWith("/api/expenses/pending-1");
     });
   });
 

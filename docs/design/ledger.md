@@ -289,6 +289,30 @@ for a rejection, that it is withdrawn and needn't be resubmitted). Confirmed the
 window); the page gets the server's pending expense through `onUpdated`. Refusals come back in words: already awaiting
 approval, assets registered against it, changed meanwhile (re-read), or the admin's own.
 
+**Delete.** Who may delete is `canDeleteExpense(viewer, expense)` from `@/lib/approval`: approved spend (legacy
+included) is in the books, so only the master admin deletes it; a pending or rejected expense can be deleted by its
+submitter and by any admin. Pages pass `onDelete` wherever deleting fits, and `ExpenseRow` / `ExpenseDetail` decide per
+expense with `deleteOffer` (`@/components/expenses/review-status`; the viewer comes from `review.viewerId` /
+`viewerRole`): the danger Delete button and the row's hover icon only where it is allowed. Where it isn't, never a
+disabled button: the detail's action row ends with a full-width muted line (`text-xs text-ink-3`, `Lock` icon) reading
+`APPROVED_DELETE_MESSAGE`, "Approved expenses are part of the books, so only the master admin can delete them." (the
+hover actions just leave the icon out; the detail explains). While an approve/reject is in its undo window neither
+shows: the row then carries the status it is heading for, so deletability is only decided on the stored row (the
+pages' delete handlers check it again on the loaded version). A delete has an undo window (`usePendingDeletes`); one
+the server refuses puts the row and the totals back, toasts the server's reason (`deleteRefusal`: approved meanwhile,
+assets registered, changed, gone) or "Failed to delete expense", and after a reason re-reads the expense
+(`useApprovalActions().refresh` on Expenses; the trip page reloads the trip), so the row shows what the server has.
+
+**Edit page** (`/dashboard/expenses/[id]/edit`, `EditApprovalNotice` and `LinkedAssetsLockNotice` in
+`@/components/expenses/form/ApprovalFormParts`). Above the form: rejected (by whom, the reason quoted, what next),
+awaiting approval, or, for a submitter's approved expense, "This expense is approved" / "Saving changes sends it back
+for approval (moving it to a trip doesn't)." Every field but the trip and travel type is reviewed, title and
+description included (`accountingFieldsChanged`, compared trimmed like the server): while one differs from the saved
+version the submit button reads "Save & resubmit" and the footer note says it goes back to an admin. When assets are
+registered against the expense, a user's reviewed fields (title and description too) and receipt are disabled and a
+`Package` notice replaces the approved one: "Assets are registered against this expense" / "So only an admin can change
+its details. You can still move it to a trip."
+
 `@/components/approvals`: `RejectDialog` (`isOpen`, `expenses`, `onClose`, `onConfirm(reason)`: a required reason of
 3–500 characters with a counter, and quick-reason `Chip`s that toggle their phrase in the text), `ResubmitDialog`
 (optional note for the reviewer), `ReopenDialog` (above), `ApproveDialog` (confirms a bulk approve with its total; a
@@ -305,7 +329,8 @@ back to review from its details." Conflicts come back in words ("This expense ch
 latest version.", "Already approved by another admin.", "Approved 9 of 10. 1 changed and needs another look."; a
 request that never got through: "… 3 couldn't be sent. Check your connection and try again."), the expense is re-read
 and handed to `onUpdated`, and the nav count refreshes. Members: `inFlight`, `approve`, `openReject`, `openResubmit`,
-`resubmit` (no dialog; the edit page posts its unchanged resubmit to the approval route itself), `flush`, `handlers`, `dialogs` (render once on the page). Options:
+`resubmit` (no dialog; the edit page posts its unchanged resubmit to the approval route itself), `flush`, `refresh`
+(re-reads one expense into `onUpdated` / `onRemoved`, e.g. after a refused delete), `handlers`, `dialogs` (render once on the page). Options:
 `onUpdated`, `onRemoved`, `onScheduled`, `onReturned` (a single review that didn't go through, the expense pending
 again), `onMovedToReview` (after "Move back to review" or "Resubmit as is" succeeds, for moving focus once its button is
 gone), `shortcuts`. The review queue hides expenses in `inFlight`; Expenses and the trip page show them with the status

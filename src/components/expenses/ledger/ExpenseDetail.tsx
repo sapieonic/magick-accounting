@@ -13,6 +13,7 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  Lock,
   Luggage,
   Package,
   Paperclip,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
+  APPROVED_DELETE_MESSAGE,
   canReview,
   canReviewExpense,
   effectiveApprovalStatus,
@@ -57,6 +59,7 @@ import {
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
 import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import { conversionNote, expenseDate, isImageFile, paymentSourceDetail } from "@/components/expenses/ledger/format";
+import { deleteOffer } from "@/components/expenses/review-status";
 import type { ExpenseListItem } from "@/types/expense";
 
 /**
@@ -90,7 +93,12 @@ export interface ExpenseReviewActions {
 }
 
 export interface ExpenseActions {
-  /** Deletes the expense (the caller owns undo); omitted hides Delete. */
+  /**
+   * Deletes the expense (the caller owns undo); omitted hides Delete. Given,
+   * Delete shows only where the viewer (`review.viewerId` / `viewerRole`) may
+   * delete it (`canDeleteExpense`); on an approved expense anyone but the
+   * master admin gets a line saying why instead.
+   */
   onDelete?: (expense: ExpenseListItem) => void;
   /** Takes the expense out of its trip; omitted hides the action. */
   onRemoveFromTrip?: (expense: ExpenseListItem) => void;
@@ -477,6 +485,7 @@ export default function ExpenseDetail({
     assets === 0 &&
     !review?.inFlight?.[expense._id] &&
     mayReview(expense, review);
+  const deleteState = deleteOffer(expense, { onDelete, review });
 
   const items: DetailItem[] = [
     ...(status === "approved" ? [{ label: "Approval", icon: CircleCheck, value: <ApprovedValue expense={expense} /> }] : []),
@@ -587,10 +596,16 @@ export default function ExpenseDetail({
             Remove from trip
           </Button>
         )}
-        {onDelete && (
+        {deleteState === "delete" && onDelete && (
           <Button variant="danger" icon={Trash2} onClick={() => onDelete(expense)} className="grow basis-[100px]">
             Delete
           </Button>
+        )}
+        {deleteState === "locked" && (
+          <p className="flex basis-full items-start gap-1.5 text-xs text-ink-3 [text-wrap:pretty]">
+            <Lock aria-hidden="true" size={13} strokeWidth={1.75} className="mt-px shrink-0" />
+            <span>{APPROVED_DELETE_MESSAGE}</span>
+          </p>
         )}
       </div>
     </div>

@@ -95,7 +95,10 @@ export interface ExpenseFormProps {
   defaultPayerId?: string;
   /** Fields the receipt filled in, marked until edited. */
   aiFilled?: ReadonlySet<AiField> | null;
-  /** Locks the accounting fields (amount, GST, date, category, department, payment, receipt). */
+  /**
+   * Locks the reviewed fields (title, amount, GST, date, category, department,
+   * payment, description; the receipt column is the caller's). The trip stays editable.
+   */
   locked?: boolean;
   currencyLocked?: boolean;
   /** The receipt column. */
@@ -217,6 +220,7 @@ export default function ExpenseForm({
                   id="title"
                   type="text"
                   required
+                  disabled={locked}
                   value={values.title}
                   onChange={(e) => set("title", e.target.value)}
                   placeholder="e.g. Office supplies from Amazon"
@@ -373,6 +377,7 @@ export default function ExpenseForm({
                 <textarea
                   id="description"
                   rows={3}
+                  disabled={locked}
                   value={values.description}
                   onChange={(e) => set("description", e.target.value)}
                   placeholder="Anything finance should know"

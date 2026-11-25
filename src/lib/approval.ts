@@ -85,6 +85,24 @@ export function countsAsSpend(expense: HasApprovalStatus): boolean {
   return effectiveApprovalStatus(expense) === "approved";
 }
 
+/**
+ * Who may delete an expense. Approved spend (legacy included) is in the books,
+ * so only the master admin can remove it; while an expense is pending or
+ * rejected its submitter can delete it, and so can any admin.
+ */
+export function canDeleteExpense(
+  viewer: { _id: string; role: Role },
+  expense: { createdBy?: unknown; approvalStatus?: ApprovalStatus | null }
+): boolean {
+  if (countsAsSpend(expense)) return viewer.role === "master_admin";
+  if (canReview(viewer.role)) return true;
+  return idOf(expense.createdBy) === String(viewer._id);
+}
+
+/** Why `canDeleteExpense` refused an approved expense, for the API and the UI. */
+export const APPROVED_DELETE_MESSAGE =
+  "Approved expenses are part of the books, so only the master admin can delete them.";
+
 /** Only admins approve or reject. */
 export function canReview(role: Role): boolean {
   return role === "admin" || role === "master_admin";
@@ -157,8 +175,9 @@ export function creationApprovalFields(
  *
  * Admin edits never change it. When its submitter (role `user`) saves it:
  * - rejected → pending on any save (editing is how a rejection is fixed);
- * - approved (or legacy) → pending only when an accounting field changed
- *   (the same fields the linked-asset guard protects);
+ * - approved (or legacy) → pending when a reviewed field changed: the
+ *   accounting fields plus title and description (the set the linked-asset
+ *   guard protects; moving it to a trip isn't one);
  * - pending stays pending.
  */
 export function statusAfterEdit(args: {

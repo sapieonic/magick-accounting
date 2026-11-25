@@ -33,7 +33,8 @@ Single-tenant by design — one organization per deployment.
 - Admins review in **Approvals** (`/dashboard/approvals`): the queue shows what's waiting and for how long, the nav shows a count, and an expense can be approved, or rejected with a reason the submitter sees. Several can be approved or rejected at once, and keyboard shortcuts (J/K, A, R, X, ? for the list) can be switched off in the shortcuts dialog. Each decision can be undone for a few seconds
 - Admins can't approve or reject their own expenses; another admin has to
 - An admin can **move an approved or rejected expense back to review** to correct a decision, unless assets are registered against it
-- A submitter fixes a rejected expense and saves it, or resubmits it as is with a note; changing the amount, GST, date, currency, category, department, payment or receipt of an approved expense sends it back for approval too
+- A submitter fixes a rejected expense and saves it, or resubmits it as is with a note; changing the title, description, amount, GST, date, currency, category, department, payment or receipt of an approved expense sends it back for approval too (moving it into a trip doesn't)
+- Approved expenses are part of the books: **only the Master Admin can delete them** (expenses from before approvals count as approved). While an expense is awaiting approval or rejected, its submitter or any admin can delete it
 - Every step is kept in the expense's approval history, and submitters with a linked Telegram account get a message when their expense is approved, rejected or moved back to review
 - CSV export with **All statuses** selected exports approved expenses only; pick a Status to export those instead
 
@@ -99,9 +100,9 @@ Single-tenant by design — one organization per deployment.
 ### Access Control
 - **Domain whitelisting** — only users with approved email domains can sign in (e.g. `@magickvoice.com`)
 - **Three roles:**
-  - **Master Admin** — full access, can promote/demote other users
+  - **Master Admin** — full access, can promote/demote other users; the only role that can delete an approved expense
   - **Admin** — can manage departments, categories, domains, and view all expenses; approves or rejects other people's expenses and can move a decided one back to review
-  - **User** — can manage their own expenses, which wait for an admin's approval; resubmits a rejected expense after fixing it
+  - **User** — can manage their own expenses, which wait for an admin's approval; resubmits a rejected expense after fixing it, and can delete their own only until it's approved
 - Admins can add or remove allowed email domains from the Settings page
 
 ### Dashboard
@@ -196,7 +197,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### 6. First sign-in
 
-1. Sign in with the Google account matching your `MASTER_ADMIN_EMAIL`
+1. Sign in with the Google account matching your `MASTER_ADMIN_EMAIL` (do this first: the defaults are created on the master admin's first sign-in, and only the master admin can run the seed)
 2. The application automatically seeds:
    - Default expense categories
    - Default "General" department
@@ -395,7 +396,7 @@ src/
 
 ## API Reference
 
-All API routes require a Firebase ID token in the `Authorization: Bearer <token>` header (except `/api/seed`, `/api/auth/verify`, and `/api/telegram/webhook`, which Telegram authenticates with the webhook's secret token).
+All API routes require a Firebase ID token in the `Authorization: Bearer <token>` header (except `/api/auth/verify` and `/api/telegram/webhook`, which Telegram authenticates with the webhook's secret token).
 
 | Method   | Endpoint                  | Access       | Description                        |
 |----------|---------------------------|--------------|------------------------------------|
@@ -405,7 +406,7 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 | `POST`   | `/api/expenses`           | Authenticated| Create expense (a User's is submitted for approval) |
 | `GET`    | `/api/expenses/:id`       | Authenticated| Get expense by ID, with its approval history |
 | `PUT`    | `/api/expenses/:id`       | Authenticated| Update expense; optional `revision` (409 `stale` if it changed since) |
-| `DELETE` | `/api/expenses/:id`       | Authenticated| Delete expense (409 `asset_linked` / `stale`) |
+| `DELETE` | `/api/expenses/:id`       | Authenticated| Delete expense: approved ones Master Admin only (403 `approved_locked`); 409 `asset_linked` / `stale` |
 | `POST`   | `/api/expenses/:id/approval` | Admin / Submitter | `approve`, `reject` (reason required) or `reopen` (admins, not their own expense); `resubmit` a rejection (its submitter). Body carries the `revision` the client saw |
 | `GET`    | `/api/expenses/approvals` | Admin        | Pending count, amount and oldest wait |
 | `POST`   | `/api/expenses/approvals` | Admin        | Approve or reject up to 100 expenses; reports which failed and why |
@@ -442,7 +443,7 @@ All API routes require a Firebase ID token in the `Authorization: Bearer <token>
 | `POST`   | `/api/upload`             | Authenticated| Upload a receipt (multipart, stored in S3 server-side) |
 | `GET`    | `/api/upload?key=...`     | Authenticated| Get presigned download URL         |
 | `DELETE` | `/api/upload?key=...`     | Authenticated| Delete own upload not yet attached to an expense |
-| `POST`   | `/api/seed`               | Authenticated| Seed default data                  |
+| `POST`   | `/api/seed`               | Master Admin | Seed default data (idempotent)     |
 | `GET`    | `/api/telegram/settings`  | Admin        | Bot connection and webhook status  |
 | `PUT`    | `/api/telegram/settings`  | Admin        | Connect/reconnect the bot (token, App URL) |
 | `DELETE` | `/api/telegram/settings`  | Admin        | Disconnect the bot                 |

@@ -17,6 +17,7 @@ import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
 import { relativeTime, submittedAt } from "@/components/approvals/approval-format";
 import { expenseDate, expensePayerSummary, isForeign } from "@/components/expenses/ledger/format";
+import { deleteOffer } from "@/components/expenses/review-status";
 import type { ExpenseListItem } from "@/types/expense";
 
 /*
@@ -398,7 +399,8 @@ export default function ExpenseRow({
                 className="hover:!text-amber"
               />
             )}
-            {onDelete && (
+            {/* Only where the viewer may delete it; the detail says why when they can't. */}
+            {onDelete && deleteOffer(expense, { onDelete, review }) === "delete" && (
               <IconButton
                 icon={Trash2}
                 variant="ghost-danger"

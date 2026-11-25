@@ -414,7 +414,7 @@ describe("EditExpensePage linked assets", () => {
     });
   });
 
-  it("locks the accounting fields for non-admins", async () => {
+  it("locks the reviewed fields for non-admins, title and description included, and says why", async () => {
     vi.mocked(useAuth).mockReturnValue({ user: { _id: "u1" }, isAdmin: false } as any);
     render(<EditExpensePage />);
 
@@ -423,7 +423,14 @@ describe("EditExpensePage linked assets", () => {
     expect(screen.getByLabelText("Currency")).toBeDisabled();
     expect(sourceButton("Pocket")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Remove receipt" })).toBeDisabled();
-    expect(screen.getByLabelText(/^title/i)).toBeEnabled();
+    expect(screen.getByLabelText(/^title/i)).toBeDisabled();
+    expect(screen.getByLabelText(/^description/i)).toBeDisabled();
+    // The trip is still theirs to set.
+    expect(screen.getByLabelText(/business trip/i)).toBeEnabled();
+    const notice = screen.getByRole("group", { name: "Assets are registered against this expense" });
+    expect(notice).toHaveTextContent("only an admin can change its details");
+    // The approved notice would promise a resubmit the lock rules out.
+    expect(screen.queryByText("This expense is approved")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /add more assets/i })).not.toBeInTheDocument();
   });
 
@@ -436,7 +443,10 @@ describe("EditExpensePage linked assets", () => {
       "/dashboard/expenses/expense-1/assets/new"
     );
     expect(screen.getByLabelText(/^amount/i)).toBeEnabled();
+    expect(screen.getByLabelText(/^title/i)).toBeEnabled();
+    expect(screen.getByLabelText(/^description/i)).toBeEnabled();
     expect(screen.getByLabelText("Currency")).toBeDisabled();
+    expect(screen.queryByRole("group", { name: "Assets are registered against this expense" })).not.toBeInTheDocument();
   });
 });
 
@@ -539,6 +549,16 @@ describe("EditExpensePage approval", () => {
   const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
   const priya = { _id: "66c1884c0853f8a76a4da209", name: "Priya", email: "priya@example.com" };
   const ownExpense = { ...splitExpense, paymentSource: "company", pocketAmount: 0, createdBy: asha };
+  const puneTrip = {
+    _id: "66c1884c0853f8a76a4da301",
+    name: "Pune offsite",
+    destinations: ["Pune"],
+    startDate: "2026-07-01T00:00:00.000Z",
+    endDate: "2026-07-03T00:00:00.000Z",
+    travelers: [asha],
+    department: null,
+    status: "completed",
+  };
   const rejected = {
     ...ownExpense,
     approvalStatus: "rejected",
@@ -700,7 +720,7 @@ describe("EditExpensePage approval", () => {
     render(<EditExpensePage />);
 
     await user.type(await screen.findByLabelText(/^title/i), " with client");
-    await user.click(submitButton("Save changes"));
+    await user.click(submitButton("Save & resubmit"));
 
     await waitFor(() =>
       expect(toastMock).toHaveBeenCalledWith(
@@ -715,11 +735,11 @@ describe("EditExpensePage approval", () => {
     expect(trip).toHaveValue("66c1884c0853f8a76a4da399");
     expect(trip.selectedOptions[0]).toHaveTextContent("Mumbai client visit");
     expect(queryNotice("Also changed by someone else")).toBeNull();
-    // Nothing accounting-related differs from the saved version, so it stays approved.
-    expect(submitButton("Save changes")).toBeInTheDocument();
+    // The title still differs from the saved version (a reviewed field), so saving still sends it back.
+    expect(submitButton("Save & resubmit")).toBeInTheDocument();
 
-    vi.mocked(api.put).mockResolvedValueOnce({ expense: { approvalStatus: "approved" } });
-    await user.click(submitButton("Save changes"));
+    vi.mocked(api.put).mockResolvedValueOnce({ expense: { approvalStatus: "pending" } });
+    await user.click(submitButton("Save & resubmit"));
     await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2));
     expect(api.put).toHaveBeenLastCalledWith(
       "/api/expenses/expense-1",
@@ -731,7 +751,7 @@ describe("EditExpensePage approval", () => {
         travelType: "food",
       })
     );
-    expect(toastMock).toHaveBeenLastCalledWith("Expense updated");
+    expect(toastMock).toHaveBeenLastCalledWith("Saved and sent back for approval. An admin will review your changes.");
   });
 
   it("after a conflict, keeps the person's value for a field both changed, and asks them to check it", async () => {
@@ -771,12 +791,12 @@ describe("EditExpensePage approval", () => {
 
   it("builds the save message from the server's answer, not the loaded status", async () => {
     const user = userEvent.setup();
-    // Loaded approved, title-only change: the server still says it went back for approval.
+    // Loaded approved, moved into a trip only: the server still says it went back for approval.
     vi.mocked(api.put).mockResolvedValue({ expense: { approvalStatus: "pending" } });
-    mockExpense({ ...ownExpense, approvalStatus: "approved" });
+    mockExpense({ ...ownExpense, approvalStatus: "approved", trip: null, travelType: null }, [puneTrip]);
     render(<EditExpensePage />);
 
-    await user.type(await screen.findByLabelText(/^title/i), " with client");
+    await user.selectOptions(await screen.findByLabelText(/business trip/i), puneTrip._id);
     await user.click(submitButton("Save changes"));
     await waitFor(() =>
       expect(toastMock).toHaveBeenCalledWith("Saved and sent back for approval. An admin will review your changes.")
@@ -837,23 +857,20 @@ describe("EditExpensePage approval", () => {
     expect(within(history).queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("switches to 'Save & resubmit' only while an accounting field differs on an approved expense", async () => {
+  it("switches to 'Save & resubmit' only while a reviewed field differs on an approved expense", async () => {
     const user = userEvent.setup();
     mockExpense({ ...ownExpense, approvalStatus: "approved" });
     render(<EditExpensePage />);
 
-    expect(await screen.findByText("This expense is approved")).toBeInTheDocument();
-    expect(submitButton("Save changes")).toBeInTheDocument();
-
-    // A title isn't an accounting field.
-    await user.type(screen.getByLabelText(/^title/i), " with client");
+    const notice = await findNotice("This expense is approved");
+    expect(notice).toHaveTextContent("Saving changes sends it back for approval (moving it to a trip doesn't).");
     expect(submitButton("Save changes")).toBeInTheDocument();
 
     const amount = screen.getByLabelText(/^amount/i);
     await user.clear(amount);
     await user.type(amount, "1200");
     expect(submitButton("Save & resubmit")).toBeInTheDocument();
-    expect(screen.getByText(/saving sends this expense back to an admin/i)).toBeInTheDocument();
+    expect(screen.getByText(/saving sends it back to an admin/i)).toBeInTheDocument();
 
     // Back to the stored amount: nothing to re-approve.
     await user.clear(amount);
@@ -865,6 +882,48 @@ describe("EditExpensePage approval", () => {
     await user.click(submitButton("Save & resubmit"));
     await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
     expect(toastMock).toHaveBeenCalledWith("Saved and sent back for approval. An admin will review your changes.");
+  });
+
+  it("sends an approved expense back when only its title changes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.put).mockResolvedValue({ expense: { approvalStatus: "pending" } });
+    mockExpense({ ...ownExpense, approvalStatus: "approved" });
+    render(<EditExpensePage />);
+
+    const title = await screen.findByLabelText(/^title/i);
+    // Spaces around it aren't a change (the server trims them too).
+    await user.type(title, "  ");
+    expect(submitButton("Save changes")).toBeInTheDocument();
+
+    await user.type(title, " with client");
+    expect(submitButton("Save & resubmit")).toBeInTheDocument();
+    expect(screen.getByText(/saving sends it back to an admin/i)).toBeInTheDocument();
+
+    await user.click(submitButton("Save & resubmit"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({ title: "Client dinner   with client" })
+    );
+    expect(toastMock).toHaveBeenCalledWith("Saved and sent back for approval. An admin will review your changes.");
+  });
+
+  it("counts a description change as a reviewed change", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...ownExpense, approvalStatus: "approved" });
+    render(<EditExpensePage />);
+
+    await user.type(await screen.findByLabelText(/^description/i), "Dinner with the Acme team");
+    expect(submitButton("Save & resubmit")).toBeInTheDocument();
+  });
+
+  it("doesn't send an approved expense back for moving it into a trip", async () => {
+    const user = userEvent.setup();
+    mockExpense({ ...ownExpense, approvalStatus: "approved", trip: null, travelType: null }, [puneTrip]);
+    render(<EditExpensePage />);
+
+    await user.selectOptions(await screen.findByLabelText(/business trip/i), puneTrip._id);
+    expect(submitButton("Save changes")).toBeInTheDocument();
   });
 
   it("counts a new receipt as an accounting change", async () => {

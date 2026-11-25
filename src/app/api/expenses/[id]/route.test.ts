@@ -43,6 +43,7 @@ describe("DELETE /api/expenses/:id", () => {
       createdBy: { toString: () => "owner-id" },
       receiptKey: "receipts/owner-id/key.pdf",
       assetAllocationRevision: 4,
+      approvalStatus: "pending",
     } as never);
     vi.mocked(Asset.countDocuments).mockResolvedValue(0);
     vi.mocked(deleteObject).mockResolvedValue(undefined);
@@ -82,8 +83,14 @@ describe("DELETE /api/expenses/:id", () => {
         createdBy: { toString: () => "owner-id" },
         receiptKey: "receipts/owner-id/key.pdf",
         assetAllocationRevision: 4,
+        approvalStatus: "pending",
       } as never)
-      .mockResolvedValueOnce({ _id: expenseId, assetAllocatedAmount: 500, assetAllocationRevision: 5 } as never);
+      .mockResolvedValueOnce({
+        _id: expenseId,
+        assetAllocatedAmount: 500,
+        assetAllocationRevision: 5,
+        approvalStatus: "pending",
+      } as never);
 
     const response = await remove();
 
@@ -121,13 +128,97 @@ describe("DELETE /api/expenses/:id", () => {
   it("returns not_found when it was deleted after the read", async () => {
     vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
     vi.mocked(Expense.findById)
-      .mockResolvedValueOnce({ _id: expenseId, createdBy: { toString: () => "owner-id" } } as never)
+      .mockResolvedValueOnce({
+        _id: expenseId,
+        createdBy: { toString: () => "owner-id" },
+        approvalStatus: "pending",
+      } as never)
       .mockResolvedValueOnce(null as never);
 
     const response = await remove();
 
     expect(response.status).toBe(404);
     expect((await response.json()).code).toBe("not_found");
+  });
+
+  describe("approved expenses are in the books", () => {
+    const LOCKED = {
+      error: "Approved expenses are part of the books, so only the master admin can delete them.",
+      code: "approved_locked",
+    };
+    const stored = (approvalStatus?: string) =>
+      ({
+        _id: expenseId,
+        createdBy: { toString: () => "owner-id" },
+        assetAllocationRevision: 4,
+        ...(approvalStatus ? { approvalStatus } : {}),
+      }) as never;
+    const signIn = (role: "user" | "admin" | "master_admin", _id = role === "user" ? "owner-id" : `${role}-id`) =>
+      vi.mocked(verifyAuth).mockResolvedValue({ _id, email: "x@example.com", name: role, role });
+
+    it.each([
+      ["its submitter", "user", "approved"],
+      ["its submitter, for a legacy expense", "user", undefined],
+      ["an admin", "admin", "approved"],
+      ["an admin, for a legacy expense", "admin", undefined],
+    ] as const)("refuses %s", async (_label, role, status) => {
+      signIn(role);
+      vi.mocked(Expense.findById).mockResolvedValue(stored(status));
+
+      const response = await remove();
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual(LOCKED);
+      expect(Expense.deleteOne).not.toHaveBeenCalled();
+    });
+
+    it("lets the master admin delete an approved or legacy expense", async () => {
+      signIn("master_admin");
+      vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 1 } as never);
+      for (const status of ["approved", undefined]) {
+        vi.mocked(Expense.findById).mockResolvedValue(stored(status));
+        expect((await remove()).status).toBe(200);
+      }
+      // No status condition for the master admin.
+      const filter = vi.mocked(Expense.deleteOne).mock.calls[0][0] as { $and: Record<string, unknown>[] };
+      expect(filter.$and.some((part) => "approvalStatus" in part)).toBe(false);
+    });
+
+    it.each([
+      ["its submitter", "user", "pending"],
+      ["its submitter", "user", "rejected"],
+      ["an admin", "admin", "pending"],
+      ["an admin", "admin", "rejected"],
+    ] as const)("lets %s delete a %s expense, only while it isn't approved", async (_label, role, status) => {
+      signIn(role);
+      vi.mocked(Expense.findById).mockResolvedValue(stored(status));
+      vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 1 } as never);
+
+      expect((await remove()).status).toBe(200);
+      const filter = vi.mocked(Expense.deleteOne).mock.calls[0][0] as { $and: Record<string, unknown>[] };
+      expect(filter.$and).toContainEqual({ approvalStatus: { $in: ["pending", "rejected"] } });
+    });
+
+    it("refuses a submitter's delete that loses to an approval landing meanwhile", async () => {
+      signIn("user");
+      vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+      vi.mocked(Expense.findById)
+        .mockResolvedValueOnce(stored("pending"))
+        .mockResolvedValueOnce({ ...(stored("approved") as object), assetAllocationRevision: 5 } as never);
+
+      const response = await remove();
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual(LOCKED);
+    });
+
+    it("still refuses another member's expense with a 403", async () => {
+      signIn("user", "someone-else");
+      vi.mocked(Expense.findById).mockResolvedValue(stored("pending"));
+
+      expect((await remove()).status).toBe(403);
+      expect(Expense.deleteOne).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -294,7 +385,7 @@ describe("PUT /api/expenses/:id payment split", () => {
     expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it("lets a user edit unprotected fields of an asset-linked legacy expense", async () => {
+  it("lets a user resave an asset-linked legacy expense unchanged", async () => {
     // Legacy docs predate pocketAmount; the whole amount counts as pocket.
     mockStoredExpense({
       paymentSource: "pocket",
@@ -309,12 +400,12 @@ describe("PUT /api/expenses/:id payment split", () => {
       role: "user",
     });
 
-    const response = await put({ title: "Standing desk", paymentSource: "pocket" });
+    const response = await put({ title: "Laptop stand", paymentSource: "pocket" });
 
     expect(response.status).toBe(200);
     expect(storedUpdate().$set).toEqual(
       expect.objectContaining({
-        title: "Standing desk",
+        title: "Laptop stand",
         paymentSource: "pocket",
         pocketAmount: 100,
         pocketAmountInBaseCurrency: 8300,
@@ -367,7 +458,7 @@ describe("PUT /api/expenses/:id payment split", () => {
     );
   });
 
-  it("lets a user resave an asset-linked split unchanged apart from unprotected fields", async () => {
+  it("lets a user resave an asset-linked split unchanged", async () => {
     mockStoredExpense();
     linkAsset();
     vi.mocked(verifyAuth).mockResolvedValue({
@@ -378,12 +469,34 @@ describe("PUT /api/expenses/:id payment split", () => {
     });
 
     // The edit form resends every field, including the unchanged split.
-    const response = await put({ title: "Monitor arm", amount: 100, paymentSource: "split", pocketAmount: 40 });
+    const response = await put({ title: " Laptop stand ", amount: 100, paymentSource: "split", pocketAmount: 40 });
 
     expect(response.status).toBe(200);
     expect(storedUpdate().$set).toEqual(
-      expect.objectContaining({ title: "Monitor arm", paymentSource: "split", pocketAmount: 40 })
+      expect.objectContaining({ paymentSource: "split", pocketAmount: 40 })
     );
+  });
+
+  it("requires an admin when a user retitles or redescribes an asset-linked expense", async () => {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: "owner-id",
+      email: "owner@example.com",
+      name: "Owner",
+      role: "user",
+    });
+    for (const body of [{ title: "Monitor arm" }, { description: "For the office" }]) {
+      mockStoredExpense();
+      linkAsset();
+      vi.mocked(Expense.findOneAndUpdate).mockClear();
+
+      const response = await put(body);
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: "Assets are registered against this expense, so only an admin can change its details",
+      });
+      expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+    }
   });
 
   it("keeps a stored split when the amount grows, so the company share absorbs it", async () => {
@@ -500,7 +613,7 @@ describe("PUT /api/expenses/:id payment split", () => {
       });
 
       const response = await put({
-        title: "Team lunch",
+        title: "Laptop stand",
         amount: 100,
         paymentSource: "multiple",
         payments: [
@@ -510,7 +623,7 @@ describe("PUT /api/expenses/:id payment split", () => {
       });
 
       expect(response.status).toBe(200);
-      expect(storedUpdate().$set).toEqual(expect.objectContaining({ title: "Team lunch", pocketAmount: 60 }));
+      expect(storedUpdate().$set).toEqual(expect.objectContaining({ title: "Laptop stand", pocketAmount: 60 }));
     });
 
     it("requires an admin when a user changes the payers of an asset-linked expense", async () => {
@@ -804,11 +917,32 @@ describe("PUT /api/expenses/:id approval", () => {
     expect(update.$push).toEqual(sentBack("Edited after approval"));
   });
 
-  it("keeps an approved expense approved when only the title or description changes", async () => {
-    // The edit form resends every field unchanged.
+  it("sends an approved expense back for approval when its title or description changes", async () => {
+    for (const body of [{ title: "Taxi to client" }, { description: "Meeting" }]) {
+      mockStoredExpense();
+      vi.mocked(Expense.findOneAndUpdate).mockClear();
+
+      expect((await put(body)).status).toBe(200);
+      const { update } = storedCall();
+      expect(update.$set.approvalStatus).toBe("pending");
+      expect(update.$push).toEqual(sentBack("Edited after approval"));
+    }
+  });
+
+  it("ignores stray spaces stored around an older expense's title and description", async () => {
+    mockStoredExpense({ title: " Taxi  ", description: " Meeting " });
+
+    expect((await put({ title: "Taxi", description: "Meeting" })).status).toBe(200);
+    const { update } = storedCall();
+    expect(update.$set).not.toHaveProperty("approvalStatus");
+    expect(update).not.toHaveProperty("$push");
+  });
+
+  it("keeps an approved expense approved when it's resaved unchanged", async () => {
+    // The edit form resends every field, with the same title and description.
     const response = await put({
-      title: "Taxi to client",
-      description: "Meeting",
+      title: " Taxi ",
+      description: "",
       amount: 100,
       currency: "inr-id",
       category: "category-id",
@@ -819,7 +953,6 @@ describe("PUT /api/expenses/:id approval", () => {
 
     expect(response.status).toBe(200);
     const { update } = storedCall();
-    expect(update.$set).toEqual(expect.objectContaining({ title: "Taxi to client" }));
     expect(update.$set).not.toHaveProperty("approvalStatus");
     expect(update).not.toHaveProperty("$push");
     expect(update.$inc).toEqual({ assetAllocationRevision: 1 });

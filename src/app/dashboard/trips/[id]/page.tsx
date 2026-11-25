@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { effectiveApprovalStatus } from "@/lib/approval";
+import { APPROVED_DELETE_MESSAGE, canDeleteExpense, effectiveApprovalStatus } from "@/lib/approval";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { getPaymentBreakdown, payerShare } from "@/lib/expense";
@@ -48,7 +48,13 @@ import AddExistingExpensesModal from "@/components/trips/AddExistingExpensesModa
 import { BudgetMeter, TripStatusBadge } from "@/components/trips/TripMeta";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
-import { DELETE_WHILE_REVIEWING, asReviewed, useFocusAfterReview } from "@/components/expenses/review-status";
+import {
+  DELETE_FAILED,
+  DELETE_WHILE_REVIEWING,
+  asReviewed,
+  deleteRefusal,
+  useFocusAfterReview,
+} from "@/components/expenses/review-status";
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
@@ -159,7 +165,7 @@ export default function TripDetailPage() {
   const params = useParams<{ id: string }>();
   const tripId = String(params.id);
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { toast } = useToast();
   const [data, setData] = useState<TripDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -303,6 +309,12 @@ export default function TripDetailPage() {
         toast(DELETE_WHILE_REVIEWING, "info");
         return;
       }
+      // Decided on the stored row (not one re-labelled by a review), like the timeline.
+      const stored = data?.expenses.find((e) => e._id === expense._id) ?? expense;
+      if (user && !canDeleteExpense(user, stored)) {
+        toast(APPROVED_DELETE_MESSAGE, "info");
+        return;
+      }
       // Hidden (via `hiddenIds`) until it is undone, deleted or fails.
       const scheduled = scheduleDelete(expense._id, {
         onDeleted: () => {
@@ -318,7 +330,13 @@ export default function TripDetailPage() {
           );
           void load(true);
         },
-        onFailed: () => toast("Failed to delete expense", "error"),
+        // It is listed again (and back in the totals) as it stops being hidden.
+        onFailed: (error) => {
+          const refusal = deleteRefusal(error);
+          toast(refusal ?? DELETE_FAILED, "error");
+          // E.g. approved meanwhile: show what the server has now.
+          if (refusal) void load(true);
+        },
       });
       if (!scheduled) return;
 
@@ -327,7 +345,7 @@ export default function TripDetailPage() {
         action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
       });
     },
-    [inFlight, load, scheduleDelete, undoDelete, toast]
+    [data, inFlight, load, scheduleDelete, undoDelete, toast, user]
   );
 
   const handleRemoveFromTrip = useCallback(

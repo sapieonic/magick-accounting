@@ -66,6 +66,11 @@ export interface ApprovalActions {
   resubmit: (expense: ExpenseListItem, note: string | null) => Promise<boolean>;
   /** Sends every review still in its undo window, and waits for those in flight. */
   flush: () => Promise<void>;
+  /**
+   * Re-reads an expense the server refused to act on (e.g. a delete) and hands
+   * it to `onUpdated` (`onRemoved` if it is gone). Resolves to the latest version, if read.
+   */
+  refresh: (expense: ExpenseListItem) => Promise<ExpenseListItem | null>;
   /** Props for `ExpenseDetail` (and the rows that render it): its approval buttons. */
   handlers: ExpenseReviewActions;
   /** The reject, resubmit and "move back to review" dialogs; render once on the page. */
@@ -595,6 +600,7 @@ export function useApprovalActions(options: ApprovalActionsOptions = {}): Approv
 
   return {
     inFlight,
+    refresh: reload,
     approve,
     openReject,
     openResubmit,

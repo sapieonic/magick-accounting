@@ -7,6 +7,7 @@ import {
   approvalStatusCsvLabel,
   EDIT_RESUBMIT_NOTE,
   canReview,
+  canDeleteExpense,
   canReviewExpense,
   countsAsSpend,
   creationApprovalFields,
@@ -102,6 +103,24 @@ describe("creationApprovalFields", () => {
     expect(isSystemNote(EDIT_RESUBMIT_NOTE.afterRejection)).toBe(true);
     expect(isSystemNote("Client visit, see receipt")).toBe(false);
     expect(isSystemNote(null)).toBe(false);
+  });
+
+  it("canDeleteExpense keeps approved spend for the master admin", () => {
+    const user = { _id: "u1", role: "user" as const };
+    const admin = { _id: "a1", role: "admin" as const };
+    const master = { _id: "m1", role: "master_admin" as const };
+    for (const approvalStatus of ["approved", undefined, null] as const) {
+      const expense = { createdBy: "u1", approvalStatus };
+      expect(canDeleteExpense(user, expense)).toBe(false);
+      expect(canDeleteExpense(admin, expense)).toBe(false);
+      expect(canDeleteExpense(master, expense)).toBe(true);
+    }
+    for (const approvalStatus of ["pending", "rejected"] as const) {
+      expect(canDeleteExpense(user, { createdBy: { _id: "u1" }, approvalStatus })).toBe(true);
+      expect(canDeleteExpense(user, { createdBy: "u2", approvalStatus })).toBe(false);
+      expect(canDeleteExpense(admin, { createdBy: "u2", approvalStatus })).toBe(true);
+      expect(canDeleteExpense(master, { createdBy: "u2", approvalStatus })).toBe(true);
+    }
   });
 
   it("canReview is admin-only", () => {
