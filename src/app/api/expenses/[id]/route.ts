@@ -267,7 +267,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate("approvalHistory.by", "name email")
       .lean();
     if (!updated) {
-      throw new Error("Expense changed while you were editing it; reload and try again");
+      // Lost the revision check: someone (an admin's review, another edit)
+      // changed it after the read above.
+      return NextResponse.json(
+        { error: "Expense changed while you were editing it; reload and try again", code: "stale" },
+        { status: 409 }
+      );
     }
 
     if (previousReceiptKey && update.receiptKey !== previousReceiptKey) {

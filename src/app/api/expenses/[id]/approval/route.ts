@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { requireAdmin, verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
@@ -65,12 +65,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (request.action !== "resubmit") {
-    await notifyReviewOutcome({
-      action: request.action,
-      expenses: [outcome.expense],
-      reason: request.action === "reject" ? request.reason : null,
-      reviewer: authResult,
-    });
+    // Sent after the response: the decision is already saved, and a slow
+    // Telegram must not make the admin think it failed.
+    after(() =>
+      notifyReviewOutcome({
+        action: request.action,
+        expenses: [outcome.expense],
+        reason: request.action === "reject" ? request.reason : null,
+        reviewer: authResult,
+      })
+    );
   }
   return NextResponse.json({ expense: outcome.expense });
 }

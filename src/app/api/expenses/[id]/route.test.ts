@@ -818,9 +818,10 @@ describe("PUT /api/expenses/:id approval", () => {
 
     const response = await put({ amount: 80 });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       error: "Expense changed while you were editing it; reload and try again",
+      code: "stale",
     });
   });
 

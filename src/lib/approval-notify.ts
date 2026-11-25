@@ -89,6 +89,9 @@ export function renderReviewNotice(args: {
   return { html: lines.join("\n"), keyboard };
 }
 
+/** Most Telegram notices sent at once. */
+const NOTICE_CONCURRENCY = 5;
+
 /**
  * Tells each submitter with a linked Telegram account about the decision, one
  * message per person. Skips the reviewer's own expenses. Never throws.
@@ -136,8 +139,7 @@ export async function notifyReviewOutcome(args: {
     const codeOf = (expense: ReviewedExpense) =>
       populatedCode(expense.currency) ?? codes.get(refId(expense.currency)) ?? undefined;
 
-    const results = await Promise.allSettled(
-      users.map((user) => {
+    const send = (user: (typeof users)[number]) => {
         const chatId = user.telegram?.chatId;
         if (typeof chatId !== "number") return Promise.resolve();
         const items = (bySubmitter.get(String(user._id)) ?? []).map((expense) => ({
@@ -153,10 +155,14 @@ export async function notifyReviewOutcome(args: {
           appUrl: bot.appUrl,
         });
         return sendMessage(bot.token, chatId, notice.html, notice.keyboard.length ? notice.keyboard : undefined);
-      })
-    );
-    for (const result of results) {
-      if (result.status === "rejected") console.error("Approval notice not sent:", result.reason);
+    };
+    // A few at a time: a bulk review can reach many people, and Telegram
+    // rate-limits a bot's bursts.
+    for (let start = 0; start < users.length; start += NOTICE_CONCURRENCY) {
+      const results = await Promise.allSettled(users.slice(start, start + NOTICE_CONCURRENCY).map(send));
+      for (const result of results) {
+        if (result.status === "rejected") console.error("Approval notice not sent:", result.reason);
+      }
     }
   } catch (err) {
     console.error("Approval notices failed:", err);

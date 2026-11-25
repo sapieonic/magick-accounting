@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { requireAdmin, verifyAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import {
@@ -47,12 +47,16 @@ export async function POST(req: NextRequest) {
     reviewer: authResult,
   });
   if (reviewed.length > 0) {
-    await notifyReviewOutcome({
-      action: request.action,
-      expenses: reviewed,
-      reason: request.reason,
-      reviewer: authResult,
-    });
+    // Sent after the response: the decision is already saved, and a slow
+    // Telegram must not make the admin think it failed.
+    after(() =>
+      notifyReviewOutcome({
+        action: request.action,
+        expenses: reviewed,
+        reason: request.reason,
+        reviewer: authResult,
+      })
+    );
   }
   return NextResponse.json({ done, failed });
 }

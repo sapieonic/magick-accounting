@@ -151,3 +151,36 @@ describe("notifyReviewOutcome", () => {
     expect(consoleError).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("notifyReviewOutcome — rate", () => {
+  it("sends at most five notices at once, and every one of them", async () => {
+    const submitters = Array.from({ length: 12 }, (_, i) => `66c1884c0853f8a76a4db${String(i).padStart(3, "0")}`);
+    vi.mocked(User.find).mockReturnValue(
+      query(submitters.map((id, i) => ({ _id: id, telegram: { chatId: 1000 + i } })))
+    );
+    let inFlight = 0;
+    let peak = 0;
+    vi.mocked(sendMessage).mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return {} as never;
+    });
+
+    await notifyReviewOutcome({
+      action: "approve",
+      expenses: submitters.map((createdBy, i) => ({
+        _id: `66c1884c0853f8a76a4dc${String(i).padStart(3, "0")}`,
+        title: `Taxi ${i}`,
+        amount: 100,
+        createdBy,
+      })),
+      reason: null,
+      reviewer: ADMIN,
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(12);
+    expect(peak).toBe(5);
+  });
+});

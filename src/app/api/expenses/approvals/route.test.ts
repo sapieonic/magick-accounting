@@ -17,6 +17,15 @@ vi.mock("@/lib/approval-server", async (importOriginal) => {
   return { ...actual, reviewExpenses: vi.fn(), countPendingApprovals: vi.fn() };
 });
 vi.mock("@/lib/approval-notify", () => ({ notifyReviewOutcome: vi.fn() }));
+// `after()` needs a request scope; run its callback once the handler has returned.
+const afterCallbacks: (() => unknown)[] = [];
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (callback: () => unknown) => afterCallbacks.push(callback),
+}));
+async function runAfterCallbacks() {
+  for (const callback of afterCallbacks.splice(0)) await callback();
+}
 
 const ADMIN: AuthUser = { _id: "66c1884c0853f8a76a4da001", email: "a@x.com", name: "Priya", role: "admin" };
 const USER: AuthUser = { _id: "66c1884c0853f8a76a4da101", email: "o@x.com", name: "Asha", role: "user" };
@@ -30,6 +39,7 @@ function post(body: unknown) {
 }
 
 beforeEach(() => {
+  afterCallbacks.length = 0;
   vi.clearAllMocks();
   vi.mocked(connectDB).mockResolvedValue(undefined as never);
   vi.mocked(verifyAuth).mockResolvedValue(ADMIN);
@@ -89,6 +99,9 @@ describe("POST /api/expenses/approvals", () => {
       reason: "Duplicate",
       reviewer: ADMIN,
     });
+    // Nothing is sent until the response has gone out.
+    expect(notifyReviewOutcome).not.toHaveBeenCalled();
+    await runAfterCallbacks();
     expect(notifyReviewOutcome).toHaveBeenCalledWith({
       action: "reject",
       expenses: reviewed,
@@ -107,6 +120,7 @@ describe("POST /api/expenses/approvals", () => {
     const response = await post({ action: "approve", items: [{ id: ID, revision: 0 }] });
 
     expect(response.status).toBe(200);
+    await runAfterCallbacks();
     expect(notifyReviewOutcome).not.toHaveBeenCalled();
   });
 

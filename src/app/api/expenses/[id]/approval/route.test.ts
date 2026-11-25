@@ -16,6 +16,15 @@ vi.mock("@/lib/approval-server", async (importOriginal) => {
   return { ...actual, reviewExpense: vi.fn(), resubmitExpense: vi.fn() };
 });
 vi.mock("@/lib/approval-notify", () => ({ notifyReviewOutcome: vi.fn() }));
+// `after()` needs a request scope; run its callback once the handler has returned.
+const afterCallbacks: (() => unknown)[] = [];
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (callback: () => unknown) => afterCallbacks.push(callback),
+}));
+async function runAfterCallbacks() {
+  for (const callback of afterCallbacks.splice(0)) await callback();
+}
 
 const ID = "66c1884c0853f8a76a4da201";
 const ADMIN: AuthUser = { _id: "66c1884c0853f8a76a4da001", email: "a@x.com", name: "Priya", role: "admin" };
@@ -30,6 +39,7 @@ function post(body: unknown, id = ID) {
 }
 
 beforeEach(() => {
+  afterCallbacks.length = 0;
   vi.clearAllMocks();
   vi.mocked(connectDB).mockResolvedValue(undefined as never);
   vi.mocked(verifyAuth).mockResolvedValue(ADMIN);
@@ -58,6 +68,9 @@ describe("POST /api/expenses/:id/approval", () => {
       reason: null,
       reviewer: ADMIN,
     });
+    // Nothing is sent until the response has gone out.
+    expect(notifyReviewOutcome).not.toHaveBeenCalled();
+    await runAfterCallbacks();
     expect(notifyReviewOutcome).toHaveBeenCalledWith({
       action: "approve",
       expenses: [EXPENSE],
@@ -78,6 +91,7 @@ describe("POST /api/expenses/:id/approval", () => {
     expect(reviewExpense).toHaveBeenCalledWith(
       expect.objectContaining({ action: "reject", revision: 0, reason: "Receipt missing" })
     );
+    await runAfterCallbacks();
     expect(notifyReviewOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ action: "reject", reason: "Receipt missing" })
     );
@@ -105,6 +119,7 @@ describe("POST /api/expenses/:id/approval", () => {
     expect(response.status).toBe(200);
     expect((await response.json()).expense.approvalStatus).toBe("pending");
     expect(resubmitExpense).toHaveBeenCalledWith({ id: ID, revision: 5, note: "It was a client visit", user: OWNER });
+    await runAfterCallbacks();
     expect(notifyReviewOutcome).not.toHaveBeenCalled();
   });
 
@@ -142,6 +157,7 @@ describe("POST /api/expenses/:id/approval", () => {
       code: "not_pending",
       approvalStatus: "approved",
     });
+    await runAfterCallbacks();
     expect(notifyReviewOutcome).not.toHaveBeenCalled();
   });
 
