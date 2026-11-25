@@ -307,7 +307,8 @@ request that never got through: "… 3 couldn't be sent. Check your connection a
 and handed to `onUpdated`, and the nav count refreshes. Members: `inFlight`, `approve`, `openReject`, `openResubmit`,
 `resubmit` (no dialog; the edit page posts its unchanged resubmit to the approval route itself), `flush`, `handlers`, `dialogs` (render once on the page). Options:
 `onUpdated`, `onRemoved`, `onScheduled`, `onReturned` (a single review that didn't go through, the expense pending
-again), `shortcuts`. The review queue hides expenses in `inFlight`; Expenses and the trip page show them with the status
+again), `onMovedToReview` (after "Move back to review" or "Resubmit as is" succeeds, for moving focus once its button is
+gone), `shortcuts`. The review queue hides expenses in `inFlight`; Expenses and the trip page show them with the status
 they're heading for and move the totals with them (Undo just drops them from `inFlight`), and on `onUpdated` replace the
 row and move the band for the status change, including approved/rejected → pending after a reopen (the trip page then
 reloads its summary, so "Who paid" is the server's figure). An expense that no longer matches the Status filter leaves

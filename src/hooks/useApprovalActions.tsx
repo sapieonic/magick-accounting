@@ -42,6 +42,13 @@ export interface ApprovalActionsOptions {
    * queue uses it to bring the expense back into view.
    */
   onReturned?: (expense: ExpenseListItem) => void;
+  /**
+   * A resubmit or "move back to review" went through (after `onUpdated`, with
+   * its dialog closed). The button that opened it only shows on a reviewed
+   * expense, so it is gone now and focus would drop to the page: pages move
+   * it to the expense's row, as after an approve or reject.
+   */
+  onMovedToReview?: (expense: ExpenseListItem) => void;
   /** Show the A / R keyboard shortcuts on Approve / Reject (the review queue, while they're on). */
   shortcuts?: boolean;
 }
@@ -458,7 +465,11 @@ export function useApprovalActions(options: ApprovalActionsOptions = {}): Approv
   );
 
   const resubmit = useCallback(
-    async (expense: ExpenseListItem, note: string | null) => (await sendResubmit(expense, note)) === "done",
+    async (expense: ExpenseListItem, note: string | null) => {
+      if ((await sendResubmit(expense, note)) !== "done") return false;
+      optionsRef.current.onMovedToReview?.(expense);
+      return true;
+    },
     [sendResubmit]
   );
 
@@ -560,7 +571,10 @@ export function useApprovalActions(options: ApprovalActionsOptions = {}): Approv
         onClose={() => setResubmitTarget(null)}
         onConfirm={async (note) => {
           if (!resubmitTarget) return;
-          if ((await sendResubmit(resubmitTarget, note)) !== "retry") setResubmitTarget(null);
+          const outcome = await sendResubmit(resubmitTarget, note);
+          if (outcome !== "retry") setResubmitTarget(null);
+          // In the same render as the close, so the move comes after the dialog hands focus back.
+          if (outcome === "done") optionsRef.current.onMovedToReview?.(resubmitTarget);
         }}
       />
       <ReopenDialog
@@ -570,7 +584,10 @@ export function useApprovalActions(options: ApprovalActionsOptions = {}): Approv
         onClose={() => setReopenTarget(null)}
         onConfirm={async (note) => {
           if (!reopenTarget) return;
-          if ((await sendReopen(reopenTarget, note)) !== "retry") setReopenTarget(null);
+          const outcome = await sendReopen(reopenTarget, note);
+          if (outcome !== "retry") setReopenTarget(null);
+          // In the same render as the close, so the move comes after the dialog hands focus back.
+          if (outcome === "done") optionsRef.current.onMovedToReview?.(reopenTarget);
         }}
       />
     </>

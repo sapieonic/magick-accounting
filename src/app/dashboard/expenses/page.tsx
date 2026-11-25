@@ -287,6 +287,7 @@ export default function ExpensesPage() {
   // filter leaves the list.
   const review = useApprovalActions({
     onScheduled: (reviewed) => focusAfterReview(reviewed),
+    onMovedToReview: (expense) => focusAfterReview([expense]),
     onUpdated: (updated) => {
       const old = expensesRef.current.find((e) => e._id === updated._id);
       const pin = pinnedRef.current;

@@ -37,7 +37,9 @@ function focusWasLost(): boolean {
 /**
  * Keeps keyboard focus on the list after an approve or reject. Those buttons
  * turn off while the decision can be undone (and the reject dialog hands focus
- * back to its now-disabled opener), so focus would drop to the page. `after(id)`
+ * back to its now-disabled opener), so focus would drop to the page; after a
+ * "move back to review" or a resubmit, the button that opened the dialog is
+ * gone altogether (it only shows on a reviewed expense). `after(id)`
  * moves it, once the page has re-rendered, to that expense's row title, or to
  * `fallback` (e.g. the ledger) when the row left the list. Focus the person
  * already moved somewhere else is left alone.

@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { Package } from "lucide-react";
+import { CircleAlert, Package } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
 import { useTitle } from "@/hooks/useTitle";
 import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
+import Notice from "@/components/ui/Notice";
 import Panel from "@/components/ui/Panel";
 import { cn } from "@/components/ui/cn";
 import { ICON_STROKE, panelPadX, rowClass, textButtonClass } from "@/components/ui/styles";
@@ -35,6 +36,8 @@ import {
   RECEIPT_TOO_LARGE,
   discardUploadedReceipt,
   getSubmitError,
+  listFields,
+  mergeAfterConflict,
   toExpensePayload,
   useReceiptUpload,
   useUnsavedChangesWarning,
@@ -112,6 +115,15 @@ function conflictMessage(before: ApprovalStatus, after: ApprovalStatus): string 
   return `Someone else saved this expense while you were editing. ${NOT_SAVED_YET}`;
 }
 
+/**
+ * After a conflict: the fields the person changed that someone else also
+ * changed, differently. Their value is kept, so this asks them to check it.
+ */
+function overlapMessage(fields: string[]): string {
+  const one = fields.length === 1;
+  return `${listFields(fields)} ${one ? "was" : "were"} also changed by someone else — check ${one ? "it" : "them"} before saving.`;
+}
+
 const errorCode = (err: unknown) => (err instanceof ApiError ? err.code : undefined);
 
 /** The approval facts the form shows, read off `GET /api/expenses/[id]`. */
@@ -155,6 +167,25 @@ function formValuesOf(exp: any): ExpenseFormValues {
     trip: storedTripId,
     travelType: storedTripId && isTravelType(exp.travelType) ? exp.travelType : null,
   };
+}
+
+/**
+ * `lookups` with the expense's own currency and payers added when the lists
+ * no longer offer them (deactivated, or no longer a member), so they stay selectable.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withStoredOptions(lookups: ExpenseLookups, exp: any): ExpenseLookups {
+  const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
+  const payerOptions = new Map<string, PayerOption>(lookups.members.map((member) => [member._id, member]));
+  for (const { paidBy } of storedPayments) {
+    if (paidBy?._id && !payerOptions.has(paidBy._id)) payerOptions.set(paidBy._id, paidBy);
+  }
+  const currencies: CurrencyOption[] = [...lookups.currencies];
+  const storedCurrency: CurrencyOption | undefined = exp.currency?._id ? exp.currency : undefined;
+  if (storedCurrency && !currencies.some((c) => c._id === storedCurrency._id)) {
+    currencies.push(storedCurrency);
+  }
+  return { ...lookups, currencies, members: [...payerOptions.values()] };
 }
 
 /** Company assets bought with this expense, and the way to add more. */
@@ -256,7 +287,14 @@ export default function EditExpensePage() {
 
   const [form, setForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
   const [initialForm, setInitialForm] = useState<ExpenseFormValues>(() => emptyExpenseValues());
-  const [initialHadReceipt, setInitialHadReceipt] = useState(false);
+  // The stored receipt the edit started from (null: none).
+  const [storedReceiptKey, setStoredReceiptKey] = useState<string | null>(null);
+  const initialHadReceipt = storedReceiptKey !== null;
+  // After a conflict: fields the person changed that someone else changed too (their value is kept).
+  const [overlaps, setOverlaps] = useState<string[]>([]);
+  // The latest values, for merging them with a re-read after a conflict.
+  const formRef = useRef(form);
+  formRef.current = form;
   // Where Back, Cancel and Save go, e.g. the trip the edit was opened from.
   const [returnTo, setReturnTo] = useState(DEFAULT_RETURN_TO);
 
@@ -287,50 +325,46 @@ export default function EditExpensePage() {
     router.push(returnTo);
   };
 
+  /**
+   * Everything the page keeps about the stored expense besides the form's
+   * values: approval, revision, linked assets, the saved conversion, the
+   * stored trip's name, and its currency and payers kept selectable.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyStored = (exp: any, assets: LinkedAsset[] | undefined) => {
+    setLinkedAssets(assets || []);
+    setSubmitter(exp.createdBy?._id ? exp.createdBy : null);
+    setApproval(approvalState(exp));
+    setRevision(exp.assetAllocationRevision ?? 0);
+    setCurrencyCode(exp.currency?.code || "INR");
+    const storedTripId: string = (typeof exp.trip === "string" ? exp.trip : exp.trip?._id) || "";
+    setStoredTrip(storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null);
+    const rate = storedRateToBase(exp);
+    setSavedRate(exp.currency?._id && rate ? { currencyId: exp.currency._id, rateToBase: rate } : null);
+    setStoredReceiptKey(exp.receiptKey || null);
+    setLookups((prev) => withStoredOptions(prev, exp));
+  };
+
   useEffect(() => {
     async function loadData() {
       try {
         const [expData, lookupData] = await Promise.all([api.get(`/api/expenses/${params.id}`), api.get(LOOKUPS_URL)]);
 
         const exp = expData.expense;
-        const storedPayments: StoredPayment[] = exp.paymentSource === "multiple" ? exp.payments || [] : [];
-        setLinkedAssets(expData.assets || []);
-        setSubmitter(exp.createdBy?._id ? exp.createdBy : null);
-        setApproval(approvalState(exp));
-        setRevision(exp.assetAllocationRevision ?? 0);
-        setCurrencyCode(exp.currency?.code || "INR");
-        const loadedForm = formValuesOf(exp);
-        const storedTripId = loadedForm.trip;
-        setStoredTrip(storedTripId ? { _id: storedTripId, name: exp.trip?.name || "Current trip" } : null);
-        setForm(loadedForm);
-        setInitialForm(loadedForm);
-
-        if (exp.receiptKey) {
-          setExistingReceipt({ key: exp.receiptKey, filename: exp.receiptFilename || "Receipt" });
-          setInitialHadReceipt(true);
-        }
-
-        // Keep current payers selectable even if they no longer appear in the member list.
-        const payerOptions = new Map<string, PayerOption>(
-          (lookupData.members || []).map((member: PayerOption) => [member._id, member])
-        );
-        for (const { paidBy } of storedPayments) {
-          if (paidBy?._id && !payerOptions.has(paidBy._id)) payerOptions.set(paidBy._id, paidBy);
-        }
-        // Likewise the stored currency, even if it has since been deactivated.
-        const currencies: CurrencyOption[] = [...(lookupData.currencies || [])];
-        const storedCurrency: CurrencyOption | undefined = exp.currency?._id ? exp.currency : undefined;
-        if (storedCurrency && !currencies.some((c) => c._id === storedCurrency._id)) {
-          currencies.push(storedCurrency);
-        }
-        const rate = storedRateToBase(exp);
-        setSavedRate(storedCurrency && rate ? { currencyId: storedCurrency._id, rateToBase: rate } : null);
+        // The lists first: `applyStored` adds the expense's own currency and payers to them.
         setLookups({
           departments: lookupData.departments,
           categories: lookupData.categories,
-          currencies,
-          members: [...payerOptions.values()],
+          currencies: lookupData.currencies || [],
+          members: lookupData.members || [],
         });
+        applyStored(exp, expData.assets);
+        const loadedForm = formValuesOf(exp);
+        setForm(loadedForm);
+        setInitialForm(loadedForm);
+        if (exp.receiptKey) {
+          setExistingReceipt({ key: exp.receiptKey, filename: exp.receiptFilename || "Receipt" });
+        }
       } catch {
         toast("Failed to load expense", "error");
         router.push("/dashboard/expenses");
@@ -339,6 +373,8 @@ export default function EditExpensePage() {
       }
     }
     loadData();
+    // `applyStored` only calls state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, toast, router]);
 
   const handleReceiptFile = (file: File) => {
@@ -352,24 +388,35 @@ export default function EditExpensePage() {
 
   /**
    * After a 409: reads the expense again and makes it the form's baseline
-   * (status, reason, history, revision), keeping the person's edits on top,
-   * so the Notice and the submit button describe what saving will do now.
-   * Returns the status it is in now, or null if it couldn't be read.
+   * (status, reason, history, revision, saved rate, trip, receipt), so the
+   * Notice and the submit button describe what saving will do now. The form
+   * is merged three ways: a field the person didn't touch takes the saved
+   * value (someone else's fix isn't overwritten on the next save), one they
+   * changed keeps theirs; one both changed keeps theirs and is listed in
+   * `overlaps`. Returns the status it is in now and those overlaps, or null
+   * if it couldn't be read.
    */
-  const refreshAfterConflict = async (): Promise<ApprovalStatus | null> => {
+  const refreshAfterConflict = async (): Promise<{ status: ApprovalStatus; overlaps: string[] } | null> => {
     try {
       const data = await api.get(`/api/expenses/${params.id}`);
-      const exp = data.expense;
-      setLinkedAssets(data.assets || []);
-      setApproval(approvalState(exp));
-      setRevision(exp.assetAllocationRevision ?? 0);
-      setInitialForm(formValuesOf(exp));
-      // The receipt: keep a change the person made; otherwise show the stored one.
-      setInitialHadReceipt(Boolean(exp.receiptKey));
-      if (!receiptChanged) {
-        setExistingReceipt(exp.receiptKey ? { key: exp.receiptKey, filename: exp.receiptFilename || "Receipt" } : null);
+      const exp = data?.expense;
+      if (!exp) return null;
+      const fresh = formValuesOf(exp);
+      // `initialForm` is still the version this edit started from: only this re-read replaces it.
+      const merged = mergeAfterConflict(initialForm, formRef.current, fresh);
+      const freshReceiptKey: string | null = exp.receiptKey || null;
+      if (receiptChanged) {
+        // Keep the person's new or removed receipt; flag it if the stored one changed meanwhile too.
+        const removedOnBothSides = !newReceipt && freshReceiptKey === null;
+        if (freshReceiptKey !== storedReceiptKey && !removedOnBothSides) merged.overlaps.push("Receipt");
+      } else {
+        setExistingReceipt(freshReceiptKey ? { key: freshReceiptKey, filename: exp.receiptFilename || "Receipt" } : null);
       }
-      return effectiveApprovalStatus(exp);
+      applyStored(exp, data.assets);
+      setInitialForm(fresh);
+      setForm(merged.values);
+      setOverlaps(merged.overlaps);
+      return { status: effectiveApprovalStatus(exp), overlaps: merged.overlaps };
     } catch {
       return null;
     }
@@ -380,13 +427,17 @@ export default function EditExpensePage() {
     const before = approval?.status ?? "approved";
     const code = errorCode(err);
     if (code === "stale" || code === "not_rejected") {
-      const now = await refreshAfterConflict();
-      if (now === null) {
+      const refreshed = await refreshAfterConflict();
+      if (refreshed === null) {
         toast(err instanceof Error ? err.message : fallback, "error");
-      } else if (code === "not_rejected") {
-        toast(`This expense isn't rejected any more, so there's nothing to resubmit. ${conflictMessage(before, now)}`, "error");
+        return;
+      }
+      const conflict = conflictMessage(before, refreshed.status);
+      const overlap = refreshed.overlaps.length > 0 ? ` ${overlapMessage(refreshed.overlaps)}` : "";
+      if (code === "not_rejected") {
+        toast(`This expense isn't rejected any more, so there's nothing to resubmit. ${conflict}${overlap}`, "error");
       } else {
-        toast(conflictMessage(before, now), "error");
+        toast(`${conflict}${overlap}`, "error");
       }
       return;
     }
@@ -526,14 +577,21 @@ export default function EditExpensePage() {
       busyLabel={resubmits ? "Resubmitting…" : "Saving…"}
       busy={submitting || uploadingReceipt}
       notice={
-        approval && (
-          <EditApprovalNotice
-            approval={approval}
-            isReviewer={isAdmin}
-            ownExpense={isAdmin && Boolean(submitter && user && submitter._id === user._id)}
-            accountingLocked={accountingLocked}
-          />
-        )
+        <>
+          {overlaps.length > 0 && (
+            <Notice icon={CircleAlert} title="Also changed by someone else">
+              {overlapMessage(overlaps)} The form keeps what you entered; everything else shows the saved version.
+            </Notice>
+          )}
+          {approval && (
+            <EditApprovalNotice
+              approval={approval}
+              isReviewer={isAdmin}
+              ownExpense={isAdmin && Boolean(submitter && user && submitter._id === user._id)}
+              accountingLocked={accountingLocked}
+            />
+          )}
+        </>
       }
       footerNote={
         resubmits

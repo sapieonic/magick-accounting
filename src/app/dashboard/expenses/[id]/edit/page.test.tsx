@@ -662,6 +662,113 @@ describe("EditExpensePage approval", () => {
     expect(toastMock).toHaveBeenLastCalledWith("Resubmitted. An admin will review it again.");
   });
 
+  /** The expense reads as `first`, then (re-read after a conflict) as `second`. */
+  function mockConflict(first: Record<string, unknown>, second: Record<string, unknown>) {
+    let reads = 0;
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.startsWith("/api/expenses/")) {
+        reads += 1;
+        return Promise.resolve({ expense: reads === 1 ? first : second, assets: [] });
+      }
+      if (url.startsWith("/api/lookups")) {
+        return Promise.resolve({
+          departments: [{ _id: "department-1", name: "Engineering" }],
+          categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+          currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+        });
+      }
+      return Promise.resolve({ trips: [] });
+    });
+    vi.mocked(api.put).mockRejectedValueOnce(
+      new ApiError("This expense changed while you were editing it", 409, { code: "stale", approvalStatus: "approved" })
+    );
+  }
+
+  it("after a conflict, takes someone else's fix to a field the person didn't touch, and keeps their own edit", async () => {
+    const user = userEvent.setup();
+    const approved = { ...ownExpense, approvalStatus: "approved", assetAllocationRevision: 2 };
+    // Meanwhile an admin corrected the amount and put it in a trip.
+    const corrected = {
+      ...approved,
+      amount: 1500,
+      amountInBaseCurrency: 1500,
+      trip: { _id: "66c1884c0853f8a76a4da399", name: "Mumbai client visit" },
+      travelType: "food",
+      assetAllocationRevision: 3,
+    };
+    mockConflict(approved, corrected);
+    render(<EditExpensePage />);
+
+    await user.type(await screen.findByLabelText(/^title/i), " with client");
+    await user.click(submitButton("Save changes"));
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        "Someone else saved this expense while you were editing. Your changes aren't saved yet: review them and save again.",
+        "error"
+      )
+    );
+    // The untouched amount and trip now show the saved values; the title edit is kept.
+    await waitFor(() => expect(screen.getByLabelText(/^amount/i)).toHaveValue(1500));
+    expect(screen.getByLabelText(/^title/i)).toHaveValue("Client dinner with client");
+    const trip = screen.getByLabelText(/business trip/i) as HTMLSelectElement;
+    expect(trip).toHaveValue("66c1884c0853f8a76a4da399");
+    expect(trip.selectedOptions[0]).toHaveTextContent("Mumbai client visit");
+    expect(queryNotice("Also changed by someone else")).toBeNull();
+    // Nothing accounting-related differs from the saved version, so it stays approved.
+    expect(submitButton("Save changes")).toBeInTheDocument();
+
+    vi.mocked(api.put).mockResolvedValueOnce({ expense: { approvalStatus: "approved" } });
+    await user.click(submitButton("Save changes"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2));
+    expect(api.put).toHaveBeenLastCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({
+        revision: 3,
+        title: "Client dinner with client",
+        amount: 1500,
+        trip: "66c1884c0853f8a76a4da399",
+        travelType: "food",
+      })
+    );
+    expect(toastMock).toHaveBeenLastCalledWith("Expense updated");
+  });
+
+  it("after a conflict, keeps the person's value for a field both changed, and asks them to check it", async () => {
+    const user = userEvent.setup();
+    const approved = { ...ownExpense, approvalStatus: "approved", assetAllocationRevision: 2 };
+    const corrected = { ...approved, amount: 1500, amountInBaseCurrency: 1500, description: "Corrected by Priya", assetAllocationRevision: 3 };
+    mockConflict(approved, corrected);
+    render(<EditExpensePage />);
+
+    const amount = await screen.findByLabelText(/^amount/i);
+    await user.clear(amount);
+    await user.type(amount, "1200");
+    await user.click(submitButton("Save & resubmit"));
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        "Someone else saved this expense while you were editing. Your changes aren't saved yet: review them and save again. Amount was also changed by someone else — check it before saving.",
+        "error"
+      )
+    );
+    const notice = await findNotice("Also changed by someone else");
+    expect(notice).toHaveTextContent("Amount was also changed by someone else — check it before saving.");
+    expect(screen.getByLabelText(/^amount/i)).toHaveValue(1200);
+    // The field only someone else changed takes their value.
+    expect(screen.getByLabelText(/^description/i)).toHaveValue("Corrected by Priya");
+    // 1200 differs from the saved 1500: still an accounting change.
+    expect(submitButton("Save & resubmit")).toBeInTheDocument();
+
+    vi.mocked(api.put).mockResolvedValueOnce({ expense: { approvalStatus: "pending" } });
+    await user.click(submitButton("Save & resubmit"));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2));
+    expect(api.put).toHaveBeenLastCalledWith(
+      "/api/expenses/expense-1",
+      expect.objectContaining({ revision: 3, amount: 1200, description: "Corrected by Priya" })
+    );
+  });
+
   it("builds the save message from the server's answer, not the loaded status", async () => {
     const user = userEvent.setup();
     // Loaded approved, title-only change: the server still says it went back for approval.

@@ -367,6 +367,28 @@ describe("useApprovalActions: move back to review", () => {
     expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ amount: 120, assetAllocationRevision: 6 }));
   });
 
+  it("calls onMovedToReview, after onUpdated, once the move went through", async () => {
+    vi.mocked(api.post).mockResolvedValue({ expense: { ...approved, approvalStatus: "pending" } });
+    const onUpdated = vi.fn();
+    // A page moves focus from it, so the list already shows the expense as pending.
+    const onMovedToReview = vi.fn(() => expect(onUpdated).toHaveBeenCalled());
+    const actions = setup({ onUpdated, onMovedToReview });
+    await reopen(actions, approved);
+    expect(onMovedToReview).toHaveBeenCalledTimes(1);
+    expect(onMovedToReview).toHaveBeenCalledWith(expect.objectContaining({ _id: "a" }));
+    expect(screen.queryByRole("dialog", { name: "Move back to review" })).not.toBeInTheDocument();
+  });
+
+  it("doesn't call onMovedToReview for a move that was refused or didn't get through", async () => {
+    const onMovedToReview = vi.fn();
+    vi.mocked(api.post).mockRejectedValueOnce(new ApiError("Assets…", 409, { code: "asset_linked" }));
+    const actions = setup({ onMovedToReview });
+    await reopen(actions, approved);
+    vi.mocked(api.post).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await reopen(actions, approved);
+    expect(onMovedToReview).not.toHaveBeenCalled();
+  });
+
   it("keeps the dialog open to retry when the request didn't get through", async () => {
     vi.mocked(api.post).mockRejectedValue(new TypeError("Failed to fetch"));
     const actions = setup();

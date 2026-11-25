@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { accountingFieldsChanged } from "./expense-form";
+import { accountingFieldsChanged, listFields, mergeAfterConflict } from "./expense-form";
 import { emptyExpenseValues, type ExpenseFormValues } from "./types";
 
 vi.mock("@/lib/api", () => ({ api: {} }));
@@ -99,5 +99,63 @@ describe("accountingFieldsChanged", () => {
 
   it("is true when the receipt changed", () => {
     expect(accountingFieldsChanged(initial, { ...initial }, true)).toBe(true);
+  });
+});
+
+describe("mergeAfterConflict", () => {
+  it("takes the saved value for fields the person didn't touch, and keeps the ones they changed", () => {
+    const mine = { ...initial, title: "Client dinner with Ravi" };
+    const theirs = { ...initial, amount: "1500", description: "Corrected" };
+    const { values, overlaps } = mergeAfterConflict(initial, mine, theirs);
+    expect(values).toEqual({ ...initial, title: "Client dinner with Ravi", amount: "1500", description: "Corrected" });
+    expect(overlaps).toEqual([]);
+  });
+
+  it("keeps the person's value where both changed it differently, and lists the field", () => {
+    const mine = { ...initial, amount: "1200", date: "2026-07-05" };
+    const theirs = { ...initial, amount: "1500", date: "2026-07-05" };
+    const { values, overlaps } = mergeAfterConflict(initial, mine, theirs);
+    expect(values.amount).toBe("1200");
+    expect(values.date).toBe("2026-07-05");
+    // Both set the same date: nothing to check.
+    expect(overlaps).toEqual(["Amount"]);
+  });
+
+  it("compares amounts as money, so retyping the same figure isn't an edit", () => {
+    const { values, overlaps } = mergeAfterConflict(initial, { ...initial, amount: "1000.00" }, { ...initial, amount: "1500" });
+    expect(values.amount).toBe("1500");
+    expect(overlaps).toEqual([]);
+  });
+
+  it("merges who paid as a whole", () => {
+    const split = { ...initial, paymentSource: "split", pocketAmount: "400" };
+    const shared: ExpenseFormValues = {
+      ...initial,
+      paymentSource: "multiple",
+      payments: [payment("asha", "600", "pocket"), payment("ravi", "400", "company")],
+    };
+    // Untouched: the saved payers come in with their source.
+    expect(mergeAfterConflict(initial, { ...initial }, shared).values).toMatchObject({
+      paymentSource: "multiple",
+      payments: shared.payments,
+    });
+    // Changed by the person: their split stays whole, and differs from the saved payers.
+    const both = mergeAfterConflict(initial, split, shared);
+    expect(both.values).toMatchObject({ paymentSource: "split", pocketAmount: "400", payments: [] });
+    expect(both.overlaps).toEqual(["Who paid"]);
+  });
+
+  it("merges the trip with its travel type", () => {
+    const inTrip = { ...initial, trip: "trip-1", travelType: "stay" as const };
+    const { values } = mergeAfterConflict(initial, { ...initial, title: "Hotel" }, inTrip);
+    expect(values).toMatchObject({ title: "Hotel", trip: "trip-1", travelType: "stay" });
+  });
+});
+
+describe("listFields", () => {
+  it("joins field names in plain words", () => {
+    expect(listFields(["Amount"])).toBe("Amount");
+    expect(listFields(["Amount", "Date"])).toBe("Amount and Date");
+    expect(listFields(["Title", "Amount", "Date"])).toBe("Title, Amount and Date");
   });
 });

@@ -1040,6 +1040,44 @@ describe("ExpensesPage", () => {
       expect(screen.getByText("Showing 1 of 1 item · each trip counts as one")).toBeInTheDocument();
     });
 
+    it("puts focus on the expense's row after Move back to review, whose button is gone", async () => {
+      const approvedTaxi = { ...taxi, approvalStatus: "approved", assetAllocationRevision: 2 };
+      listedExpenses = [expense, approvedTaxi];
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...approvedTaxi, approvalStatus: "pending", assetAllocationRevision: 3 } });
+      render(<ExpensesPage />);
+      await screen.findByRole("region", { name: "Totals" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Taxi to client" }));
+      const reopen = within(detail("pending-1")).getByRole("button", { name: /move back to review/i });
+      reopen.focus();
+      fireEvent.click(reopen);
+      const dialog = screen.getByRole("dialog", { name: "Move back to review" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Move back to review" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Move back to review" })).not.toBeInTheDocument());
+      // Its opener only shows on a reviewed expense, so it's gone: focus lands on the row, not the page.
+      expect(within(detail("pending-1")).queryByRole("button", { name: /move back to review/i })).not.toBeInTheDocument();
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Taxi to client" })));
+    });
+
+    it("moves focus to the ledger when the expense moved back to review leaves the Status filter", async () => {
+      window.history.replaceState(null, "", "/dashboard/expenses?approval=approved");
+      const approvedTaxi = { ...taxi, approvalStatus: "approved", assetAllocationRevision: 2 };
+      listedExpenses = [expense, approvedTaxi];
+      listedSummary = { totalAmount: 6128.76, totalExpenses: 2, companyAmount: 6128.76, pocketAmount: 0, pendingCount: 0, pendingAmount: 0 };
+      vi.mocked(api.post).mockResolvedValue({ expense: { ...approvedTaxi, approvalStatus: "pending" } });
+      render(<ExpensesPage />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "Taxi to client" }));
+      const reopen = within(detail("pending-1")).getByRole("button", { name: /move back to review/i });
+      reopen.focus();
+      fireEvent.click(reopen);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Move back to review" })).getByRole("button", { name: "Move back to review" }));
+
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Taxi to client" })).not.toBeInTheDocument());
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "Expense ledger" })));
+    });
+
     it("lets the submitter resubmit a rejected expense as is", async () => {
       const lunch = {
         ...expense,
@@ -1068,7 +1106,9 @@ describe("ExpensesPage", () => {
       const notice = within(detail("rejected-1"));
       expect(notice.getByText("Receipt missing")).toBeInTheDocument();
       expect(notice.getByRole("link", { name: "Edit & resubmit" })).toHaveAttribute("href", "/dashboard/expenses/rejected-1/edit");
-      fireEvent.click(notice.getByRole("button", { name: "Resubmit as is…" }));
+      const resubmit = notice.getByRole("button", { name: "Resubmit as is…" });
+      resubmit.focus();
+      fireEvent.click(resubmit);
 
       const dialog = screen.getByRole("dialog", { name: "Resubmit for approval" });
       fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Receipt attached now" } });
@@ -1085,6 +1125,8 @@ describe("ExpensesPage", () => {
       expect(within(totals).queryByRole("button", { name: /rejected — see why/ })).not.toBeInTheDocument();
       expect(statValue(totals, "All time total")).toBe("₹5,678.76");
       expect(within(detail("rejected-1")).getByText(/An admin will review this/)).toBeInTheDocument();
+      // "Resubmit as is…" is gone with the rejection: focus goes to the row rather than the page.
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Team lunch" })));
     });
   });
 

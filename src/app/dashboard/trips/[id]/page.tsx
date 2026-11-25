@@ -236,6 +236,7 @@ export default function TripDetailPage() {
   const focusAfterReview = useFocusAfterReview(timelineRef);
   const review = useApprovalActions({
     onScheduled: (reviewed) => focusAfterReview(reviewed),
+    onMovedToReview: (expense) => focusAfterReview([expense]),
     onUpdated: (updated) => {
       setData((prev) => {
         const old = prev?.expenses.find((e) => e._id === updated._id);
