@@ -6,17 +6,22 @@ import {
   countPendingApprovals,
   parseApprovalRequest,
   parseBulkReviewRequest,
+  parseEditRevision,
+  reopenExpense,
   resubmitExpense,
   reviewExpense,
   reviewExpenses,
+  staleEditConflict,
 } from "./approval-server";
 import type { AuthUser } from "@/lib/auth";
-import { MAX_BULK_REVIEW, PENDING_MATCH } from "@/lib/approval";
+import { EDIT_RESUBMIT_NOTE, MAX_BULK_REVIEW, PENDING_MATCH } from "@/lib/approval";
+import Asset from "@/models/Asset";
 import Expense from "@/models/Expense";
 
 vi.mock("@/models/Expense", () => ({
   default: { findOneAndUpdate: vi.fn(), findById: vi.fn(), aggregate: vi.fn() },
 }));
+vi.mock("@/models/Asset", () => ({ default: { exists: vi.fn() } }));
 vi.mock("@/models/User", () => ({ default: {} }));
 vi.mock("@/lib/trip-query", () => ({
   populateExpenseRefs: (query: unknown) => query,
@@ -28,6 +33,8 @@ const ADMIN: AuthUser = { _id: "66c1884c0853f8a76a4da001", email: "a@x.com", nam
 const MASTER: AuthUser = { _id: "66c1884c0853f8a76a4da002", email: "m@x.com", name: "Mo", role: "master_admin" };
 const OWNER: AuthUser = { _id: "66c1884c0853f8a76a4da101", email: "o@x.com", name: "Asha", role: "user" };
 const OTHER: AuthUser = { _id: "66c1884c0853f8a76a4da102", email: "r@x.com", name: "Ravi", role: "user" };
+/** An admin who was a `user` when they submitted expenses of their own. */
+const PROMOTED: AuthUser = { ...OWNER, role: "admin" };
 const NOW = new Date("2026-11-20T10:00:00.000Z");
 
 const ID = "66c1884c0853f8a76a4da201";
@@ -36,6 +43,8 @@ const ID3 = "66c1884c0853f8a76a4da203";
 
 type Doc = Record<string, unknown>;
 let store: Doc[];
+/** Assets, by the expense they were bought through. */
+let assets: { purchaseExpense: string }[];
 
 /** Applies the update operators these writes use, like MongoDB would. */
 function applyUpdate(doc: Doc, update: { $set?: Doc; $push?: Doc; $inc?: Record<string, number> }) {
@@ -60,6 +69,11 @@ function chain(result: () => unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   store = [];
+  assets = [];
+  vi.mocked(Asset.exists).mockImplementation(((filter: Doc) =>
+    Promise.resolve(
+      assets.some((asset) => asset.purchaseExpense === filter.purchaseExpense) ? { _id: "asset" } : null
+    )) as never);
   // An atomic conditional update over the in-memory store.
   vi.mocked(Expense.findOneAndUpdate).mockImplementation(((filter: Doc, update: never) =>
     chain(() => {
@@ -102,7 +116,7 @@ describe("reviewExpense", () => {
 
     expect(Expense.findOneAndUpdate).toHaveBeenCalledTimes(1);
     expect(Expense.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: ID, approvalStatus: "pending", assetAllocationRevision: 3 },
+      { _id: ID, approvalStatus: "pending", createdBy: { $ne: ADMIN._id }, assetAllocationRevision: 3 },
       {
         $set: { approvalStatus: "approved", reviewedBy: ADMIN._id, reviewedAt: NOW, rejectionReason: null },
         $push: { approvalHistory: { action: "approved", by: ADMIN._id, at: NOW, note: null } },
@@ -115,7 +129,8 @@ describe("reviewExpense", () => {
       expense: expect.objectContaining({ approvalStatus: "approved", assetAllocationRevision: 4, linkedAssetCount: 0 }),
     });
     const query = vi.mocked(Expense.findOneAndUpdate).mock.results[0].value;
-    expect(query.populate).toHaveBeenCalledWith("reviewedBy", "name email");
+    // The reviewer comes from populateExpenseRefs (mocked here); only the history is added.
+    expect(query.populate).toHaveBeenCalledTimes(1);
     expect(query.populate).toHaveBeenCalledWith("approvalHistory.by", "name email");
   });
 
@@ -225,6 +240,25 @@ describe("reviewExpense", () => {
     expect(store[0].approvalStatus).toBe("pending");
   });
 
+  it("never lets an admin decide their own expense, whatever its revision", async () => {
+    addExpense();
+
+    for (const action of ["approve", "reject"] as const) {
+      const outcome = await reviewExpense({ id: ID, action, revision: 3, reason: "Looks wrong", reviewer: PROMOTED });
+      expect(outcome).toEqual({
+        ok: false,
+        status: 403,
+        code: "own_expense",
+        error: "You can't review your own expense. Another admin needs to approve or reject it.",
+      });
+    }
+    // The rule is in the filter itself, not just checked beforehand.
+    expect(vi.mocked(Expense.findOneAndUpdate).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ createdBy: { $ne: PROMOTED._id } })
+    );
+    expect(store[0]).toEqual(expect.objectContaining({ approvalStatus: "pending", assetAllocationRevision: 3 }));
+  });
+
   it("lets only one of two admins deciding at the same time win", async () => {
     addExpense();
 
@@ -272,6 +306,34 @@ describe("reviewExpenses", () => {
     expect(result.reviewed).toEqual([expect.objectContaining({ _id: ID, approvalStatus: "rejected" })]);
     expect(store.map((doc) => doc.approvalStatus)).toEqual(["rejected", "approved", "pending"]);
     expect(store[0].rejectionReason).toBe("Duplicate");
+  });
+
+  it("skips the reviewer's own expenses with their own code and decides the rest", async () => {
+    addExpense({ _id: ID });
+    addExpense({ _id: ID2, createdBy: PROMOTED._id });
+
+    const result = await reviewExpenses({
+      action: "approve",
+      items: [
+        { id: ID, revision: 3 },
+        { id: ID2, revision: 3 },
+      ],
+      reviewer: PROMOTED,
+    });
+
+    expect(result.done).toEqual([]);
+    // ID belongs to OWNER, who is PROMOTED; both are this reviewer's own.
+    expect(result.failed.map((item) => item.code)).toEqual(["own_expense", "own_expense"]);
+
+    const byAnother = await reviewExpenses({
+      action: "approve",
+      items: [
+        { id: ID, revision: 3 },
+        { id: ID2, revision: 3 },
+      ],
+      reviewer: ADMIN,
+    });
+    expect(byAnother.done).toEqual([ID, ID2]);
   });
 
   it("reports deleted expenses as not found", async () => {
@@ -393,6 +455,184 @@ describe("resubmitExpense", () => {
   });
 });
 
+describe("reopenExpense", () => {
+  const decided = (approvalStatus: "approved" | "rejected" | undefined, overrides: Doc = {}) => {
+    const doc = addExpense({
+      approvalStatus,
+      reviewedBy: ADMIN._id,
+      reviewedAt: NOW,
+      rejectionReason: approvalStatus === "rejected" ? "Receipt missing" : null,
+      ...overrides,
+    });
+    if (approvalStatus === undefined) delete doc.approvalStatus;
+    return doc;
+  };
+
+  it("moves an approved expense back to pending in one conditional update, clearing the decision", async () => {
+    decided("approved");
+
+    const outcome = await reopenExpense({ id: ID, revision: 3, note: "Wrong category", reviewer: MASTER, now: NOW });
+
+    expect(Expense.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(Expense.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: ID,
+        approvalStatus: { $in: ["approved", "rejected", null] },
+        createdBy: { $ne: MASTER._id },
+        $and: [
+          { assetAllocationRevision: 3 },
+          { $or: [{ assetAllocatedAmount: { $exists: false } }, { assetAllocatedAmount: { $lte: 0 } }] },
+        ],
+      },
+      {
+        $set: { approvalStatus: "pending", reviewedBy: null, reviewedAt: null, rejectionReason: null },
+        $push: { approvalHistory: { action: "reopened", by: MASTER._id, at: NOW, note: "Wrong category" } },
+        $inc: { assetAllocationRevision: 1 },
+      },
+      { new: true }
+    );
+    expect(outcome).toEqual({
+      ok: true,
+      expense: expect.objectContaining({
+        approvalStatus: "pending",
+        reviewedBy: null,
+        reviewedAt: null,
+        assetAllocationRevision: 4,
+        linkedAssetCount: 0,
+      }),
+    });
+    expect((store[0].approvalHistory as Doc[]).at(-1)).toEqual({
+      action: "reopened",
+      by: MASTER._id,
+      at: NOW,
+      note: "Wrong category",
+    });
+  });
+
+  it("reopens a rejected expense, clearing the reason", async () => {
+    decided("rejected");
+
+    expect((await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN, now: NOW })).ok).toBe(true);
+    expect(store[0]).toEqual(
+      expect.objectContaining({ approvalStatus: "pending", rejectionReason: null, reviewedBy: null })
+    );
+  });
+
+  it("reopens a legacy expense with no status and no revision", async () => {
+    decided(undefined);
+    delete store[0].assetAllocationRevision;
+
+    const outcome = await reopenExpense({ id: ID, revision: 0, note: null, reviewer: ADMIN, now: NOW });
+
+    expect(outcome.ok).toBe(true);
+    expect(store[0]).toEqual(expect.objectContaining({ approvalStatus: "pending", assetAllocationRevision: 1 }));
+  });
+
+  it("refuses an expense that is already waiting", async () => {
+    addExpense();
+
+    expect(await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN })).toEqual({
+      ok: false,
+      status: 409,
+      code: "not_reviewed",
+      error: "This expense is already awaiting approval.",
+      approvalStatus: "pending",
+    });
+    expect(store[0].assetAllocationRevision).toBe(3);
+  });
+
+  it("refuses an expense with assets registered against it, by allocation or by a linked asset", async () => {
+    const error =
+      "Assets are registered against this expense, so it can't go back to review. Reverse its assets first.";
+    decided("approved", { assetAllocatedAmount: 1200 });
+
+    expect(await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN })).toEqual({
+      ok: false,
+      status: 409,
+      code: "asset_linked",
+      error,
+      approvalStatus: "approved",
+    });
+
+    // A legacy link with no allocation recorded on the expense.
+    store = [];
+    decided("approved", { assetAllocatedAmount: 0 });
+    assets.push({ purchaseExpense: ID });
+    expect(await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN })).toEqual(
+      expect.objectContaining({ ok: false, status: 409, code: "asset_linked", error })
+    );
+    expect(Expense.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(store[0].approvalStatus).toBe("approved");
+  });
+
+  it("never lets an admin reopen their own expense", async () => {
+    decided("approved", { createdBy: ADMIN._id });
+
+    expect(await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN })).toEqual(
+      expect.objectContaining({ ok: false, status: 403, code: "own_expense" })
+    );
+    expect(store[0].approvalStatus).toBe("approved");
+  });
+
+  it("refuses a stale revision and a deleted expense", async () => {
+    decided("approved", { assetAllocationRevision: 6 });
+    expect(await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN })).toEqual({
+      ok: false,
+      status: 409,
+      code: "stale",
+      error: "This expense changed after you opened it. Check the latest version, then try again.",
+      approvalStatus: "approved",
+    });
+
+    store = [];
+    expect(await reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN })).toEqual(
+      expect.objectContaining({ ok: false, status: 404, code: "not_found" })
+    );
+  });
+
+  it("lets only one of two admins reopening at the same time win", async () => {
+    decided("approved");
+
+    const [reopened, again] = await Promise.all([
+      reopenExpense({ id: ID, revision: 3, note: null, reviewer: ADMIN }),
+      reopenExpense({ id: ID, revision: 3, note: null, reviewer: MASTER }),
+    ]);
+
+    expect(reopened.ok).toBe(true);
+    expect(again).toEqual(expect.objectContaining({ ok: false, code: "not_reviewed" }));
+    expect(store[0].approvalHistory).toHaveLength(2);
+  });
+
+  it("is admin-only", async () => {
+    decided("approved");
+
+    await expect(reopenExpense({ id: ID, revision: 3, note: null, reviewer: OTHER })).rejects.toThrow(
+      "Only admins can move an expense back to review"
+    );
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("edit revision", () => {
+  it("reads an optional, valid revision", () => {
+    expect(parseEditRevision(undefined)).toBeNull();
+    expect(parseEditRevision(null)).toBeNull();
+    expect(parseEditRevision(0)).toBe(0);
+    expect(parseEditRevision(7)).toBe(7);
+    for (const raw of ["7", -1, 1.5, Number.NaN]) {
+      expect(() => parseEditRevision(raw)).toThrow("Expense version is missing or invalid. Reload and try again.");
+    }
+  });
+
+  it("explains a stale edit with the current status", () => {
+    const error =
+      "This expense changed while you were editing it (for example, an admin reviewed it). Reload to see the latest version.";
+    expect(staleEditConflict({ approvalStatus: "rejected" })).toEqual({ error, code: "stale", approvalStatus: "rejected" });
+    expect(staleEditConflict({})).toEqual({ error, code: "stale", approvalStatus: "approved" });
+    expect(staleEditConflict(null)).toEqual({ error, code: "stale" });
+  });
+});
+
 describe("approvalChangeAfterEdit", () => {
   const expense = (approvalStatus?: "pending" | "approved" | "rejected", owner = OWNER._id) => ({
     approvalStatus,
@@ -405,7 +645,9 @@ describe("approvalChangeAfterEdit", () => {
         approvalChangeAfterEdit({ expense: expense(status), editor: OWNER, accountingChanged: true, now: NOW })
       ).toEqual({
         $set: { approvalStatus: "pending", reviewedBy: null, reviewedAt: null, rejectionReason: null },
-        $push: { approvalHistory: { action: "resubmitted", by: OWNER._id, at: NOW, note: "Edited after approval" } },
+        $push: {
+          approvalHistory: { action: "resubmitted", by: OWNER._id, at: NOW, note: EDIT_RESUBMIT_NOTE.afterApproval },
+        },
       });
     }
   });
@@ -419,7 +661,9 @@ describe("approvalChangeAfterEdit", () => {
       approvalChangeAfterEdit({ expense: expense("rejected"), editor: OWNER, accountingChanged: false, now: NOW })
     ).toEqual(
       expect.objectContaining({
-        $push: { approvalHistory: { action: "resubmitted", by: OWNER._id, at: NOW, note: "Edited after rejection" } },
+        $push: {
+          approvalHistory: { action: "resubmitted", by: OWNER._id, at: NOW, note: EDIT_RESUBMIT_NOTE.afterRejection },
+        },
       })
     );
   });
@@ -437,6 +681,7 @@ describe("countPendingApprovals", () => {
     addExpense({ _id: ID, amountInBaseCurrency: 100.105, createdAt: new Date("2026-11-10T00:00:00.000Z") });
     addExpense({ _id: ID2, amountInBaseCurrency: undefined, amount: 50, createdAt: new Date("2026-11-05T00:00:00.000Z") });
     delete store[1].amountInBaseCurrency;
+    for (const doc of store) delete doc.approvalHistory;
     addExpense({ _id: ID3, approvalStatus: "rejected", amountInBaseCurrency: 999 });
     store.push({ _id: "legacy", amount: 1000, amountInBaseCurrency: 1000, createdAt: new Date("2026-01-01") });
 
@@ -446,6 +691,42 @@ describe("countPendingApprovals", () => {
       oldestPendingAt: "2026-11-05T00:00:00.000Z",
     });
     expect(vi.mocked(Expense.aggregate).mock.calls[0][0][0]).toEqual({ $match: PENDING_MATCH });
+  });
+
+  it("dates the wait from each expense's latest submission, not its creation", async () => {
+    const at = (iso: string) => new Date(iso);
+    // Created long ago, rejected, then resubmitted last week.
+    addExpense({
+      _id: ID,
+      createdAt: at("2026-10-01T00:00:00.000Z"),
+      approvalHistory: [
+        { action: "submitted", by: OWNER._id, at: at("2026-10-01T00:00:00.000Z"), note: null },
+        { action: "rejected", by: ADMIN._id, at: at("2026-10-02T00:00:00.000Z"), note: "Receipt missing" },
+        { action: "resubmitted", by: OWNER._id, at: at("2026-11-18T00:00:00.000Z"), note: null },
+      ],
+    });
+    // Approved on creation by an admin, moved back to review two days ago.
+    addExpense({
+      _id: ID2,
+      createdAt: at("2026-09-01T00:00:00.000Z"),
+      approvalHistory: [
+        { action: "auto_approved", by: ADMIN._id, at: at("2026-09-01T00:00:00.000Z"), note: null },
+        { action: "reopened", by: MASTER._id, at: at("2026-11-17T00:00:00.000Z"), note: null },
+      ],
+    });
+    // Submitted three days ago.
+    addExpense({
+      _id: ID3,
+      createdAt: at("2026-11-16T00:00:00.000Z"),
+      approvalHistory: [{ action: "submitted", by: OWNER._id, at: at("2026-11-16T00:00:00.000Z"), note: null }],
+    });
+
+    expect((await countPendingApprovals()).oldestPendingAt).toBe("2026-11-16T00:00:00.000Z");
+
+    // Without a submission step it falls back to the creation time.
+    store[2].approvalHistory = [];
+    store[2].createdAt = at("2026-11-12T00:00:00.000Z");
+    expect((await countPendingApprovals()).oldestPendingAt).toBe("2026-11-12T00:00:00.000Z");
   });
 
   it("reports an empty queue", async () => {
@@ -469,11 +750,21 @@ describe("parseApprovalRequest", () => {
       revision: 4,
       note: null,
     });
+    expect(parseApprovalRequest({ action: "reopen", revision: 6, note: " Wrong category " })).toEqual({
+      action: "reopen",
+      revision: 6,
+      note: "Wrong category",
+    });
   });
 
   it("refuses bad actions, revisions, reasons and notes", () => {
     expect(() => parseApprovalRequest(null)).toThrow("Request body is invalid");
-    expect(() => parseApprovalRequest({ action: "reopen", revision: 1 })).toThrow("Choose approve, reject or resubmit");
+    expect(() => parseApprovalRequest({ action: "delete", revision: 1 })).toThrow(
+      "Choose approve, reject, resubmit or reopen"
+    );
+    expect(() => parseApprovalRequest({ action: "reopen", revision: 1, note: "x".repeat(501) })).toThrow(
+      "Keep the note under 500 characters"
+    );
     for (const revision of [undefined, -1, 1.5, "3", Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
       expect(() => parseApprovalRequest({ action: "approve", revision })).toThrow(
         "Expense version is missing or invalid. Reload and try again."

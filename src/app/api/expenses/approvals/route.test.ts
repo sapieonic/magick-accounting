@@ -124,6 +124,25 @@ describe("POST /api/expenses/approvals", () => {
     expect(notifyReviewOutcome).not.toHaveBeenCalled();
   });
 
+  it("reports the reviewer's own expenses as failed with their own code", async () => {
+    const error = "You can't review your own expense. Another admin needs to approve or reject it.";
+    vi.mocked(reviewExpenses).mockResolvedValue({
+      done: [ID2],
+      failed: [{ id: ID, code: "own_expense", error }],
+      reviewed: [{ _id: ID2, createdBy: USER._id }],
+    });
+
+    const response = await post({
+      action: "approve",
+      items: [
+        { id: ID, revision: 0 },
+        { id: ID2, revision: 0 },
+      ],
+    });
+
+    expect(await response.json()).toEqual({ done: [ID2], failed: [{ id: ID, code: "own_expense", error }] });
+  });
+
   it("is admin-only", async () => {
     vi.mocked(verifyAuth).mockResolvedValue(USER);
 
@@ -149,6 +168,7 @@ describe("POST /api/expenses/approvals", () => {
     const cases: [unknown, string][] = [
       [null, "Request body is invalid"],
       [{ action: "resubmit", items: [{ id: ID, revision: 0 }] }, "Choose approve or reject"],
+      [{ action: "reopen", items: [{ id: ID, revision: 0 }] }, "Choose approve or reject"],
       [{ action: "approve", items: [] }, "Select at least one expense"],
       [{ action: "approve", items: [{ id: "abc", revision: 0 }] }, "Expense id is invalid"],
       [

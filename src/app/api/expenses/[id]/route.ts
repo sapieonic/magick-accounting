@@ -13,7 +13,11 @@ import {
   storedRateToBase,
 } from "@/lib/expense";
 import { assertPayersExist, revisionMatch, storedPaymentEntries } from "@/lib/expense-server";
-import { approvalChangeAfterEdit } from "@/lib/approval-server";
+import {
+  approvalChangeAfterEdit,
+  parseEditRevision,
+  staleEditConflict,
+} from "@/lib/approval-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
 import { normalizeTravelType } from "@/lib/trip";
@@ -84,6 +88,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const body = await req.json();
+    // The form sends the revision it loaded: an edit based on an older version
+    // (an admin reviewed it, another tab saved) must not overwrite it.
+    const clientRevision = parseEditRevision(body?.revision);
+    if (clientRevision !== null && clientRevision !== Number(expense.assetAllocationRevision || 0)) {
+      return NextResponse.json(staleEditConflict(expense), { status: 409 });
+    }
     const requestedReceiptKey =
       body.receiptKey !== undefined ? body.receiptKey || null : expense.receiptKey || null;
     if (requestedReceiptKey !== (expense.receiptKey || null)) {
@@ -269,10 +279,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!updated) {
       // Lost the revision check: someone (an admin's review, another edit)
       // changed it after the read above.
-      return NextResponse.json(
-        { error: "Expense changed while you were editing it; reload and try again", code: "stale" },
-        { status: 409 }
-      );
+      return NextResponse.json(staleEditConflict(await Expense.findById(id)), { status: 409 });
     }
 
     if (previousReceiptKey && update.receiptKey !== previousReceiptKey) {
@@ -285,6 +292,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+const DELETE_ASSET_LINKED = {
+  error: "This expense is linked to company assets and cannot be deleted",
+  code: "asset_linked",
+};
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await verifyAuth(req);
@@ -306,12 +318,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   const linkedAssetCount = await Asset.countDocuments({ purchaseExpense: id });
-  if (linkedAssetCount > 0) {
-    return NextResponse.json(
-      { error: "This expense is linked to company assets and cannot be deleted" },
-      { status: 409 }
-    );
-  }
+  if (linkedAssetCount > 0) return NextResponse.json(DELETE_ASSET_LINKED, { status: 409 });
 
   const revisionCondition = revisionMatch(Number(expense.assetAllocationRevision || 0));
   const deletion = await Expense.deleteOne({
@@ -327,8 +334,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     ],
   });
   if (deletion.deletedCount !== 1) {
+    // Say which condition lost: assets reserved against it meanwhile, gone, or edited.
+    const current = await Expense.findById(id);
+    if (!current) {
+      return NextResponse.json(
+        { error: "This expense no longer exists. It may have been deleted.", code: "not_found" },
+        { status: 404 }
+      );
+    }
+    if (Number(current.assetAllocatedAmount || 0) > 0) {
+      return NextResponse.json(DELETE_ASSET_LINKED, { status: 409 });
+    }
     return NextResponse.json(
-      { error: "Expense or asset allocation changed; reload and try again" },
+      {
+        error: "This expense changed after you opened it (for example, an admin reviewed it). Reload and try again.",
+        code: "stale",
+      },
       { status: 409 }
     );
   }

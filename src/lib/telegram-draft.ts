@@ -201,7 +201,12 @@ function optionNote(options: DraftOption[], noun: string): string[] {
 
 export function renderDraftCard(
   draft: DraftSnapshot,
-  options: { categories: DraftOption[]; departments: DraftOption[] }
+  options: {
+    categories: DraftOption[];
+    departments: DraftOption[];
+    /** The person's role needs an admin's approval, so saving submits it. */
+    submitForApproval?: boolean;
+  }
 ): DraftCard {
   const draftId = draft.id;
   const discard: InlineKeyboardButton = {
@@ -239,11 +244,16 @@ export function renderDraftCard(
     html: [
       ...lines,
       "",
-      "Save this expense?",
+      options.submitForApproval ? "Submit this expense for approval?" : "Save this expense?",
       "<i>Wrong amount? Reply to this message with the right one. Title, date and other details can be edited in the app after saving.</i>",
     ].join("\n"),
     keyboard: [
-      [{ text: "✅ Save expense", callback_data: encodeDraftAction({ type: "save", draftId }) }],
+      [
+        {
+          text: options.submitForApproval ? "📨 Submit for approval" : "✅ Save expense",
+          callback_data: encodeDraftAction({ type: "save", draftId }),
+        },
+      ],
       [
         { text: "🏷 Category", callback_data: encodeDraftAction({ type: "changeCategory", draftId }) },
         { text: "🏢 Department", callback_data: encodeDraftAction({ type: "changeDepartment", draftId }) },

@@ -481,6 +481,24 @@ describe("buttons", () => {
     expect(editedTexts()[0]).toContain("Paid by the company");
   });
 
+  it("labels the save button by whether the person's expenses need approval", async () => {
+    const saveButton = (call: number) => {
+      const keyboard = vi.mocked(editMessageText).mock.calls[call][4] ?? [];
+      return keyboard[0][0].text;
+    };
+    vi.mocked(TelegramDraft.findOne).mockReturnValue(query(draftDoc()));
+    vi.mocked(TelegramDraft.findOneAndUpdate).mockResolvedValue(draftDoc({ paymentSource: "company" }) as never);
+
+    await handleTelegramUpdate(callback(draftAction("togglePayment")), BOT);
+    expect(saveButton(0)).toBe("📨 Submit for approval");
+    expect(editedTexts()[0]).toContain("Submit this expense for approval?");
+
+    vi.mocked(User.findOne).mockReturnValue(query({ ...ASHA, role: "admin" }));
+    await handleTelegramUpdate(callback(draftAction("togglePayment")), BOT);
+    expect(saveButton(1)).toBe("✅ Save expense");
+    expect(editedTexts()[1]).toContain("Save this expense?");
+  });
+
   it("leaves a card alone when the draft was saved in the meantime", async () => {
     vi.mocked(TelegramDraft.findOne).mockReturnValue(query(draftDoc()));
     vi.mocked(TelegramDraft.findOneAndUpdate).mockResolvedValue(null);
@@ -668,8 +686,14 @@ describe("createExpenseFromDraft", () => {
     );
   });
 
-  it("decides the approval status from the creator's role", async () => {
-    await createExpenseFromDraft(draftDoc() as never, ASHA_CREATOR);
+  it("decides the approval status from the creator's role and returns it", async () => {
+    const expenseId = new mongoose.Types.ObjectId();
+    vi.mocked(Expense.create).mockResolvedValue({ _id: expenseId } as never);
+
+    expect(await createExpenseFromDraft(draftDoc() as never, ASHA_CREATOR)).toEqual({
+      id: expenseId,
+      approvalStatus: "pending",
+    });
     expect(Expense.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         createdBy: USER_ID,
@@ -680,7 +704,10 @@ describe("createExpenseFromDraft", () => {
     );
 
     for (const role of ["admin", "master_admin"] as const) {
-      await createExpenseFromDraft(draftDoc() as never, { _id: USER_ID, role });
+      expect(await createExpenseFromDraft(draftDoc() as never, { _id: USER_ID, role })).toEqual({
+        id: expenseId,
+        approvalStatus: "approved",
+      });
       expect(Expense.create).toHaveBeenLastCalledWith(
         expect.objectContaining({
           approvalStatus: "approved",

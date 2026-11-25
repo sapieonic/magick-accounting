@@ -9,7 +9,12 @@ import Expense from "@/models/Expense";
 import { deleteObject, uploadObject } from "@/lib/s3";
 import { roundMoney } from "@/lib/asset";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
-import { creationApprovalFields, initialApprovalStatus, type Role } from "@/lib/approval";
+import {
+  creationApprovalFields,
+  initialApprovalStatus,
+  type ApprovalStatus,
+  type Role,
+} from "@/lib/approval";
 import {
   extractExpense,
   isExtractableReceiptType,
@@ -380,7 +385,7 @@ async function handleReceipt(msg: TelegramMessage, user: LinkedUser, bot: Connec
       fallbackTitle: msg.caption?.trim().split("\n")[0] || filename.replace(/\.[^.]+$/, ""),
     });
     orphanKey = null;
-    await renderDraft(draft, bot, { notice });
+    await renderDraft(draft, user.role, bot, { notice });
   } catch (err) {
     if (orphanKey) await deleteObject(orphanKey).catch(() => undefined);
     if (!(err instanceof ChatError)) console.error("Telegram receipt failed:", err);
@@ -431,7 +436,7 @@ async function handleTextExpense(
       receiptFilename: null,
       fallbackTitle: text.split("\n")[0].slice(0, 80),
     });
-    await renderDraft(draft, bot);
+    await renderDraft(draft, user.role, bot);
   } catch (err) {
     if (!(err instanceof ChatError)) console.error("Telegram text expense failed:", err);
     await editMessageText(
@@ -533,6 +538,7 @@ async function listOptions(model: mongoose.Model<unknown>): Promise<DraftOption[
  */
 async function renderDraft(
   draft: ITelegramDraft,
+  role: Role,
   bot: ConnectedBot,
   { notice, fresh = false }: { notice?: string; fresh?: boolean } = {}
 ): Promise<void> {
@@ -541,6 +547,8 @@ async function renderDraft(
   const card = renderDraftCard(snapshot, {
     categories: step === "category" ? await listOptions(Category as mongoose.Model<unknown>) : [],
     departments: step === "department" ? await listOptions(Department as mongoose.Model<unknown>) : [],
+    // Saving uses the role held then; the card follows the role held now.
+    submitForApproval: initialApprovalStatus(role) === "pending",
   });
   const html = notice ? `${escapeHtml(notice)}\n\n${card.html}` : card.html;
 
@@ -602,7 +610,7 @@ async function handleAmountReply(
     );
     return true;
   }
-  await setDraftAmount(draft, reply, msg.chat.id, bot);
+  await setDraftAmount(draft, reply, msg.chat.id, user.role, bot);
   return true;
 }
 
@@ -610,6 +618,7 @@ async function setDraftAmount(
   draft: ITelegramDraft,
   reply: AmountReply,
   chatId: number,
+  role: Role,
   bot: ConnectedBot
 ): Promise<void> {
   const $set: Record<string, unknown> = { amount: reply.amount, awaiting: null };
@@ -638,7 +647,7 @@ async function setDraftAmount(
     await sendMessage(bot.token, chatId, "That expense was already saved or discarded.");
     return;
   }
-  await renderDraft(updated, bot, { fresh: true });
+  await renderDraft(updated, role, bot, { fresh: true });
 }
 
 // --- Button presses ---
@@ -729,7 +738,7 @@ async function handleCallback(cb: TelegramCallbackQuery, bot: ConnectedBot): Pro
     return;
   }
   await answerCallbackQuery(bot.token, cb.id, note);
-  await renderDraft(updated, bot);
+  await renderDraft(updated, user.role, bot);
 }
 
 /**
@@ -816,9 +825,9 @@ async function saveDraft(
     return;
   }
 
-  let expenseId: mongoose.Types.ObjectId;
+  let saved: SavedDraftExpense;
   try {
-    expenseId = await createExpenseFromDraft(claimed, user);
+    saved = await createExpenseFromDraft(claimed, user);
   } catch (err) {
     if (!(err instanceof DraftSaveError)) console.error("Telegram expense save failed:", err);
     const reverted = (await TelegramDraft.findOneAndUpdate(
@@ -832,21 +841,21 @@ async function saveDraft(
       err instanceof DraftSaveError ? err.message : "Couldn't save the expense. Please try again."
     );
     // Re-render so the card asks for whatever is now missing.
-    if (reverted) await renderDraft(reverted, bot);
+    if (reverted) await renderDraft(reverted, user.role, bot);
     return;
   }
 
   await TelegramDraft.updateOne(
     { _id: claimed._id },
-    { $set: { expense: expenseId, expiresAt: finishedExpiry() } }
+    { $set: { expense: saved.id, expiresAt: finishedExpiry() } }
   );
-  // createExpenseFromDraft decided the status from this same role.
-  const pendingApproval = initialApprovalStatus(user.role) === "pending";
+  // The status the expense was stored with, not one re-derived from the role.
+  const pendingApproval = saved.approvalStatus === "pending";
   await answerCallbackQuery(bot.token, callbackId, pendingApproval ? "Submitted for approval" : "Saved");
   if (claimed.messageId) {
     const card = renderSavedCard(
       await toSnapshot(claimed),
-      bot.appUrl ? `${bot.appUrl}/dashboard/expenses/${expenseId}/edit` : null,
+      bot.appUrl ? `${bot.appUrl}/dashboard/expenses/${saved.id}/edit` : null,
       { pendingApproval }
     );
     await editMessageText(bot.token, claimed.chatId, claimed.messageId, card.html, card.keyboard);
@@ -860,10 +869,16 @@ async function saveDraft(
  * for the creator's current role (`creationApprovalFields`). Throws DraftSaveError,
  * with a message for the user, when the draft can't be saved as it is.
  */
+export interface SavedDraftExpense {
+  id: mongoose.Types.ObjectId;
+  /** The status it was stored with (pending for role `user`). */
+  approvalStatus: ApprovalStatus;
+}
+
 export async function createExpenseFromDraft(
   draft: ITelegramDraft,
   creator: { _id: mongoose.Types.ObjectId | string; role: Role }
-): Promise<mongoose.Types.ObjectId> {
+): Promise<SavedDraftExpense> {
   const amount = draft.amount;
   if (amount == null || !Number.isFinite(amount) || amount < 0) {
     throw new DraftSaveError("Add the amount first");
@@ -920,5 +935,5 @@ export async function createExpenseFromDraft(
     createdBy: creator._id,
     ...approvalFields,
   });
-  return expense._id;
+  return { id: expense._id, approvalStatus: approvalFields.approvalStatus };
 }

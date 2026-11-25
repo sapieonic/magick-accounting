@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { POST } from "./route";
 import { verifyAuth, type AuthUser } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { resubmitExpense, reviewExpense } from "@/lib/approval-server";
+import { reopenExpense, resubmitExpense, reviewExpense } from "@/lib/approval-server";
 import { notifyReviewOutcome } from "@/lib/approval-notify";
 
 vi.mock("@/lib/auth", async (importOriginal) => {
@@ -13,7 +13,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
 vi.mock("@/lib/approval-server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/approval-server")>();
-  return { ...actual, reviewExpense: vi.fn(), resubmitExpense: vi.fn() };
+  return { ...actual, reviewExpense: vi.fn(), resubmitExpense: vi.fn(), reopenExpense: vi.fn() };
 });
 vi.mock("@/lib/approval-notify", () => ({ notifyReviewOutcome: vi.fn() }));
 // `after()` needs a request scope; run its callback once the handler has returned.
@@ -45,6 +45,7 @@ beforeEach(() => {
   vi.mocked(verifyAuth).mockResolvedValue(ADMIN);
   vi.mocked(reviewExpense).mockResolvedValue({ ok: true, expense: EXPENSE });
   vi.mocked(resubmitExpense).mockResolvedValue({ ok: true, expense: { ...EXPENSE, approvalStatus: "pending" } });
+  vi.mocked(reopenExpense).mockResolvedValue({ ok: true, expense: { ...EXPENSE, approvalStatus: "pending" } });
   vi.mocked(notifyReviewOutcome).mockResolvedValue(undefined);
 });
 
@@ -179,7 +180,9 @@ describe("POST /api/expenses/:id/approval", () => {
     const cases: [unknown, string, string?][] = [
       [{ action: "approve", revision: 0 }, "Expense id is invalid", "nope"],
       [new SyntaxError("Unexpected token"), "Request body is invalid"],
-      [{ action: "delete", revision: 0 }, "Choose approve, reject or resubmit"],
+      [{ action: "delete", revision: 0 }, "Choose approve, reject, resubmit or reopen"],
+      [{ action: "reopen" }, "Expense version is missing or invalid. Reload and try again."],
+      [{ action: "reopen", revision: 0, note: 7 }, "Note must be text"],
       [{ action: "approve" }, "Expense version is missing or invalid. Reload and try again."],
       [{ action: "approve", revision: -1 }, "Expense version is missing or invalid. Reload and try again."],
       [{ action: "approve", revision: "2" }, "Expense version is missing or invalid. Reload and try again."],
@@ -195,5 +198,84 @@ describe("POST /api/expenses/:id/approval", () => {
     expect(connectDB).not.toHaveBeenCalled();
     expect(reviewExpense).not.toHaveBeenCalled();
     expect(resubmitExpense).not.toHaveBeenCalled();
+    expect(reopenExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses an admin's decision on their own expense", async () => {
+    const ownExpense = {
+      ok: false as const,
+      status: 403 as const,
+      code: "own_expense" as const,
+      error: "You can't review your own expense. Another admin needs to approve or reject it.",
+    };
+    vi.mocked(reviewExpense).mockResolvedValue(ownExpense);
+    vi.mocked(reopenExpense).mockResolvedValue(ownExpense);
+
+    for (const body of [
+      { action: "approve", revision: 1 },
+      { action: "reopen", revision: 1 },
+    ]) {
+      const response = await post(body);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: ownExpense.error, code: "own_expense" });
+    }
+    await runAfterCallbacks();
+    expect(notifyReviewOutcome).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/expenses/:id/approval reopen", () => {
+  it("moves an expense back to review with the admin's note, then tells the submitter", async () => {
+    const response = await post({ action: "reopen", revision: 4, note: "  Wrong category " });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).expense.approvalStatus).toBe("pending");
+    expect(reopenExpense).toHaveBeenCalledWith({ id: ID, revision: 4, note: "Wrong category", reviewer: ADMIN });
+    expect(reviewExpense).not.toHaveBeenCalled();
+    expect(notifyReviewOutcome).not.toHaveBeenCalled();
+    await runAfterCallbacks();
+    expect(notifyReviewOutcome).toHaveBeenCalledWith({
+      action: "reopen",
+      expenses: [{ ...EXPENSE, approvalStatus: "pending" }],
+      reason: "Wrong category",
+      reviewer: ADMIN,
+    });
+  });
+
+  it("is admin-only", async () => {
+    vi.mocked(verifyAuth).mockResolvedValue(OWNER);
+
+    const response = await post({ action: "reopen", revision: 4 });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Admin access required" });
+    expect(reopenExpense).not.toHaveBeenCalled();
+  });
+
+  it("returns each refusal with its code and sends no notice", async () => {
+    const refusals = [
+      { status: 409 as const, code: "not_reviewed" as const, error: "This expense is already awaiting approval.", approvalStatus: "pending" as const },
+      {
+        status: 409 as const,
+        code: "asset_linked" as const,
+        error: "Assets are registered against this expense, so it can't go back to review. Reverse its assets first.",
+        approvalStatus: "approved" as const,
+      },
+      { status: 409 as const, code: "stale" as const, error: "This expense changed after you opened it.", approvalStatus: "rejected" as const },
+    ];
+    for (const refusal of refusals) {
+      vi.mocked(reopenExpense).mockResolvedValue({ ok: false, ...refusal });
+
+      const response = await post({ action: "reopen", revision: 4 });
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: refusal.error,
+        code: refusal.code,
+        approvalStatus: refusal.approvalStatus,
+      });
+    }
+    await runAfterCallbacks();
+    expect(notifyReviewOutcome).not.toHaveBeenCalled();
   });
 });

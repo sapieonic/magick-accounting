@@ -7,8 +7,11 @@ import Currency from "@/models/Currency";
 import User from "@/models/User";
 
 // Best-effort Telegram notice to submitters after an admin approves or rejects
-// their expenses. Sent only after the decision is committed; a failure here
-// is logged and never affects the response.
+// their expenses, or moves one back to review. Sent only after the decision is
+// committed; a failure here is logged and never affects the response.
+
+/** What the admin did: a decision, or `reopen` (moved back to review). */
+export type NoticeAction = ReviewAction | "reopen";
 
 /** An expense as a review returns it; refs may or may not be populated. */
 export interface ReviewedExpense {
@@ -45,8 +48,9 @@ function populatedCode(value: unknown): string | null {
 
 /** The message one submitter gets about one decision on one or more of their expenses. */
 export function renderReviewNotice(args: {
-  action: ReviewAction;
+  action: NoticeAction;
   items: ReviewNoticeItem[];
+  /** The rejection reason, or the optional note on a reopen. */
   reason: string | null;
   reviewerName: string;
   appUrl: string;
@@ -54,9 +58,16 @@ export function renderReviewNotice(args: {
   const { action, items, reason, reviewerName, appUrl } = args;
   const single = items.length === 1;
   const approved = action === "approve";
+  const reopened = action === "reopen";
   const lines: string[] = [];
   const noun = single ? "Expense" : `${items.length} expenses`;
-  lines.push(approved ? `✅ <b>${noun} approved</b>` : `❌ <b>${noun} rejected</b>`);
+  lines.push(
+    approved
+      ? `✅ <b>${noun} approved</b>`
+      : reopened
+        ? `↩️ <b>${noun} moved back to review</b>`
+        : `❌ <b>${noun} rejected</b>`
+  );
   lines.push("");
   const listed = items.slice(0, NOTICE_LIST_LIMIT);
   for (const item of listed) {
@@ -66,6 +77,13 @@ export function renderReviewNotice(args: {
   lines.push("");
   if (approved) {
     lines.push(single ? "It now counts in company totals." : "They now count in company totals.");
+  } else if (reopened) {
+    if (reason) lines.push(`${escapeHtml(reviewerName)}'s note: <i>${escapeHtml(reason)}</i>`, "");
+    lines.push(
+      single
+        ? "An admin will review it again. It doesn't count in company totals until it's approved."
+        : "An admin will review them again. They don't count in company totals until they're approved."
+    );
   } else {
     if (reason) lines.push(`${escapeHtml(reviewerName)}'s reason: <i>${escapeHtml(reason)}</i>`, "");
     lines.push(
@@ -77,14 +95,16 @@ export function renderReviewNotice(args: {
 
   let keyboard: InlineKeyboard = [];
   if (appUrl) {
-    const url = approved
+    // A rejection links to fixing it; anything else just opens it.
+    const toFix = action === "reject";
+    const url = toFix
       ? single
-        ? `${appUrl}/dashboard/expenses?expand=${items[0].id}`
-        : `${appUrl}/dashboard/expenses`
-      : single
         ? `${appUrl}/dashboard/expenses/${items[0].id}/edit`
-        : `${appUrl}/dashboard/expenses?approval=rejected`;
-    keyboard = [[{ text: approved ? "Open in Magick Accounting" : "Fix and resubmit", url }]];
+        : `${appUrl}/dashboard/expenses?approval=rejected`
+      : single
+        ? `${appUrl}/dashboard/expenses?expand=${items[0].id}`
+        : `${appUrl}/dashboard/expenses${reopened ? "?approval=pending" : ""}`;
+    keyboard = [[{ text: toFix ? "Fix and resubmit" : "Open in Magick Accounting", url }]];
   }
   return { html: lines.join("\n"), keyboard };
 }
@@ -97,7 +117,7 @@ const NOTICE_CONCURRENCY = 5;
  * message per person. Skips the reviewer's own expenses. Never throws.
  */
 export async function notifyReviewOutcome(args: {
-  action: ReviewAction;
+  action: NoticeAction;
   expenses: ReviewedExpense[];
   reason: string | null;
   reviewer: AuthUser;
@@ -140,21 +160,22 @@ export async function notifyReviewOutcome(args: {
       populatedCode(expense.currency) ?? codes.get(refId(expense.currency)) ?? undefined;
 
     const send = (user: (typeof users)[number]) => {
-        const chatId = user.telegram?.chatId;
-        if (typeof chatId !== "number") return Promise.resolve();
-        const items = (bySubmitter.get(String(user._id)) ?? []).map((expense) => ({
-          id: refId(expense._id),
-          title: expense.title || "Untitled expense",
-          amount: formatCurrency(Number(expense.amount ?? 0), codeOf(expense)),
-        }));
-        const notice = renderReviewNotice({
-          action: args.action,
-          items,
-          reason: args.reason,
-          reviewerName: args.reviewer.name || "An admin",
-          appUrl: bot.appUrl,
-        });
-        return sendMessage(bot.token, chatId, notice.html, notice.keyboard.length ? notice.keyboard : undefined);
+      const chatId = user.telegram?.chatId;
+      if (typeof chatId !== "number") return Promise.resolve();
+      const items = (bySubmitter.get(String(user._id)) ?? []).map((expense) => ({
+        id: refId(expense._id),
+        title: expense.title || "Untitled expense",
+        amount: formatCurrency(Number(expense.amount ?? 0), codeOf(expense)),
+      }));
+      const notice = renderReviewNotice({
+        action: args.action,
+        items,
+        reason: args.reason,
+        reviewerName: args.reviewer.name || "An admin",
+        appUrl: bot.appUrl,
+      });
+      const keyboard = notice.keyboard.length ? notice.keyboard : undefined;
+      return sendMessage(bot.token, chatId, notice.html, keyboard);
     };
     // A few at a time: a bulk review can reach many people, and Telegram
     // rate-limits a bot's bursts.

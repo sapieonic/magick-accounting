@@ -70,15 +70,64 @@ describe("DELETE /api/expenses/:id", () => {
     );
   });
 
-  it("returns a conflict when a concurrent asset reservation wins", async () => {
-    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+  function remove() {
+    return DELETE({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+  }
 
-    const response = await DELETE({} as NextRequest, {
-      params: Promise.resolve({ id: expenseId }),
-    });
+  it("returns asset_linked when a concurrent asset reservation wins", async () => {
+    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce({
+        _id: expenseId,
+        createdBy: { toString: () => "owner-id" },
+        receiptKey: "receipts/owner-id/key.pdf",
+        assetAllocationRevision: 4,
+      } as never)
+      .mockResolvedValueOnce({ _id: expenseId, assetAllocatedAmount: 500, assetAllocationRevision: 5 } as never);
+
+    const response = await remove();
 
     expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This expense is linked to company assets and cannot be deleted",
+      code: "asset_linked",
+    });
     expect(deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("returns asset_linked when assets are already registered against it", async () => {
+    vi.mocked(Asset.countDocuments).mockResolvedValue(2);
+
+    const response = await remove();
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("asset_linked");
+    expect(Expense.deleteOne).not.toHaveBeenCalled();
+  });
+
+  it("returns stale when it was edited or reviewed after the read", async () => {
+    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+
+    const response = await remove();
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This expense changed after you opened it (for example, an admin reviewed it). Reload and try again.",
+      code: "stale",
+    });
+    expect(deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("returns not_found when it was deleted after the read", async () => {
+    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce({ _id: expenseId, createdBy: { toString: () => "owner-id" } } as never)
+      .mockResolvedValueOnce(null as never);
+
+    const response = await remove();
+
+    expect(response.status).toBe(404);
+    expect((await response.json()).code).toBe("not_found");
   });
 });
 
@@ -661,7 +710,7 @@ describe("PUT /api/expenses/:id approval", () => {
   const objectIdLike = (value: string) => ({ toString: () => value });
 
   function mockStoredExpense(overrides: Record<string, unknown> = {}) {
-    vi.mocked(Expense.findById).mockResolvedValue({
+    const stored = {
       _id: expenseId,
       title: "Taxi",
       description: "",
@@ -680,7 +729,9 @@ describe("PUT /api/expenses/:id approval", () => {
       assetAllocationRevision: 4,
       approvalStatus: "approved",
       ...overrides,
-    } as never);
+    };
+    vi.mocked(Expense.findById).mockResolvedValue(stored as never);
+    return stored;
   }
 
   function signInAs(role: "user" | "admin") {
@@ -809,20 +860,58 @@ describe("PUT /api/expenses/:id approval", () => {
     expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
   });
 
+  const STALE_EDIT =
+    "This expense changed while you were editing it (for example, an admin reviewed it). Reload to see the latest version.";
+
   it("loses to a review that landed after the expense was read", async () => {
-    // An admin approved it (revision 4 → 5) between the read and the write.
+    // An admin rejected it (revision 4 → 5) between the read and the write.
     vi.mocked(Expense.findOneAndUpdate).mockReturnValue({
       populate: vi.fn().mockReturnThis(),
       lean: vi.fn().mockResolvedValue(null),
     } as never);
+    const stored = mockStoredExpense();
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce(stored as never)
+      .mockResolvedValueOnce({ ...stored, approvalStatus: "rejected", assetAllocationRevision: 5 } as never);
 
     const response = await put({ amount: 80 });
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
-      error: "Expense changed while you were editing it; reload and try again",
-      code: "stale",
-    });
+    expect(await response.json()).toEqual({ error: STALE_EDIT, code: "stale", approvalStatus: "rejected" });
+  });
+
+  it("refuses an edit of an older version than the one stored, before validating or writing", async () => {
+    // The form loaded revision 3; an admin approved it since (now 4).
+    const response = await put({ revision: 3, amount: -5 });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: STALE_EDIT, code: "stale", approvalStatus: "approved" });
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("saves when the form's revision matches, still checking it in the write", async () => {
+    const response = await put({ revision: 4, amount: 120 });
+
+    expect(response.status).toBe(200);
+    expect(storedCall().filter).toEqual({ _id: expenseId, assetAllocationRevision: 4 });
+  });
+
+  it("matches revision 0 on a legacy expense without one", async () => {
+    mockStoredExpense({ assetAllocationRevision: undefined });
+
+    expect((await put({ revision: 0, title: "Taxi" })).status).toBe(200);
+    expect((await put({ revision: 1, title: "Taxi" })).status).toBe(409);
+  });
+
+  it("refuses a malformed revision", async () => {
+    for (const revision of ["4", -1, 2.5]) {
+      const response = await put({ revision, title: "Taxi" });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "Expense version is missing or invalid. Reload and try again.",
+      });
+    }
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it("populates the reviewer in the response", async () => {

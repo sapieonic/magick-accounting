@@ -1,6 +1,7 @@
 import type { AuthUser } from "@/lib/auth";
 import {
   canReview,
+  EDIT_RESUBMIT_NOTE,
   effectiveApprovalStatus,
   MAX_BULK_REVIEW,
   normalizeApprovalNote,
@@ -16,6 +17,7 @@ import { baseTotalExpr } from "@/lib/expense";
 import { revisionMatch } from "@/lib/expense-server";
 import { OBJECT_ID_PATTERN } from "@/lib/trip";
 import { populateExpenseRefs, withLinkedAssetCounts, type LeanDoc } from "@/lib/trip-query";
+import Asset from "@/models/Asset";
 import Expense from "@/models/Expense";
 import "@/models/User";
 
@@ -23,9 +25,18 @@ import "@/models/User";
 // findOneAndUpdate that matches the expected status AND the edit revision
 // (`assetAllocationRevision`) the caller last saw, and increments that
 // revision, so two admins (or an admin and the submitter editing it) can't
-// both win: the loser gets a 409 with a machine-readable `code`.
+// both win: the loser gets a 409 with a machine-readable `code`. Admins
+// can't decide (or reopen) their own expenses; that rule is in the filter too.
 
-export type ApprovalFailureCode = "not_found" | "forbidden" | "not_pending" | "not_rejected" | "stale";
+export type ApprovalFailureCode =
+  | "not_found"
+  | "forbidden"
+  | "own_expense"
+  | "not_pending"
+  | "not_rejected"
+  | "not_reviewed"
+  | "asset_linked"
+  | "stale";
 
 export type ApprovalOutcome =
   | { ok: true; expense: LeanDoc }
@@ -45,7 +56,8 @@ type ApprovalFailure = Extract<ApprovalOutcome, { ok: false }>;
 export type ApprovalRequest =
   | { action: "approve"; revision: number }
   | { action: "reject"; revision: number; reason: string }
-  | { action: "resubmit"; revision: number; note: string | null };
+  | { action: "resubmit"; revision: number; note: string | null }
+  | { action: "reopen"; revision: number; note: string | null };
 
 export interface BulkReviewRequest {
   action: ReviewAction;
@@ -65,6 +77,29 @@ export function parseRevision(raw: unknown): number {
   return raw;
 }
 
+/**
+ * The optional `revision` a `PUT /api/expenses/[id]` body carries (what the
+ * edit form loaded), or null when it wasn't sent. Throws on a malformed one.
+ */
+export function parseEditRevision(raw: unknown): number | null {
+  if (raw === undefined || raw === null) return null;
+  return parseRevision(raw);
+}
+
+/** The 409 body for an edit based on an older version of the expense. */
+export function staleEditConflict(current: { approvalStatus?: ApprovalStatus | null } | null): {
+  error: string;
+  code: "stale";
+  approvalStatus?: ApprovalStatus;
+} {
+  return {
+    error:
+      "This expense changed while you were editing it (for example, an admin reviewed it). Reload to see the latest version.",
+    code: "stale",
+    ...(current ? { approvalStatus: effectiveApprovalStatus(current) } : {}),
+  };
+}
+
 /** Body of `POST /api/expenses/[id]/approval`. */
 export function parseApprovalRequest(body: unknown): ApprovalRequest {
   if (!isRecord(body)) throw new Error("Request body is invalid");
@@ -76,8 +111,10 @@ export function parseApprovalRequest(body: unknown): ApprovalRequest {
       return { action: "reject", revision, reason: normalizeRejectionReason(body.reason) };
     case "resubmit":
       return { action: "resubmit", revision, note: normalizeApprovalNote(body.note) };
+    case "reopen":
+      return { action: "reopen", revision, note: normalizeApprovalNote(body.note) };
     default:
-      throw new Error("Choose approve, reject or resubmit");
+      throw new Error("Choose approve, reject, resubmit or reopen");
   }
 }
 
@@ -126,11 +163,9 @@ const ALREADY: Record<ApprovalStatus, string> = {
   rejected: "This expense was already rejected.",
 };
 
-/** Populated like the list rows, plus the reviewer and who did each history step. */
+/** Populated like the list rows (which include the reviewer), plus who did each history step. */
 function populateApprovalRefs(query: LeanDoc): LeanDoc {
-  return populateExpenseRefs(query)
-    .populate("reviewedBy", "name email")
-    .populate("approvalHistory.by", "name email");
+  return populateExpenseRefs(query).populate("approvalHistory.by", "name email");
 }
 
 async function withAssetCount(expense: LeanDoc): Promise<LeanDoc> {
@@ -138,21 +173,45 @@ async function withAssetCount(expense: LeanDoc): Promise<LeanDoc> {
   return row;
 }
 
+const OWN_EXPENSE: ApprovalFailure = {
+  ok: false,
+  status: 403,
+  code: "own_expense",
+  error: "You can't review your own expense. Another admin needs to approve or reject it.",
+};
+
+const ASSET_LINKED: ApprovalFailure = {
+  ok: false,
+  status: 409,
+  code: "asset_linked",
+  error:
+    "Assets are registered against this expense, so it can't go back to review. Reverse its assets first.",
+};
+
+const STALE_ERROR = {
+  review: "This expense changed after you opened it. Review the latest version.",
+  resubmit: "This expense changed after you opened it. Check the latest version, then resubmit.",
+  reopen: "This expense changed after you opened it. Check the latest version, then try again.",
+} as const;
+
+type MissContext =
+  | { kind: "review"; actorId: string }
+  | { kind: "resubmit"; actorId: string }
+  | { kind: "reopen"; actorId: string; assetsLinked: boolean };
+
 /**
- * Explains why a conditional decision matched nothing. Every status change
- * increments the revision, so once status (and owner) check out, the caller's
- * revision must be stale.
+ * Explains why a conditional decision matched nothing, checking the same
+ * conditions as its filter in a fixed order: gone, who may act, status,
+ * linked assets (reopen), and otherwise the revision. Every write increments
+ * the revision, so once the rest checks out, the caller's copy is stale.
  */
-async function explainMiss(
-  id: string,
-  expected: "pending" | "rejected",
-  ownerId?: string
-): Promise<ApprovalFailure> {
+async function explainMiss(id: string, context: MissContext): Promise<ApprovalFailure> {
   const current = (await Expense.findById(id)
-    .select("approvalStatus createdBy assetAllocationRevision")
+    .select("approvalStatus createdBy assetAllocationRevision assetAllocatedAmount")
     .lean()) as LeanDoc;
   if (!current) return NOT_FOUND;
-  if (ownerId !== undefined && String(current.createdBy) !== ownerId) {
+  const isOwner = String(current.createdBy) === String(context.actorId);
+  if (context.kind === "resubmit" && !isOwner) {
     return {
       ok: false,
       status: 403,
@@ -160,26 +219,29 @@ async function explainMiss(
       error: "Only the person who submitted this expense can resubmit it",
     };
   }
+  if (context.kind !== "resubmit" && isOwner) return OWN_EXPENSE;
+
   const approvalStatus = effectiveApprovalStatus(current);
-  if (approvalStatus !== expected) {
-    return {
-      ok: false,
-      status: 409,
-      code: expected === "pending" ? "not_pending" : "not_rejected",
-      error: ALREADY[approvalStatus],
-      approvalStatus,
-    };
+  if (context.kind === "reopen") {
+    if (approvalStatus === "pending") {
+      return { ok: false, status: 409, code: "not_reviewed", error: ALREADY.pending, approvalStatus };
+    }
+    if (context.assetsLinked || Number(current.assetAllocatedAmount || 0) > 0) {
+      return { ...ASSET_LINKED, approvalStatus };
+    }
+  } else {
+    const expected = context.kind === "review" ? "pending" : "rejected";
+    if (approvalStatus !== expected) {
+      return {
+        ok: false,
+        status: 409,
+        code: expected === "pending" ? "not_pending" : "not_rejected",
+        error: ALREADY[approvalStatus],
+        approvalStatus,
+      };
+    }
   }
-  return {
-    ok: false,
-    status: 409,
-    code: "stale",
-    error:
-      expected === "pending"
-        ? "This expense changed after you opened it. Review the latest version."
-        : "This expense changed after you opened it. Check the latest version, then resubmit.",
-    approvalStatus,
-  };
+  return { ok: false, status: 409, code: "stale", error: STALE_ERROR[context.kind], approvalStatus };
 }
 
 interface ReviewInput {
@@ -212,8 +274,9 @@ function reviewUpdate(
   };
 }
 
-function reviewFilter(id: string, revision: number) {
-  return { _id: id, ...PENDING_MATCH, ...revisionMatch(revision) };
+/** Pending, not the reviewer's own, and still at the revision they saw. */
+function reviewFilter(id: string, revision: number, reviewer: AuthUser) {
+  return { _id: id, ...PENDING_MATCH, createdBy: { $ne: reviewer._id }, ...revisionMatch(revision) };
 }
 
 function assertReviewer(reviewer: AuthUser): void {
@@ -225,9 +288,11 @@ export async function reviewExpense(input: ReviewInput): Promise<ApprovalOutcome
   assertReviewer(input.reviewer);
   const update = reviewUpdate(input.action, input.reason, input.reviewer, input.now ?? new Date());
   const expense = await populateApprovalRefs(
-    Expense.findOneAndUpdate(reviewFilter(input.id, input.revision), update, { new: true })
+    Expense.findOneAndUpdate(reviewFilter(input.id, input.revision, input.reviewer), update, {
+      new: true,
+    })
   ).lean();
-  if (!expense) return explainMiss(input.id, "pending");
+  if (!expense) return explainMiss(input.id, { kind: "review", actorId: input.reviewer._id });
   return { ok: true, expense: await withAssetCount(expense) };
 }
 
@@ -261,10 +326,14 @@ export async function reviewExpenses(input: {
     while (next < input.items.length) {
       const index = next++;
       const { id, revision } = input.items[index];
-      const expense = (await Expense.findOneAndUpdate(reviewFilter(id, revision), update, {
-        new: true,
-      }).lean()) as LeanDoc;
-      outcomes[index] = expense ? { ok: true, expense } : await explainMiss(id, "pending");
+      const expense = (await Expense.findOneAndUpdate(
+        reviewFilter(id, revision, input.reviewer),
+        update,
+        { new: true }
+      ).lean()) as LeanDoc;
+      outcomes[index] = expense
+        ? { ok: true, expense }
+        : await explainMiss(id, { kind: "review", actorId: input.reviewer._id });
     }
   }
   await Promise.all(
@@ -311,7 +380,53 @@ export async function resubmitExpense(input: {
       { new: true }
     )
   ).lean();
-  if (!expense) return explainMiss(input.id, "rejected", input.user._id);
+  if (!expense) return explainMiss(input.id, { kind: "resubmit", actorId: input.user._id });
+  return { ok: true, expense: await withAssetCount(expense) };
+}
+
+/**
+ * An admin moves an approved (or legacy) or rejected expense back to pending,
+ * to correct a decision. Not their own expense, and not one with assets
+ * registered against it (assets need approved spend). Asset creation reserves
+ * its allocation with a revision increment first, so the filter's revision and
+ * allocation conditions can't race it; the Asset check covers legacy links
+ * recorded without an allocation.
+ */
+export async function reopenExpense(input: {
+  id: string;
+  revision: number;
+  note: string | null;
+  reviewer: AuthUser;
+  now?: Date;
+}): Promise<ApprovalOutcome> {
+  if (!canReview(input.reviewer.role)) throw new Error("Only admins can move an expense back to review");
+  const context = { kind: "reopen" as const, actorId: input.reviewer._id };
+  if (await Asset.exists({ purchaseExpense: input.id })) {
+    return explainMiss(input.id, { ...context, assetsLinked: true });
+  }
+  const now = input.now ?? new Date();
+  const expense = await populateApprovalRefs(
+    Expense.findOneAndUpdate(
+      {
+        _id: input.id,
+        approvalStatus: { $in: ["approved", "rejected", null] },
+        createdBy: { $ne: input.reviewer._id },
+        $and: [
+          revisionMatch(input.revision),
+          { $or: [{ assetAllocatedAmount: { $exists: false } }, { assetAllocatedAmount: { $lte: 0 } }] },
+        ],
+      },
+      {
+        $set: { approvalStatus: "pending", reviewedBy: null, reviewedAt: null, rejectionReason: null },
+        $push: {
+          approvalHistory: { action: "reopened", by: input.reviewer._id, at: now, note: input.note },
+        },
+        $inc: { assetAllocationRevision: 1 },
+      },
+      { new: true }
+    )
+  ).lean();
+  if (!expense) return explainMiss(input.id, { ...context, assetsLinked: false });
   return { ok: true, expense: await withAssetCount(expense) };
 }
 
@@ -344,7 +459,8 @@ export function approvalChangeAfterEdit(args: {
         action: "resubmitted",
         by: args.editor._id,
         at: args.now ?? new Date(),
-        note: current === "rejected" ? "Edited after rejection" : "Edited after approval",
+        note:
+          current === "rejected" ? EDIT_RESUBMIT_NOTE.afterRejection : EDIT_RESUBMIT_NOTE.afterApproval,
       },
     },
   };
@@ -357,9 +473,38 @@ export interface PendingApprovalCount {
   pendingCount: number;
   /** In base currency. */
   pendingAmount: number;
-  /** ISO time the oldest waiting expense was created, or null when none wait. */
+  /**
+   * ISO time the longest-waiting expense was (last) sent for review, or null
+   * when none wait: its latest submitted / resubmitted / reopened step, or its
+   * creation for documents without one.
+   */
   oldestPendingAt: string | null;
 }
+
+/** History steps that (re)start an expense's wait for an admin. */
+const SUBMISSION_ACTIONS: ApprovalHistoryAction[] = ["submitted", "resubmitted", "reopened"];
+
+/** Aggregation expression: when the expense last entered the queue. */
+const lastSubmittedAtExpr = {
+  $ifNull: [
+    {
+      $max: {
+        $map: {
+          input: {
+            $filter: {
+              input: { $ifNull: ["$approvalHistory", []] },
+              as: "step",
+              cond: { $in: ["$$step.action", SUBMISSION_ACTIONS] },
+            },
+          },
+          as: "step",
+          in: "$$step.at",
+        },
+      },
+    },
+    "$createdAt",
+  ],
+};
 
 export async function countPendingApprovals(): Promise<PendingApprovalCount> {
   const [row] = (await Expense.aggregate([
@@ -369,7 +514,7 @@ export async function countPendingApprovals(): Promise<PendingApprovalCount> {
         _id: null,
         pendingCount: { $sum: 1 },
         pendingAmount: { $sum: baseTotalExpr },
-        oldestPendingAt: { $min: "$createdAt" },
+        oldestPendingAt: { $min: lastSubmittedAtExpr },
       },
     },
   ])) as { pendingCount: number; pendingAmount: number; oldestPendingAt: Date | null }[];

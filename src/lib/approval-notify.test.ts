@@ -81,6 +81,39 @@ describe("renderReviewNotice", () => {
     });
   });
 
+  it("tells the submitter an expense went back to review, with the admin's note", () => {
+    const notice = renderReviewNotice({
+      action: "reopen",
+      items: [{ id: "e1", title: "Taxi", amount: "₹450.00" }],
+      reason: "Wrong <category>",
+      reviewerName: "Priya",
+      appUrl: "https://app.example.com",
+    });
+
+    expect(notice.html).toContain("↩️ <b>Expense moved back to review</b>");
+    expect(notice.html).toContain("Priya's note: <i>Wrong &lt;category&gt;</i>");
+    expect(notice.html).toContain(
+      "An admin will review it again. It doesn't count in company totals until it's approved."
+    );
+    expect(notice.keyboard).toEqual([
+      [{ text: "Open in Magick Accounting", url: "https://app.example.com/dashboard/expenses?expand=e1" }],
+    ]);
+
+    const several = renderReviewNotice({
+      action: "reopen",
+      items: [
+        { id: "e1", title: "Taxi", amount: "₹450.00" },
+        { id: "e2", title: "Hotel", amount: "₹4,500.00" },
+      ],
+      reason: null,
+      reviewerName: "Priya",
+      appUrl: "https://app.example.com",
+    });
+    expect(several.html).toContain("↩️ <b>2 expenses moved back to review</b>");
+    expect(several.html).not.toContain("note:");
+    expect(several.keyboard[0][0].url).toBe("https://app.example.com/dashboard/expenses?approval=pending");
+  });
+
   it("lists several expenses, up to ten by name, and skips the button without an app URL", () => {
     const items = Array.from({ length: 12 }, (_, index) => ({ id: `e${index}`, title: `Item ${index}`, amount: "₹1.00" }));
     const notice = renderReviewNotice({ action: "reject", items, reason: "Duplicate", reviewerName: "Priya", appUrl: "" });
@@ -120,6 +153,23 @@ describe("notifyReviewOutcome", () => {
     expect(html).toContain("Taxi · ₹450.00");
     expect(html).toContain(`Hotel · ${formatCurrency(10, "USD")}`);
     expect(keyboard?.[0][0].url).toBe("https://app.example.com/dashboard/expenses");
+  });
+
+  it("tells the submitter when an admin moves their expense back to review", async () => {
+    vi.mocked(User.find).mockReturnValue(query([{ _id: ASHA, telegram: { chatId: 42 } }]));
+
+    await notifyReviewOutcome({
+      action: "reopen",
+      expenses: [{ _id: "e1", title: "Taxi", amount: 450, currency: { code: "INR" }, createdBy: ASHA }],
+      reason: "Wrong category",
+      reviewer: ADMIN,
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, chatId, html] = vi.mocked(sendMessage).mock.calls[0];
+    expect(chatId).toBe(42);
+    expect(html).toContain("Expense moved back to review");
+    expect(html).toContain("Priya's note: <i>Wrong category</i>");
   });
 
   it("does nothing without a connected bot or when the reviewer reviewed their own", async () => {
