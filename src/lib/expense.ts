@@ -528,7 +528,8 @@ export function viewerAmounts(
 export function canViewExpense(expense: PayerShareFields, viewer: SpendViewer): boolean {
   if (canModifyExpense(expense, viewer)) return true;
   const me = idString(viewer._id);
-  return sharedPayments(expense).some((entry) => idString(entry.paidBy) === me);
+  // A blank id must never match a missing (deleted) payer.
+  return me !== "" && sharedPayments(expense).some((entry) => idString(entry.paidBy) === me);
 }
 
 /** Whether `viewer` may edit or delete an expense: admins all, others only what they submitted. */
