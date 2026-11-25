@@ -17,7 +17,8 @@ export type ApprovalHistoryAction =
   | "auto_approved"
   | "approved"
   | "rejected"
-  | "resubmitted";
+  | "resubmitted"
+  | "reopened";
 
 export const APPROVAL_HISTORY_ACTIONS: ApprovalHistoryAction[] = [
   "submitted",
@@ -25,9 +26,17 @@ export const APPROVAL_HISTORY_ACTIONS: ApprovalHistoryAction[] = [
   "approved",
   "rejected",
   "resubmitted",
+  "reopened",
 ];
 
 export type ReviewAction = "approve" | "reject";
+
+/**
+ * Every action `POST /api/expenses/[id]/approval` takes: an admin's decision,
+ * the submitter resubmitting a rejection, or an admin moving an approved or
+ * rejected expense back to pending (to correct a decision).
+ */
+export type ApprovalAction = ReviewAction | "resubmit" | "reopen";
 
 export const REJECTION_REASON_MIN = 3;
 export const REJECTION_REASON_MAX = 500;
@@ -79,6 +88,24 @@ export function countsAsSpend(expense: HasApprovalStatus): boolean {
 /** Only admins approve or reject. */
 export function canReview(role: Role): boolean {
   return role === "admin" || role === "master_admin";
+}
+
+function idOf(ref: unknown): string | null {
+  if (ref === null || ref === undefined) return null;
+  if (typeof ref === "object" && "_id" in (ref as object)) return String((ref as { _id: unknown })._id);
+  return String(ref);
+}
+
+/**
+ * Whether `viewer` may approve or reject this expense: an admin, and not its
+ * submitter (an admin promoted from `user` can't sign off their own
+ * submissions; another admin has to).
+ */
+export function canReviewExpense(
+  viewer: { _id: string; role: Role },
+  expense: { createdBy?: unknown }
+): boolean {
+  return canReview(viewer.role) && idOf(expense.createdBy) !== String(viewer._id);
 }
 
 export function initialApprovalStatus(role: Role): "pending" | "approved" {
@@ -188,6 +215,27 @@ export const APPROVAL_HISTORY_LABEL: Record<ApprovalHistoryAction, string> = {
   approved: "Approved",
   rejected: "Rejected",
   resubmitted: "Resubmitted",
+  reopened: "Moved back to review",
+};
+
+/**
+ * The notes the server writes itself when a submitter's edit sends an
+ * expense back for approval. The UI shows them as plain events, not as a
+ * quote from the person, so both sides must use these constants.
+ */
+export const EDIT_RESUBMIT_NOTE = {
+  afterApproval: "Edited after approval",
+  afterRejection: "Edited after rejection",
+} as const;
+
+export function isSystemNote(note: string | null | undefined): boolean {
+  return note === EDIT_RESUBMIT_NOTE.afterApproval || note === EDIT_RESUBMIT_NOTE.afterRejection;
+}
+
+/** Screen-reader context for an amount that isn't in totals (rows, latest entries). */
+export const NOT_IN_TOTALS_SR: Record<Exclude<ApprovalStatus, "approved">, string> = {
+  pending: " (awaiting approval, not in totals)",
+  rejected: " (rejected, not in totals)",
 };
 
 export function approvalStatusCsvLabel(expense: HasApprovalStatus): string {

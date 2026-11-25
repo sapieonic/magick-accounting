@@ -5,12 +5,15 @@ import {
   APPROVED_MATCH,
   PENDING_MATCH,
   approvalStatusCsvLabel,
+  EDIT_RESUBMIT_NOTE,
   canReview,
+  canReviewExpense,
   countsAsSpend,
   creationApprovalFields,
   effectiveApprovalStatus,
   isApprovedExpr,
   isPendingExpr,
+  isSystemNote,
   normalizeApprovalNote,
   normalizeRejectionReason,
   parseApprovalFilter,
@@ -83,6 +86,22 @@ describe("creationApprovalFields", () => {
       rejectionReason: null,
       approvalHistory: [{ action: "auto_approved", by: "a1", at: now, note: null }],
     });
+  });
+
+  it("canReviewExpense excludes the reviewer's own expenses", () => {
+    const admin = { _id: "a1", role: "admin" as const };
+    expect(canReviewExpense(admin, { createdBy: "u1" })).toBe(true);
+    expect(canReviewExpense(admin, { createdBy: { _id: "u1", name: "Asha" } })).toBe(true);
+    expect(canReviewExpense(admin, { createdBy: "a1" })).toBe(false);
+    expect(canReviewExpense(admin, { createdBy: { _id: "a1" } })).toBe(false);
+    expect(canReviewExpense({ _id: "u2", role: "user" }, { createdBy: "u1" })).toBe(false);
+  });
+
+  it("recognises the server's own edit notes", () => {
+    expect(isSystemNote(EDIT_RESUBMIT_NOTE.afterApproval)).toBe(true);
+    expect(isSystemNote(EDIT_RESUBMIT_NOTE.afterRejection)).toBe(true);
+    expect(isSystemNote("Client visit, see receipt")).toBe(false);
+    expect(isSystemNote(null)).toBe(false);
   });
 
   it("canReview is admin-only", () => {
