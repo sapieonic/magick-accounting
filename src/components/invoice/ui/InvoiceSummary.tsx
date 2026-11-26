@@ -3,6 +3,7 @@ import Panel from "@/components/ui/Panel";
 import { cn } from "@/components/ui/cn";
 import { amountInWords, formatInvoiceDate, formatRupees } from "@/lib/invoice";
 import type { InvoiceTotals } from "@/types/invoice";
+import { withPaise } from "@/components/ui/Money";
 
 interface InvoiceSummaryProps {
   totals: InvoiceTotals;
@@ -23,7 +24,7 @@ function Row({ label, value, strong = false }: { label: ReactNode; value: ReactN
   return (
     <div className="flex items-baseline justify-between gap-3 py-1.5">
       <dt className={cn("min-w-0", strong ? "text-ink" : "text-ink-3")}>{label}</dt>
-      <dd className="num whitespace-nowrap text-right text-ink">{value}</dd>
+      <dd className="num whitespace-nowrap text-right text-ink">{withPaise(value)}</dd>
     </div>
   );
 }
@@ -45,7 +46,6 @@ export default function InvoiceSummary({
     <Panel
       title="Summary"
       meta={`${itemCount} ${itemCount === 1 ? "item" : "items"}`}
-      wash
       className={className}
       bodyClassName="gap-4 [container-type:inline-size]"
     >
@@ -76,8 +76,8 @@ export default function InvoiceSummary({
         <Row label={`CGST (${totals.cgstRate}%)`} value={formatRupees(totals.cgstAmount)} />
         <Row label={`SGST (${totals.sgstRate}%)`} value={formatRupees(totals.sgstAmount)} />
         <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-rule pt-3">
-          <dt className="text-sm font-semibold text-ink">Total</dt>
-          <dd className="figure text-[clamp(22px,9cqi,30px)] font-semibold text-ink">{formatRupees(totals.total)}</dd>
+          <dt className="text-sm font-medium text-ink">Total</dt>
+          <dd className="figure text-[clamp(22px,9cqi,30px)] font-medium text-ink">{withPaise(formatRupees(totals.total))}</dd>
         </div>
       </dl>
       <p className="-mt-2 text-xs text-ink-3 [text-wrap:pretty]">{amountInWords(totals.total)}</p>

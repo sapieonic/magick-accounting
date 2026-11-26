@@ -6,6 +6,7 @@ import { Menu, Plus } from "lucide-react";
 import { approvalCountLabel, useApprovalCount } from "@/contexts/ApprovalCountContext";
 import { NAV_ITEMS, NEW_EXPENSE_HREF, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 interface MobileTabBarProps {
   /** Opens the navigation drawer (everything not in the bar). */
@@ -14,7 +15,7 @@ interface MobileTabBarProps {
 }
 
 const tab = cn(
-  "relative flex min-h-12 flex-col items-center justify-center gap-[3px] rounded-control text-[11px] transition-colors duration-140",
+  "relative flex min-h-12 flex-col items-center justify-center gap-1 rounded-control text-[11px] transition-colors duration-140",
   "before:absolute before:-top-[7px] before:left-1/2 before:h-[3px] before:w-7 before:-translate-x-1/2 before:rounded-b-[3px]"
 );
 
@@ -22,7 +23,7 @@ const TABS = ["/dashboard", "/dashboard/expenses", "/dashboard/trips"].map(
   (href) => NAV_ITEMS.find((item) => item.href === href)!
 );
 
-const tabActive = "font-semibold text-accent before:bg-accent";
+const tabActive = "font-medium text-accent before:bg-accent";
 const tabIdle = "text-ink-3 hover:text-ink";
 
 function Tab({ item, active }: { item: NavItem; active: boolean }) {
@@ -33,7 +34,7 @@ function Tab({ item, active }: { item: NavItem; active: boolean }) {
       aria-current={active ? "page" : undefined}
       className={cn(tab, active ? tabActive : tabIdle)}
     >
-      <Icon aria-hidden="true" size={20} strokeWidth={1.5} />
+      <Icon aria-hidden="true" size={20} strokeWidth={ICON_STROKE} />
       {item.label}
     </Link>
   );
@@ -75,7 +76,7 @@ export default function MobileTabBar({ onMore, moreOpen }: MobileTabBarProps) {
         className={cn(tab, "cursor-pointer", moreActive ? tabActive : tabIdle)}
       >
         <span className="relative flex">
-          <Menu aria-hidden="true" size={20} strokeWidth={1.5} />
+          <Menu aria-hidden="true" size={20} strokeWidth={ICON_STROKE} />
           {approvals > 0 && (
             <span
               aria-hidden="true"

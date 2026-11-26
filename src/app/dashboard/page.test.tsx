@@ -4,6 +4,7 @@ import DashboardPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
+import { byAmount } from "@/test/amount";
 
 /**
  * The innermost Notice whose text includes `text`. Notices are found by their
@@ -125,12 +126,12 @@ describe("DashboardPage", () => {
 
     // Totals band
     const totals = screen.getByRole("region", { name: "Totals" });
-    expect(within(totals).getByText(formatBaseCurrency(1000))).toBeInTheDocument();
+    expect(within(totals).getByText(byAmount(formatBaseCurrency(1000)))).toBeInTheDocument();
     expect(within(totals).getByText("5 expenses · 2 departments · 3 categories")).toBeInTheDocument();
     expect(within(totals).getByText("November to date")).toBeInTheDocument();
     expect(within(totals).getByText("1 expense · 13 of 30 days")).toBeInTheDocument();
     expect(within(totals).getByText("40.0% of spend")).toBeInTheDocument();
-    expect(within(totals).getByText(formatBaseCurrency(200))).toBeInTheDocument(); // average
+    expect(within(totals).getByText(byAmount(formatBaseCurrency(200)))).toBeInTheDocument(); // average
 
     // Monthly bars open that month's expenses
     const months = screen.getByRole("list", { name: "Monthly spend" });
@@ -149,7 +150,7 @@ describe("DashboardPage", () => {
       "/dashboard/expenses?category=cat1"
     );
     expect(within(categories).getByText("Other categories")).toBeInTheDocument();
-    expect(within(categories).getByText(formatBaseCurrency(200))).toBeInTheDocument();
+    expect(within(categories).getByText(byAmount(formatBaseCurrency(200)))).toBeInTheDocument();
 
     // Departments: likewise, so the shares add up to 100%
     const departments = screen.getByRole("region", { name: "Departments" });
@@ -159,7 +160,7 @@ describe("DashboardPage", () => {
     );
     expect(within(departments).getByText("Other departments")).toBeInTheDocument();
     expect(within(departments).getByText("30.0%")).toBeInTheDocument();
-    expect(within(departments).getByText(formatBaseCurrency(300))).toBeInTheDocument();
+    expect(within(departments).getByText(byAmount(formatBaseCurrency(300)))).toBeInTheDocument();
 
     // Who paid: the split, then pocket spend per person (most owed first, each opening their expenses)
     const whoPaid = screen.getByRole("region", { name: "Who paid" });
@@ -180,7 +181,7 @@ describe("DashboardPage", () => {
     const latest = screen.getByRole("region", { name: "Your latest entries" });
     const row = within(latest).getByRole("link", { name: /Figma seat/ });
     expect(row).toHaveAttribute("href", "/dashboard/expenses?expand=exp1");
-    expect(within(row).getByText(formatBaseCurrency(1000))).toBeInTheDocument();
+    expect(within(row).getByText(byAmount(formatBaseCurrency(1000)))).toBeInTheDocument();
     expect(within(row).getByText("10 Nov 2026")).toBeInTheDocument();
   });
 
@@ -208,7 +209,7 @@ describe("DashboardPage", () => {
     // Tara's 50 is the rest of the 700 pocket, so the shares add up to 100%.
     const other = rows[5];
     expect(other).toHaveTextContent("Other people");
-    expect(within(other).getByText(formatBaseCurrency(50))).toBeInTheDocument();
+    expect(within(other).getByText(byAmount(formatBaseCurrency(50)))).toBeInTheDocument();
     expect(within(other).getByText("7.1%")).toBeInTheDocument();
   });
 
@@ -339,7 +340,7 @@ describe("DashboardPage", () => {
       render(<DashboardPage />);
 
       const totals = await screen.findByRole("region", { name: "Totals" });
-      expect(within(totals).getByText(formatBaseCurrency(900))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(900)))).toBeInTheDocument();
       expect(
         within(totals).getByText(`3 approved expenses · 1 department · 2 categories · ${formatBaseCurrency(650)} awaiting approval`)
       ).toBeInTheDocument();
@@ -390,12 +391,12 @@ describe("DashboardPage", () => {
 
       const rejectedRow = within(latest).getByRole("link", { name: /Taxi/ });
       expect(within(rejectedRow).getByText("Rejected")).toBeInTheDocument();
-      expect(within(rejectedRow).getByText("₹120.00")).toHaveClass("line-through");
+      expect(within(rejectedRow).getByText(byAmount("₹120.00"))).toHaveClass("line-through");
       expect(rejectedRow).toHaveTextContent("(rejected, not in totals)");
 
       const approvedRow = within(latest).getByRole("link", { name: /Figma seat/ });
       expect(within(approvedRow).queryByText(/approv|reject/i)).not.toBeInTheDocument();
-      expect(within(approvedRow).getByText("₹300.00")).toHaveClass("text-ink");
+      expect(within(approvedRow).getByText(byAmount("₹300.00"))).toHaveClass("text-ink");
     });
   });
 });

@@ -50,13 +50,13 @@ export default function PaymentMark({
       className={cn(
         "inline-flex h-4 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
         kind === "both" ? "gap-0.5 bg-sunk px-1 ring-rule" : "w-4",
-        kind === "company" && "bg-accent-soft text-accent ring-accent-line",
+        kind === "company" && "bg-sunk text-ink-2 ring-rule",
         kind === "pocket" && "bg-amber-soft text-amber ring-pocket",
         className
       )}
     >
       {kind !== "pocket" && (
-        <Building2 aria-hidden="true" size={12} strokeWidth={ICON_STROKE} className={kind === "both" ? "text-accent" : undefined} />
+        <Building2 aria-hidden="true" size={12} strokeWidth={ICON_STROKE} className={kind === "both" ? "text-ink-2" : undefined} />
       )}
       {kind !== "company" && (
         <Wallet aria-hidden="true" size={12} strokeWidth={ICON_STROKE} className={kind === "both" ? "text-amber" : undefined} />

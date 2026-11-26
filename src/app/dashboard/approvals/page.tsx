@@ -728,7 +728,7 @@ export default function ApprovalsPage() {
                   review={review.handlers}
                   onClose={() => open(null)}
                   showHeader
-                  className="bg-wash-r p-5"
+                  className="p-5"
                 />
               </>
             ) : (

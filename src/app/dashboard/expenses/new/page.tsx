@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PackagePlus, Sparkles, Upload } from "lucide-react";
+import { PackagePlus, ScanText, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { moneyToCents } from "@/lib/asset";
 import { useTitle } from "@/hooks/useTitle";
@@ -34,6 +34,7 @@ import {
   type ExpenseLookups,
 } from "@/components/expenses/form/types";
 import { dayKey, isWithinTrip, type TravelType } from "@/lib/trip";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 interface UserOption {
   _id: string;
@@ -426,9 +427,9 @@ export default function NewExpensePage() {
             disabled={extracting}
             emptyPrompt={
               <>
-                <Upload aria-hidden="true" size={24} strokeWidth={1.5} className="mb-1 text-accent" />
+                <Upload aria-hidden="true" size={24} strokeWidth={ICON_STROKE} className="mb-1 text-ink-3" />
                 <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
-                  <Sparkles aria-hidden="true" size={15} strokeWidth={1.75} className="text-accent" />
+                  <ScanText aria-hidden="true" size={15} strokeWidth={ICON_STROKE} className="text-ink-2" />
                   Upload a receipt to auto-fill the form
                 </span>
                 <span className="text-xs text-ink-3">
@@ -460,7 +461,7 @@ export default function NewExpensePage() {
       >
         {needsApproval ? (
           <p className="flex items-start gap-3 text-[13px] text-ink-3 [text-wrap:pretty]">
-            <PackagePlus aria-hidden="true" size={18} strokeWidth={1.5} className="mt-px shrink-0" />
+            <PackagePlus aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="mt-px shrink-0" />
             <span>
               <span className="font-medium text-ink-2">Bought company equipment?</span> You can register assets for
               this purchase once it&apos;s approved.

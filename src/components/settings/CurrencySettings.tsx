@@ -144,14 +144,14 @@ export default function CurrencySettings({ id, currencies, onChanged }: Currency
               <span className="flex min-w-0 flex-[1_1_200px] items-center gap-3">
                 <span
                   aria-hidden="true"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-sunk text-sm font-semibold text-ink-2"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-sunk text-sm font-medium text-ink-2"
                 >
                   {curr.symbol}
                 </span>
                 <span className="flex min-w-0 flex-col">
                   <span className="flex items-center gap-2">
                     <span className="num font-medium text-ink">{curr.code}</span>
-                    {curr.isBase && <Badge tone="accent">Base</Badge>}
+                    {curr.isBase && <Badge tone="neutral">Base</Badge>}
                   </span>
                   <span className="ell text-[13px] text-ink-3">{curr.name}</span>
                 </span>

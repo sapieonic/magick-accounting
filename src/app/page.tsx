@@ -9,6 +9,7 @@ import Spinner from "@/components/ui/Spinner";
 import Button from "@/components/ui/Button";
 import { ICON_STROKE } from "@/components/ui/styles";
 import BrandLogo from "@/components/layout/BrandLogo";
+import Money, { withPaise } from "@/components/ui/Money";
 
 const FACTS: { icon: LucideIcon; title: string; text: string }[] = [
   {
@@ -28,7 +29,7 @@ const FACTS: { icon: LucideIcon; title: string; text: string }[] = [
   },
 ];
 
-/** Google "G" mark in its brand colours (the only non-token colours on the page). */
+/** Google "G" mark in its brand colours (non-token colours, like the receipt paper below). */
 function GoogleMark() {
   return (
     <svg aria-hidden="true" className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24">
@@ -69,6 +70,83 @@ function SignInError({ message }: { message: string }) {
   );
 }
 
+/** The bill's items: 6,245.00 before 5% GST (312.25), 6,557.25 in all. */
+const RECEIPT_LINES: [string, string][] = [
+  ["Veg platter × 2", "1,180.00"],
+  ["Paneer tikka × 3", "1,410.00"],
+  ["Dal makhani × 2", "980.00"],
+  ["Butter naan × 8", "640.00"],
+  ["Lime soda × 9", "1,035.00"],
+  ["Brownie × 4", "1,000.00"],
+];
+
+/**
+ * The sign-in panel's one rendered object: a printed bill on thermal paper and,
+ * beside it, the expense auto-fill reads from it. Plausible data, decorative.
+ * The paper is a fixed off-white in both themes, like the real thing.
+ */
+function ReceiptMoment() {
+  return (
+    <div aria-hidden="true" className="relative flex items-start gap-4 pl-1">
+      {/* The shadow is a drop-shadow on a wrapper: on the paper itself the zigzag mask would clip it. */}
+      <div className="shrink-0 -rotate-2 [filter:drop-shadow(0_18px_20px_rgb(0_0_0/0.45))]">
+        <div
+          className="w-[228px] bg-[#F6F3EC] px-5 pb-7 pt-5 font-mono text-[11px] leading-[18px] text-[#2A2723]"
+          style={{
+            WebkitMaskImage:
+              "linear-gradient(#000,#000), conic-gradient(from -45deg at 50% 100%, #000 90deg, transparent 0)",
+            WebkitMaskSize: "100% calc(100% - 6px), 12px 6px",
+            WebkitMaskPosition: "top, bottom",
+            WebkitMaskRepeat: "no-repeat, repeat-x",
+          }}
+        >
+          <p className="text-center text-[12px] font-medium tracking-[0.04em]">SAFFRON TABLE</p>
+          <p className="text-center text-[#6E685E]">14 Lantern Lane, Bengaluru</p>
+          <p className="mt-1 text-center text-[#6E685E]">GSTIN 29ABCDE1234F1Z5</p>
+          <p className="mt-3 border-t border-dashed border-[#B9B2A5] pt-2 text-[#6E685E]">21 Nov 2026 · 13:42 · T14</p>
+          <div className="mt-2 flex flex-col">
+            {RECEIPT_LINES.map(([item, amount]) => (
+              <p key={item} className="flex justify-between gap-3">
+                <span className="truncate">{item}</span>
+                <span className="tabular-nums">{amount}</span>
+              </p>
+            ))}
+          </div>
+          <p className="mt-2 flex justify-between border-t border-dashed border-[#B9B2A5] pt-2 text-[#6E685E]">
+            <span>CGST + SGST 5%</span>
+            <span className="tabular-nums">312.25</span>
+          </p>
+          <p className="mt-1 flex justify-between text-[13px] font-medium">
+            <span>Total</span>
+            <span className="tabular-nums">₹6,557.25</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-10 flex min-w-0 flex-1 flex-col gap-3 rounded-panel border border-rule bg-surface p-4 shadow-[0_16px_40px_-16px_rgb(0_0_0/0.7)]">
+        <p className="flex items-center gap-1.5 text-xs text-ink-3">
+          <ScanText size={14} strokeWidth={ICON_STROKE} />
+          Read from the bill
+        </p>
+        <div className="flex flex-col gap-0.5">
+          <p className="ell text-sm font-medium text-ink">Team lunch, Saffron Table</p>
+          <p className="figure text-[24px] font-medium text-ink">{withPaise("₹6,557.25")}</p>
+        </div>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-rule-2 pt-3 text-xs">
+          <dt className="text-ink-3">Category</dt>
+          <dd className="ell text-ink-2">Meals</dd>
+          <dt className="text-ink-3">GST</dt>
+          <dd className="text-ink-2">
+            <Money value="₹312.25" />
+          </dd>
+          <dt className="text-ink-3">Paid by</dt>
+          <dd className="ell text-amber">Neha, from pocket</dd>
+        </dl>
+      </div>
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const { user, loading, error, signInWithGoogle } = useAuth();
   const router = useRouter();
@@ -90,28 +168,28 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-dvh bg-background">
-      {/* Brand panel, in the rail's indigo (desktop only). */}
-      <aside className="hidden w-[min(46%,620px)] shrink-0 flex-col justify-between gap-12 bg-rail p-[clamp(32px,4vw,56px)] text-rail-ink lg:flex">
-        <BrandLogo size="lg" variant="onDark" />
+      {/* Brand panel (desktop only): graphite in both themes, with one rendered
+          moment, a bill and the expense it becomes. */}
+      <aside className="dark hidden w-[min(48%,640px)] shrink-0 flex-col justify-between gap-10 overflow-hidden bg-background p-[clamp(32px,4vw,56px)] text-ink lg:flex">
+        <BrandLogo size="lg" />
 
         <div className="flex flex-col gap-10">
-          <p className="text-[clamp(30px,3vw,42px)] font-semibold leading-[1.1] tracking-[-0.03em] text-white [text-wrap:balance]">
+          <p className="max-w-[16ch] text-[clamp(32px,3.2vw,44px)] font-medium leading-[1.08] tracking-[-0.025em] text-ink [text-wrap:balance]">
             Every rupee, accounted for.
           </p>
-          <ul className="flex flex-col">
-            {FACTS.map(({ icon: Icon, title, text }) => (
-              <li key={title} className="flex gap-4 border-t border-rail-line py-4 last:border-b">
-                <Icon aria-hidden="true" size={20} strokeWidth={1.5} className="mt-0.5 shrink-0 text-rail-icon" />
-                <div className="min-w-0">
-                  <p className="font-medium text-white">{title}</p>
-                  <p className="mt-0.5 text-sm text-rail-muted">{text}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ReceiptMoment />
         </div>
 
-        <p className="text-xs text-rail-muted">One workspace for your organization&apos;s expenses, trips and GST invoices.</p>
+        <ul className="flex flex-col">
+          {FACTS.map(({ icon: Icon, title, text }) => (
+            <li key={title} className="flex gap-3 border-t border-rule py-3 last:border-b">
+              <Icon aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0 text-ink-3" />
+              <p className="min-w-0 text-sm text-ink-3">
+                <span className="font-medium text-ink">{title}.</span> {text}
+              </p>
+            </li>
+          ))}
+        </ul>
       </aside>
 
       {/* Sign-in */}
@@ -119,7 +197,7 @@ export default function LoginPage() {
         <BrandLogo className="lg:hidden" />
         <div className="my-auto flex w-full max-w-[360px] flex-col gap-6 self-center py-10">
           <div className="flex flex-col gap-2">
-            <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.025em] text-ink">Sign in</h1>
+            <h1 className="text-[28px] font-medium leading-tight tracking-[-0.02em] text-ink">Sign in</h1>
             <p className="text-sm text-ink-3">Use your organization&apos;s Google account to continue.</p>
           </div>
 
@@ -130,7 +208,7 @@ export default function LoginPage() {
             Continue with Google
           </Button>
 
-          <p className="border-t border-rule pt-4 text-[13px] text-ink-3">
+          <p className="border-t border-rule pt-4 text-[13px] leading-5 text-ink-3">
             Only approved organization email domains can sign in. New here? Your account is created the first time you
             sign in.
           </p>

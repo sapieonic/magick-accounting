@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import AssetRow, { type AssetListItem } from "./AssetRow";
+import { byAmount } from "@/test/amount";
 
 const base: AssetListItem = {
   _id: "asset-1",
@@ -54,7 +55,7 @@ describe("AssetRow", () => {
     expect(narrowLine).toHaveClass("[@container(min-width:760px)]:hidden");
     expect(within(narrowLine as HTMLElement).getByText(/Cost ₹2,00,000\.00/)).toBeInTheDocument();
 
-    const bookValue = screen.getByText("₹1,50,000.00");
+    const bookValue = screen.getByText(byAmount("₹1,50,000.00"));
     const valueColumn = bookValue.parentElement!;
     // There, the cost only shows once the columns do, and the status has its own column.
     expect(within(valueColumn).getByText(/Cost/)).toHaveClass("hidden", "[@container(min-width:760px)]:block");

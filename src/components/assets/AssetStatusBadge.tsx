@@ -5,7 +5,7 @@ export const ASSET_STATUSES: { value: string; label: string; tone: Tone }[] = [
   { value: "active", label: "Active", tone: "success" },
   { value: "under_repair", label: "Under repair", tone: "amber" },
   { value: "retired", label: "Retired", tone: "neutral" },
-  { value: "sold", label: "Sold", tone: "accent" },
+  { value: "sold", label: "Sold", tone: "neutral" },
   { value: "lost", label: "Lost", tone: "danger" },
   { value: "disposed", label: "Disposed", tone: "neutral" },
 ];

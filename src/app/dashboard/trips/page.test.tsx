@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatBaseCurrency } from "@/lib/currency";
 import type { TripListItem } from "@/types/trip";
+import { byAmount } from "@/test/amount";
 
 const pushMock = vi.fn();
 const router = { push: pushMock };
@@ -124,7 +125,7 @@ describe("TripsPage", () => {
 
     expect(within(ongoing).getByText("Mumbai – Acme pitch")).toBeInTheDocument();
     expect(within(ongoing).getByText("Mumbai → Pune")).toBeInTheDocument();
-    expect(within(ongoing).getByText(formatBaseCurrency(9000))).toBeInTheDocument();
+    expect(within(ongoing).getByText(byAmount(formatBaseCurrency(9000)))).toBeInTheDocument();
     expect(within(ongoing).getByText("3 expenses")).toBeInTheDocument();
     // A user's total is only their own share, so the trip budget isn't compared with it.
     expect(within(ongoing).queryByRole("progressbar", { name: "Budget used" })).not.toBeInTheDocument();

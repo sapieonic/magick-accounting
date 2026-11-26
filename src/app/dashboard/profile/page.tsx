@@ -7,19 +7,18 @@ import { useTitle } from "@/hooks/useTitle";
 import PageHeader from "@/components/ui/PageHeader";
 import Panel from "@/components/ui/Panel";
 import DetailList from "@/components/ui/DetailList";
-import Badge, { type Tone } from "@/components/ui/Badge";
+import Badge from "@/components/ui/Badge";
 import SegmentedControl from "@/components/ui/SegmentedControl";
 import Avatar from "@/components/ui/Avatar";
 import TelegramLinkCard from "@/components/profile/TelegramLinkCard";
 
-const ROLES: Record<"master_admin" | "admin" | "user", { label: string; tone: Tone; note: string }> = {
+const ROLES: Record<"master_admin" | "admin" | "user", { label: string; note: string }> = {
   master_admin: {
     label: "Master admin",
-    tone: "accent",
     note: "Sees every expense, has the admin pages and can change people's roles.",
   },
-  admin: { label: "Admin", tone: "accent", note: "Sees every expense and has the admin pages: invoices, users and settings." },
-  user: { label: "Member", tone: "neutral", note: "Sees and manages the expenses you submit." },
+  admin: { label: "Admin", note: "Sees every expense and has the admin pages: invoices, users and settings." },
+  user: { label: "Member", note: "Sees and manages the expenses you submit." },
 };
 
 const THEMES = [
@@ -57,7 +56,7 @@ export default function ProfilePage() {
               label: "Role",
               value: (
                 <span className="flex flex-col items-start gap-1.5">
-                  <Badge tone={role.tone}>{role.label}</Badge>
+                  <Badge>{role.label}</Badge>
                   <span className="text-[13px] text-ink-3">{role.note}</span>
                 </span>
               ),

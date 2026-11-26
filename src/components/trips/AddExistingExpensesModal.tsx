@@ -19,6 +19,7 @@ import { focusRing, rowClass, rowSelectedClass, transition } from "@/components/
 import { DialogActions } from "@/components/ui/ConfirmDialog";
 import { baseAmount, expenseDate, isForeign } from "@/components/expenses/ledger/format";
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
+import Money from "@/components/ui/Money";
 
 interface AddExistingExpensesModalProps {
   tripId: string;
@@ -200,7 +201,7 @@ export default function AddExistingExpensesModal({ tripId, isOpen, onClose, onAd
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end">
-                        <span className="num font-medium text-ink">{formatCurrency(expense.amount, code)}</span>
+                        <Money value={formatCurrency(expense.amount, code)} className="font-medium text-ink" />
                         {foreign && (
                           <span className="num text-xs text-ink-3">{formatBaseCurrency(expense.amountInBaseCurrency!)}</span>
                         )}

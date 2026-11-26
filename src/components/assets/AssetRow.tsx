@@ -7,6 +7,7 @@ import { panelPadL, rowClass } from "@/components/ui/styles";
 import AssetGlyph from "@/components/assets/AssetGlyph";
 import AssetStatusBadge from "@/components/assets/AssetStatusBadge";
 import { expenseDate } from "@/components/expenses/ledger/format";
+import Money from "@/components/ui/Money";
 
 export interface AssetListItem {
   _id: string;
@@ -87,7 +88,7 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
             {asset.name}
           </Link>
           <span className={sub}>
-            <span className="num text-accent">{asset.assetTag}</span> · {asset.assetCategory}
+            <span className="num text-ink-2">{asset.assetTag}</span> · {asset.assetCategory}
             {asset.serialNumber ? ` · S/N ${asset.serialNumber}` : ""}
           </span>
           <span className={cn(sub, narrow)}>
@@ -130,9 +131,7 @@ export default function AssetRow({ asset, openingReceipt, onOpenReceipt }: Asset
       <div className="flex flex-col items-end gap-1 text-right">
         {hasValue ? (
           <>
-            <span className="num whitespace-nowrap font-medium text-ink">
-              {formatCurrency(asset.bookValue!, currencyCode)}
-            </span>
+            <Money value={formatCurrency(asset.bookValue!, currencyCode)} className="font-medium text-ink" />
             <span className={cn("num whitespace-nowrap text-xs text-ink-3", wide)}>
               Cost {formatCurrency(asset.capitalizedCost!, currencyCode)}
             </span>

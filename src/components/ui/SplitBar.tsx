@@ -2,6 +2,8 @@ import { Building2, Wallet } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 import { Dot } from "@/components/ui/Badge";
 import { formatBaseCurrency } from "@/lib/currency";
+import { withPaise } from "@/components/ui/Money";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 interface SplitBarProps {
   /** Company-paid amount (base currency). */
@@ -31,7 +33,7 @@ function finite(amount: number) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
-/** Company (indigo) vs pocket (amber) share of spend, with a legend. */
+/** Company (accent) vs pocket (amber) share of spend, with a legend. */
 export default function SplitBar({
   company,
   pocket,
@@ -52,9 +54,9 @@ export default function SplitBar({
       <div
         role="img"
         aria-label={`Company paid ${pct(companyPct)}, pocket ${pct(pocketPct)}`}
-        className={cn("flex gap-0.5 overflow-hidden bg-sunk", size === "sm" ? "h-2 rounded" : "h-3.5 rounded-[7px]")}
+        className={cn("flex gap-0.5 overflow-hidden rounded-full bg-sunk", size === "sm" ? "h-1.5" : "h-2")}
       >
-        {companyShare > 0 && <div className="bg-ramp" style={{ width: `${companyPct}%` }} />}
+        {companyShare > 0 && <div className="bg-accent" style={{ width: `${companyPct}%` }} />}
         {pocketShare > 0 && <div className="flex-1 bg-pocket" />}
       </div>
 
@@ -75,17 +77,17 @@ export default function SplitBar({
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(170px,100%),1fr))] gap-3">
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-center gap-2 text-ink-2">
-              <Building2 aria-hidden="true" size={16} strokeWidth={1.5} className="text-accent" />
+              <Building2 aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="text-ink-3" />
               Company · {pct(companyPct)}
             </span>
-            <span className="num whitespace-nowrap text-base font-medium">{format(finite(company))}</span>
+            <span className="num whitespace-nowrap text-base font-medium">{withPaise(format(finite(company)))}</span>
           </div>
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-center gap-2 text-ink-2">
-              <Wallet aria-hidden="true" size={16} strokeWidth={1.5} className="text-amber" />
+              <Wallet aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="text-amber" />
               Pocket · {pct(pocketPct)}
             </span>
-            <span className="num whitespace-nowrap text-base font-medium">{format(finite(pocket))}</span>
+            <span className="num whitespace-nowrap text-base font-medium">{withPaise(format(finite(pocket)))}</span>
           </div>
         </div>
       )}

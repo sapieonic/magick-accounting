@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 import Checkbox from "@/components/ui/Checkbox";
-import { inputClass, linkClass, transition } from "@/components/ui/styles";
+import { inputClass, linkClass, transition, ICON_STROKE } from "@/components/ui/styles";
 
 interface Option {
   value: string;
@@ -298,7 +298,7 @@ export default function MultiSelect({
       </button>
       <ChevronDown
         aria-hidden="true"
-        strokeWidth={1.75}
+        strokeWidth={ICON_STROKE}
         className={cn(
           "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3 transition-transform duration-140",
           open && "rotate-180"

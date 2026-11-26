@@ -33,13 +33,8 @@ const config: Config = {
         bar: v("bar"),
         rail: {
           DEFAULT: v("rail"),
-          hover: "#29276A",
-          active: "#34327F",
-          line: "#3A3888",
-          ink: "#D6D8F5",
-          muted: "#A9ACE0",
-          icon: "#C5CBFF",
-          mark: "#9BA5F8",
+          active: v("rail-active"),
+          line: v("rail-line"),
         },
         pocket: v("pocket"),
         // `amber` keeps Tailwind's default 50–950 scale (deep-merged);
@@ -60,7 +55,6 @@ const config: Config = {
           DEFAULT: v("accent"),
           ink: v("accent-ink"),
           hover: v("accent-hover"),
-          2: v("accent-2"),
           soft: v("accent-soft"),
           line: v("accent-line"),
         },
@@ -68,40 +62,33 @@ const config: Config = {
           DEFAULT: "var(--tint)",
           2: "var(--tint-2)",
         },
-        cat: {
-          sw: v("c-sw"),
-          "sw-soft": v("c-sw-s"),
-          co: v("c-co"),
-          "co-soft": v("c-co-s"),
-          tr: v("c-tr"),
-          "tr-soft": v("c-tr-s"),
-          ed: v("c-ed"),
-          "ed-soft": v("c-ed-s"),
-          me: v("c-me"),
-          "me-soft": v("c-me-s"),
-          of: v("c-of"),
-          "of-soft": v("c-of-s"),
-          mk: v("c-mk"),
-          "mk-soft": v("c-mk-s"),
-        },
       },
       fontFamily: {
         sans: ["Geist", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         mono: ["Geist Mono", "ui-monospace", "Menlo", "Consolas", "monospace"],
       },
       borderRadius: {
-        // Ledger: 6px controls, 8px panels.
-        control: "6px",
-        panel: "8px",
+        // Ledger: 8px controls, 12px panels (inner = outer - padding).
+        control: "8px",
+        panel: "12px",
       },
+      // One curve and one short duration for every transition-* utility, so
+      // call sites never repeat them (`ease-out` and `duration-140` are aliases).
       transitionDuration: {
+        DEFAULT: "140ms",
         140: "140ms",
+      },
+      transitionTimingFunction: {
+        DEFAULT: "cubic-bezier(0.22, 1, 0.36, 1)",
+        out: "cubic-bezier(0.22, 1, 0.36, 1)",
       },
       boxShadow: {
         // Rules, not shadows: only floating layers (menus, dialogs) and the
         // mobile Add button get one.
-        elevated: "0 12px 32px -12px rgb(19 19 31 / 0.25)",
-        fab: "0 6px 14px -6px rgb(var(--accent))",
+        elevated: "0 1px 2px rgb(23 23 22 / 0.04), 0 12px 32px -12px rgb(23 23 22 / 0.18)",
+        fab: "0 6px 16px -6px rgb(23 23 22 / 0.35)",
+        // The active rail row in light: a white step lifted by a hairline shadow.
+        lift: "0 1px 2px rgb(23 23 22 / 0.06), 0 0 0 1px rgb(23 23 22 / 0.06)",
       },
     },
   },

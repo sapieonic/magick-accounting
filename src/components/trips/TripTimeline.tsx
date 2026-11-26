@@ -9,6 +9,7 @@ import ExpenseRow, { LEDGER_CONTAINER } from "@/components/expenses/ledger/Expen
 import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import { expenseEditHref } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
+import Money from "@/components/ui/Money";
 
 interface TripTimelineProps extends ExpenseActions {
   trip: TripDates;
@@ -87,12 +88,12 @@ export default function TripTimeline({
                 ledgerPad(nested)
               )}
             >
-              <h3 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-ink">
+              <h3 className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-ink">
                 <span
                   aria-hidden="true"
                   className={cn(
                     "h-2 w-2 shrink-0 rounded-full shadow-[0_0_0_3px_var(--tint-2)]",
-                    section.kind === "day" ? "bg-accent" : "bg-bar"
+                    section.kind === "day" ? "bg-ink-3" : "bg-bar"
                   )}
                 />
                 <span className="ell">
@@ -103,9 +104,7 @@ export default function TripTimeline({
                 </span>
               </h3>
               <span data-testid="day-total" className="flex shrink-0 flex-col items-end text-[13px] text-ink-2 sm:flex-row sm:gap-1">
-                <span className="num whitespace-nowrap" title="Day total: approved expenses only">
-                  {formatBaseCurrency(section.total)}
-                </span>
+                <Money value={formatBaseCurrency(section.total)} title="Day total: approved expenses only" />
                 {(section.pendingTotal ?? 0) > 0 && (
                   <span className="whitespace-nowrap text-xs text-ink-3 sm:text-[13px]">
                     <span aria-hidden="true" className="hidden sm:inline">· </span>

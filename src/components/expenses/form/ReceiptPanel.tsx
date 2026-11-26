@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { FileImage, FileText, RefreshCw, Sparkles, TriangleAlert, Upload, X as XIcon } from "lucide-react";
+import { FileImage, FileText, RefreshCw, ScanText, TriangleAlert, Upload, X as XIcon } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import Spinner from "@/components/ui/Spinner";
@@ -69,7 +69,7 @@ export default function ReceiptPanel({
     <>
       <div className={cn(panelClass, "flex flex-col overflow-hidden")}>
         <div className="flex items-center gap-3 py-2 pl-4 pr-2">
-          <Icon aria-hidden="true" size={20} strokeWidth={1.5} className="shrink-0 text-accent" />
+          <Icon aria-hidden="true" size={20} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="ell text-sm font-medium text-ink" title={filename}>
               {filename}
@@ -103,7 +103,7 @@ export default function ReceiptPanel({
       </div>
 
       <ReceiptDropzone onFile={onFile} disabled={disabled} className="py-4">
-        <Upload aria-hidden="true" size={18} strokeWidth={1.5} className="text-accent" />
+        <Upload aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="text-ink-3" />
         <span className="text-sm font-medium text-ink">Drop another photo or PDF to replace it</span>
         <span className="text-xs text-ink-3">or choose a file · JPEG, PNG, WebP or PDF up to 10MB</span>
       </ReceiptDropzone>
@@ -131,7 +131,7 @@ export function ReceiptReadStatus({ state, count = 0, onRetry }: ReceiptReadStat
       aria-live="polite"
       className={cn(
         "flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-t border-rule-2 py-1.5 pl-4 pr-2 text-[13px]",
-        state === "failed" ? "bg-amber-soft" : "bg-accent-soft"
+        state === "failed" ? "bg-amber-soft" : "bg-sunk"
       )}
     >
       {state === "reading" ? (
@@ -139,7 +139,7 @@ export function ReceiptReadStatus({ state, count = 0, onRetry }: ReceiptReadStat
       ) : state === "failed" ? (
         <TriangleAlert aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-amber" />
       ) : (
-        <Sparkles aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-accent" />
+        <ScanText aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-2" />
       )}
       <p className="min-w-0 flex-1 basis-[180px] [text-wrap:pretty]">
         {state === "reading" ? (

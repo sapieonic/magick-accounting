@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, useRef, ReactNode } from "react";
 import { X, CheckCircle2, AlertCircle, Info } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
-import { linkClass } from "@/components/ui/styles";
+import { linkClass, ICON_STROKE } from "@/components/ui/styles";
 import { cn } from "@/components/ui/cn";
 
 type ToastType = "success" | "error" | "info";
@@ -57,9 +57,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ toast, dismiss: removeToast }), [toast, removeToast]);
 
   const icons = {
-    success: <CheckCircle2 aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-success" />,
-    error: <AlertCircle aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-danger" />,
-    info: <Info aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-accent" />,
+    success: <CheckCircle2 aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-success" />,
+    error: <AlertCircle aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-danger" />,
+    info: <Info aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />,
   };
 
   return (

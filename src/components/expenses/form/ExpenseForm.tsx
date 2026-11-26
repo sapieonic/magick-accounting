@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, FormEvent, InputHTMLAttributes, ReactNode, SetStateAction } from "react";
-import { Check, ChevronLeft, Info, Sparkles } from "lucide-react";
+import { Check, ChevronLeft, Info, ScanText } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Field, { aiFilledClass, inputClass, selectClass, textareaClass } from "@/components/ui/Field";
 import PageHeader from "@/components/ui/PageHeader";
@@ -15,6 +15,7 @@ import type { TravelType } from "@/lib/trip";
 import FormSection, { FieldGrid, FormFooter } from "@/components/ui/FormSection";
 import { getPaymentErrors } from "./expense-form";
 import type { AiField, CurrencyOption, ExpenseFormValues, ExpenseLookups } from "./types";
+import Money from "@/components/ui/Money";
 
 /**
  * The amount's hint: the INR equivalent for a foreign currency, rounded as the
@@ -49,7 +50,7 @@ function formatTotal(amount: number, currency: CurrencyOption | undefined): stri
 function FromReceipt({ what }: { what?: string }) {
   return (
     <>
-      <Sparkles aria-hidden="true" size={12} strokeWidth={1.8} />
+      <ScanText aria-hidden="true" size={12} strokeWidth={ICON_STROKE} />
       {what ? `${what} from receipt` : "from receipt"}
     </>
   );
@@ -186,9 +187,9 @@ export default function ExpenseForm({
             type="button"
             onClick={onCancel}
             aria-label={backLabel}
-            className="-my-3 -ml-1 inline-flex cursor-pointer items-center gap-0.5 px-1 py-3 text-[13px] font-normal normal-case tracking-normal text-ink-3 transition-colors duration-140 hover:text-accent"
+            className="-my-3 -ml-1 inline-flex cursor-pointer items-center gap-0.5 px-1 py-3 text-[13px] font-normal text-ink-3 transition-colors duration-140 hover:text-accent"
           >
-            <ChevronLeft aria-hidden="true" size={14} strokeWidth={1.75} />
+            <ChevronLeft aria-hidden="true" size={14} strokeWidth={ICON_STROKE} />
             {backText}
           </button>
         }
@@ -404,7 +405,7 @@ export default function ExpenseForm({
               {hasAmount ? (
                 <>
                   Total{" "}
-                  <span className="num font-medium text-ink">{formatTotal(amountValue, currency)}</span>
+                  <Money value={formatTotal(amountValue, currency)} className="font-medium text-ink" />
                 </>
               ) : (
                 "Enter an amount to see the total"

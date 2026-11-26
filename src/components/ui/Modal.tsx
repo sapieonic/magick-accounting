@@ -62,7 +62,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
         )}
       >
         <div className="flex items-center justify-between gap-3 border-b border-rule py-2 pl-5 pr-2">
-          <h2 className="text-base font-semibold tracking-[-0.015em] text-ink">{title}</h2>
+          <h2 className="text-base font-medium text-ink">{title}</h2>
           <IconButton icon={X} size="sm" onClick={onClose} aria-label="Close dialog" />
         </div>
         <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>

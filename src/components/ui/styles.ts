@@ -6,7 +6,7 @@
 import { cn } from "@/components/ui/cn";
 
 /** Hover/press colour transition used by every interactive surface. */
-export const transition = "transition-[background-color,border-color,color,box-shadow] duration-140 ease-out";
+export const transition = "transition-[background-color,border-color,color,box-shadow,transform] duration-140 ease-out";
 
 /** Visible focus ring for custom controls (native :focus-visible is global too). */
 export const focusRing =
@@ -26,7 +26,7 @@ export const target24 = "inline-flex min-h-6 items-center";
  */
 const control = cn(
   "rounded-control border border-control-line bg-surface text-sm text-ink placeholder:text-ink-3",
-  "hover:border-accent-2 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgb(var(--accent))]",
+  "hover:border-ink-3 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgb(var(--accent))]",
   "disabled:cursor-not-allowed disabled:bg-sunk disabled:text-ink-3",
   "aria-[invalid=true]:border-danger",
   transition
@@ -51,7 +51,7 @@ export const textareaClass = cn(control, "min-h-[88px] w-full px-3 py-2.5 leadin
  * Fields that auto-fill set (AI extracted): tinted. The border stays `control-line`
  * (>= 3:1); the Field's "from receipt" aside says where the value came from.
  */
-export const aiFilledClass = "!bg-tint";
+export const aiFilledClass = "!bg-accent-soft/50";
 
 /** Ledger list row: hairline top rule and hover tint. */
 export const rowClass = cn("border-t border-rule-2 hover:bg-hover", transition);
@@ -100,7 +100,7 @@ export type ButtonSize = "sm" | "md";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-ink hover:bg-accent-hover",
-  secondary: "border border-rule bg-surface text-ink hover:border-accent-line hover:bg-hover",
+  secondary: "border border-rule bg-surface text-ink hover:border-control-line hover:bg-hover",
   ghost: "text-ink-2 hover:bg-tint-2 hover:text-ink",
   danger: "border border-rule bg-surface text-danger hover:border-danger/40 hover:bg-danger-soft",
   /** Quiet destructive control (delete icon in a row): ink until hovered. */
@@ -119,7 +119,7 @@ export function buttonClass({
   fullWidth = false,
 }: { variant?: ButtonVariant; size?: ButtonSize; fullWidth?: boolean } = {}): string {
   return cn(
-    "inline-flex shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded-control font-medium no-underline",
+    "inline-flex shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded-control font-medium no-underline active:scale-[0.98]",
     "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50",
     transition,
     focusRing,
@@ -135,7 +135,7 @@ export function iconButtonClass({
   size = "md",
 }: { variant?: ButtonVariant; size?: ButtonSize } = {}): string {
   return cn(
-    "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-control",
+    "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-control active:scale-[0.98]",
     "disabled:pointer-events-none disabled:opacity-50",
     transition,
     focusRing,
@@ -144,5 +144,33 @@ export function iconButtonClass({
   );
 }
 
+/** A panel, section or card title (h2/h3): 15px, medium, primary ink. */
+export const sectionTitleClass = "text-[15px] font-medium text-ink";
+
+/** A dashed prompt that invites an action (add a receipt, register assets, add expenses). */
+export const dashedPromptClass = "border border-dashed border-control-line bg-tint";
+
+/** Glyph tile sizes: box (px square, radius) and the icon inside it. */
+export const GLYPH_SIZES = {
+  sm: { box: "h-[26px] w-[26px] rounded-md", icon: 14 },
+  md: { box: "h-7 w-7 rounded-md", icon: 15 },
+  lg: { box: "h-8 w-8 rounded-lg", icon: 16 },
+  xl: { box: "h-9 w-9 rounded-lg", icon: 18 },
+} as const;
+
+export type GlyphSize = keyof typeof GLYPH_SIZES;
+
+/**
+ * The neutral tile behind category, travel-type and asset icons: the icon
+ * tells them apart, not colour. `muted` for the catch-all ("other", unknown).
+ */
+export function glyphTileClass(size: GlyphSize = "md", muted = false): string {
+  return cn(
+    "inline-flex shrink-0 items-center justify-center bg-sunk ring-1 ring-inset ring-rule-2",
+    GLYPH_SIZES[size].box,
+    muted ? "text-ink-3" : "text-ink-2"
+  );
+}
+
 /** lucide-react stroke width used across the app. */
-export const ICON_STROKE = 1.75;
+export const ICON_STROKE = 1.5;

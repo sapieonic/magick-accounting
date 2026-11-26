@@ -1,16 +1,21 @@
-# Ledger design system (indigo edition)
+# Ledger design system (graphite + ledger green)
 
-Visual spec: the approved mockups (Overview, Expenses + detail, New expense, Trip, phone Expenses).
+Direction: a company's expense book. Character: exact, unhurried, a little warm. World: an accountant's desk
+(ruled ledger paper, a receipt roll, fountain-pen ink).
 Principles: **numbers first** (Geist Mono, tabular, right-aligned, never clipped) · **rules, not cards**
-(1px hairlines, panels on one ruled sheet, 8px radius, no shadows) · **colour carries meaning**
-(indigo = company/primary, amber = pocket/owed, muted category colours on glyph chips) · thin lucide icons.
+(1px hairlines, panels on one ruled sheet, 12px radius, no shadows) · **quiet chrome, one accent**: surfaces, text,
+icons and the rail are graphite; ledger green marks only the primary action, the selection and the one figure that
+matters (the peak month, the lead bar); amber = pocket/owed · thin lucide icons.
+**Signature:** an amount's paisa is set quieter than its rupees (`withPaise`, `.paise`) wherever a figure stands on
+its own: ₹2,42,356<span>.12</span> (see Amounts).
 
 ## Tokens (Tailwind)
 
 Colours are CSS variables in `src/app/globals.css` (light + `.dark`). Most are RGB channels and support
-`/alpha` (`bg-accent/10`). Two exceptions: `tint` / `tint-2` are fixed-alpha accent tints (no `/alpha`),
-and the `rail-*` shades (`rail-hover`, `rail-active`, `rail-line`, `rail-ink`, `rail-muted`, `rail-icon`,
-`rail-mark`) are fixed hex: the rail is dark in both themes, so they don't change with `.dark`.
+`/alpha` (`bg-accent/10`). One exception: `tint` / `tint-2` are fixed-alpha ink tints (no `/alpha`).
+The rail keeps only the shades that differ from the page (`bg-rail`, `bg-rail-active`, `border-rail-line`): a step
+below the page in light, near-black in dark. Its text, hover, focus and count use the ordinary ink, `tint-2` and
+accent tokens.
 
 | Use | Class |
 | --- | --- |
@@ -19,20 +24,21 @@ and the `rail-*` shades (`rail-hover`, `rail-active`, `rail-line`, `rail-ink`, `
 | Rules: outer / inner row divider | `border-rule` · `border-rule-2` (panels, hairlines: decorative) |
 | Form control boundary | `border-control-line` (≥ 3:1 on surface in both themes, WCAG 1.4.11; inputs, selects, chips, checkboxes) |
 | Backdrop behind dialogs, the ⌘K palette and the drawer | `bg-overlay/45` (always /45; `--overlay` is near-black in light, black in dark) |
-| Accent (indigo) | `bg-accent text-accent-ink` · `hover:bg-accent-hover` · `bg-accent-soft` · `border-accent-line` · `bg-accent-2` |
-| Row hover / tints | `hover:bg-hover` · `bg-tint` (5%) · `bg-tint-2` (10%) |
+| Accent (ledger green) | `bg-accent text-accent-ink` · `hover:bg-accent-hover` · `bg-accent-soft` (selection) · `border-accent-line` (selected chips, drop zones) |
+| Row hover / tints | `hover:bg-hover` · `bg-tint` (ink at 3.5% light / 4% dark) · `bg-tint-2` (6% / 8%) |
 | Pocket / owed (amber) | `text-amber` · `bg-pocket` (fill) · `bg-amber-soft` |
 | Status | `text-success bg-success-soft` · `text-danger bg-danger-soft` |
-| Chart bars | `bg-bar` (muted) · `bg-ramp` (indigo gradient) · `bg-hatch` (month to date) |
-| Category | `text-cat-{sw,co,tr,ed,me,of,mk}` + `bg-cat-*-soft` (prefer `CategoryGlyph`) |
-| Radius | `rounded-control` (6px: buttons, inputs) · `rounded-panel` (8px: panels) |
-| Motion | `duration-140` for hover/press colour changes |
-| Shadow | none, except `shadow-elevated` (menus, dialogs) and `shadow-fab` (mobile Add) |
+| Chart bars | `bg-bar` (neutral) · `bg-accent` (the one bar that matters) · `bg-hatch` (month to date) |
+| Glyph tiles | `CategoryGlyph` / `TravelGlyph` / `AssetGlyph`, all on `glyphTileClass(size, muted?)` from `styles` (neutral `bg-sunk` with a `rule-2` hairline; the icon tells them apart, not colour) |
+| Radius | `rounded-control` (8px: buttons, inputs) · `rounded-panel` (12px: panels) |
+| Motion | Tailwind's default transition is the one curve, `cubic-bezier(0.22, 1, 0.36, 1)`, at 140ms, so a bare `transition-colors` (or the `transition` helper) needs nothing else; keyframes use `theme(transitionTimingFunction.DEFAULT)`. `Button` and `IconButton` press to `scale(0.98)` |
+| Shadow | none, except `shadow-elevated` (menus, dialogs), `shadow-fab` (mobile Add) and `shadow-lift` (the active rail row; in dark it becomes a faint top highlight), all neutral. The sign-in receipt's soft drop shadows are the one rendered object |
 
-Utilities: `.num` (Geist Mono, tabular, -0.02em: every amount, count, date in a table) ·
-`.figure` (Geist sans, tabular, nowrap: big headline totals) · `.cap` (11px uppercase caption,
-.07em, 500: labels, column heads, eyebrows) · `.ell` (single-line ellipsis) · `bg-wash` / `bg-wash-r`
-(faint radial indigo from the top-left / top-right corner, behind headline totals and detail heads).
+Utilities: `.num` (Geist Mono, tabular, no tracking: every amount, count, date in a table) ·
+`.figure` (Geist sans, tabular, nowrap, no tracking: big figures, stats and the detail amount; the 28px+ headline
+stat adds `tracking-[-0.02em]`) · `.cap` (12px sentence-case
+caption, 500: labels, column heads, eyebrows; never uppercase) · `.paise` (the muted paisa) · `.ell` (single-line ellipsis).
+Weights are 400 and 500 (600 only for rare emphasis); no negative tracking under 24px.
 Page padding is `var(--pad)` = `clamp(16px, 2.6vw, 40px)`; the layout already applies it on a wrapper inside `<main>` (not on the scroller itself, so `sticky` offsets mean what they say).
 `var(--tabbar-h)` is the height of the fixed mobile tab bar (safe area included; `0px` from `lg`): build bottom
 offsets on it (the page's bottom padding, `FormFooter`, toasts) rather than repeating the number.
@@ -72,8 +78,8 @@ delete icons in rows), `size?`, `loading?` (spinner in place of the icon, disabl
   <Stat label="Paid from pocket" icon={Wallet} tone="amber" value={formatBaseCurrency(pocket)} sub="18.8% of spend" />
 </StatBand>
 ```
-`Stat`: `label`, `value` (pre-formatted), `sub?`, `icon?`, `tone?: "default" | "amber"` (amber colours the figure
-and icon; default has an indigo icon), `headline?`, `action?` (a `textButtonClass` link or button under `sub` that acts
+`Stat`: `label`, `value` (pre-formatted; its paisa is muted), `sub?`, `icon?` (muted, beside the label),
+`tone?: "default" | "amber"` (amber colours the figure), `headline?`, `action?` (a `textButtonClass` link or button under `sub` that acts
 on the figure, e.g. "Review" on "Awaiting approval"). Stats are top-aligned, so one without `sub` lines up with its
 neighbours. Figures are nowrap and sized with container units, so they shrink instead of clipping. `BandCell` (`label`,
 children) is a band cell for content that isn't one figure: a `SplitBar`, a budget meter.
@@ -86,12 +92,12 @@ children) is a band cell for content that isn't one figure: a `SplitBar`, a budg
 ```
 `Panel`: `title?`, `description?` (one quiet line under the title: sentences go here), `meta?` (a short note
 right of the title: a count, a unit, a status), `actions?`, `footer?`, `flush?`
-(no body padding, for row lists), `grow?` (relative width in a grid), `wash?`, `className?`, `bodyClassName?`, `id?`.
+(no body padding, for row lists), `grow?` (relative width in a grid), `className?`, `bodyClassName?`, `id?`.
 Standalone it has its own border. Rows inside a flush panel use `panelPadX` (from `styles`) for the same side padding.
 `PanelGrid`: `min?` (px before wrapping, default 440), `className?`. One ruled sheet: shared border, 1px rule gaps.
 
 ```tsx
-<Field label="Amount" icon={Banknote} hint="In the bill's currency" error={errors.amount} aside={<><Sparkles size={12}/>from receipt</>}>
+<Field label="Amount" icon={Banknote} hint="In the bill's currency" error={errors.amount} aside={<><ScanText size={12}/>from receipt</>}>
   <input className={cn(inputClass, "num text-right", aiFilled && aiFilledClass)} inputMode="decimal" />
 </Field>
 ```
@@ -133,7 +139,8 @@ row that is itself the control (a listbox option), or beside an `sr-only` native
 `<label>` row, which carries the state and focus (show focus on the row with `has-[:focus-visible]:`). Don't
 style a native checkbox with `accent-*` instead.
 
-`Badge` (static): `tone?: "neutral" | "accent" | "amber" | "success" | "danger"`, `icon?`, `dot?`.
+`Badge` (static): `tone?: "neutral" | "amber" | "success" | "danger"` (no accent: a status is never the accent), `icon?`, `dot?`.
+`Dot` also takes `"accent"` (the company share of a split).
 `Chip` (44px toggle filter, `aria-pressed`): `pressed?`, `icon?` + button props; with `role="radio"` (inside a
 `radiogroup`) it reports `aria-checked` instead. `RemovableChip` (`onRemove`, `removeLabel?`, children): a picked
 value or active filter; the whole chip removes it. `Dot`: `tone?` (7px legend dot). All from `@/components/ui/Badge`.
@@ -146,7 +153,7 @@ reviewer moves between expenses (J/K), so announcing it would only repeat what i
 just happened with a toast. The root carries `data-notice` and `data-tone` (tests find notices by `[data-notice]` or
 `getByRole("group", { name: title })`).
 
-`Avatar`: `name?`, `photoURL?`, `size?: 24 | 28 | 32 | 36 | 56` (default 32), `tone?: "accent" | "amber" | "rail"`,
+`Avatar`: `name?`, `photoURL?`, `size?: 24 | 28 | 32 | 36 | 56` (default 32), `tone?: "neutral" | "amber" | "rail"` (default neutral),
 `title?`. Decorative: print the name beside it. `initials(name)` → first + last initial, `"?"` when empty.
 
 `DetailList`: `items: { label; icon?; value }[]`, `layout?: "justified" | "columns"`: ruled caption/value rows
@@ -155,15 +162,16 @@ after a 7rem caption column (longer values, e.g. the profile's account details).
 
 `CategoryGlyph`: `name?` (matched by whole-word keyword, so "Facebook ads" is marketing, not a book),
 `tone?` (force), `size?: "sm" 26 | "md" 28 | "lg" 32 | "xl" 36`.
-`CategoryDot` (6px). `categoryTone(name)` → `"sw" | "co" | "tr" | "ed" | "me" | "of" | "mk" | "neutral"`;
-`CATEGORY_STYLES[tone]` gives `{ icon, fg, bg, fill }` class strings.
+`categoryTone(name)` → `"sw" | "co" | "tr" | "ed" | "me" | "of" | "mk" | "neutral"` picks the icon family;
+`CATEGORY_ICONS[tone]` gives its icon (every family shares the neutral glyph tile).
 
 `SplitBar`: `company`, `pocket` (numbers, base currency), `format?` (default `formatBaseCurrency`),
 `legend?: "detail" | "inline" | "none"`, `size?: "sm" | "md"`. Accessible as one `role="img"` with percentages;
 negative or non-finite amounts count as 0 in the bar and percentages.
 
 `RankedBar`: `label`, `amount` (formatted), `ratio` (0–1 bar fill; clamped, NaN = empty), `share?` (percent),
-`leading?` (e.g. `<CategoryGlyph />` or initials), `tone?: "ramp" | "accent" | "muted" | "pocket"`. The label
+`leading?` (e.g. `<CategoryGlyph />` or initials), `tone?: "lead" | "neutral" | "muted" | "pocket"` (unset, the
+largest row, ratio 1, is `lead` in the accent and the rest `neutral`; `muted` for a remainder row, `pocket` for owed money). The label
 truncates; the share and amount never do.
 
 `SegmentedControl<T>`: `options: { value; label; icon? }[]`, `value`, `onChange`, required `aria-label`, `fullWidth?`,
@@ -191,7 +199,8 @@ tint), `rowSelectedClass` (accent-soft + 3px inset bar), `linkClass` (accent tex
 WCAG 2.5.8; links inside a sentence can stay `linkClass`), `target24` (that 24px target alone, for links with
 their own colour), `panelClass`, `panelPadX` (and `panelPadL`, its left side only, for rows with trailing icon
 buttons), `ledgerPad(nested?)` (ledger row padding), `transition`,
-`focusRing`, `peerFocusRing` (the same ring on a visual box after an sr-only `peer` input), `ICON_STROKE` (1.75). `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
+`focusRing`, `peerFocusRing` (the same ring on a visual box after an sr-only `peer` input), `ICON_STROKE` (1.5),
+`sectionTitleClass` (panel/section/card titles), `dashedPromptClass` (a dashed prompt inviting an action), `glyphTileClass`. `cn()` lives in `@/components/ui/cn` (plain clsx: no tailwind-merge, so a
 `className` can't override a class the primitive already sets; add a prop or variant instead).
 `useMediaQuery(query)` lives in `@/hooks/useMediaQuery`.
 
@@ -206,7 +215,8 @@ mounted `FormFooter` (`--tabbar-h` + `--form-footer-h`), at every width; pages w
 `--toast-room` to spare, so it never covers Save, a total, "Load more" or page-header actions). `#main` has scroll padding for the tab bar and a
 mounted `FormFooter`, so a focused field never scrolls under them,
 `MultiSelect`, `CommandPalette`,
-`ThemeToggle`, `ReceiptDropzone` (dashed indigo zone on a tint).
+`ThemeToggle`, `ReceiptDropzone` (dashed accent zone on a tint), `Money` / `withPaise` / `splitPaise`
+(`@/components/ui/Money`, see Amounts).
 
 ## Shell
 
@@ -215,9 +225,9 @@ section context, ⌘K search, theme, New expense) and on phones the `MobileTabBa
 Add, Trips, More → drawer; More is highlighted on pages only the drawer links to). Nav items live in
 `src/components/layout/nav.ts` (shared with ⌘K). For admins the Approvals link carries the awaiting-approval count
 (`ApprovalCountContext`, provided by the layout; read on mount, route change and window focus, never polled): a
-`bg-rail-mark` pill on the wide rail ("99+" past 99), a dot on the icon-only rail (count in the tooltip), and a dot on
+quiet `text-accent` mono count on the wide rail ("99+" past 99), a dot on the icon-only rail (count in the tooltip), and a dot on
 the phone's More. The number is always in the accessible name, worded by `approvalCountLabel` ("Approvals, 4 awaiting
-approval", "More, 4 awaiting approval"); the pill and dots are `aria-hidden`. Link to the queue with `APPROVALS_HREF`
+approval", "More, 4 awaiting approval"); the count and dots are `aria-hidden`. Link to the queue with `APPROVALS_HREF`
 from `nav.ts`. Pages
 render straight into `<main>`; **do not** add a max-width wrapper or page padding of your own, and start
 each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the page root, plus
@@ -236,7 +246,7 @@ each page with `PageHeader`. Section gap: `flex flex-col gap-6` (24px) on the pa
   Rows pad with `ledgerPad()` (`panelPadX`; nested in a trip band, that plus 22px). Row hover actions share the
   amount's grid cell (`[grid-area:1/1]`), so the cell is as wide as the wider of the two and the amount hides while
   they show: they never cover the title or category.
-- Touch targets ≥ 44px (40px minimum for dense secondary controls).
+- Touch targets ≥ 44px (40px minimum for dense secondary controls, e.g. the desktop rail's links and buttons).
 - Copy is sentence case everywhere: buttons, dialog titles, labels ("Add department", "Update rate").
 
 ## Expense approvals
@@ -356,21 +366,30 @@ open expense.
 ## Amounts
 
 Always `formatCurrency(amount, code)` / `formatBaseCurrency(amount)` from `@/lib/currency`, inside `.num`
-(or `Stat`/`RankedBar`/`SplitBar`, which do it). Right-align amount columns, `whitespace-nowrap`, never
+(or `Stat`/`RankedBar`/`SplitBar`, which do it). A figure that stands on its own (row and detail amounts, totals,
+invoice lines) is `<Money value={formatted} className=… />`: `.num`, nowrap, paisa muted, with any sr-only note as
+children. Primitives that take a pre-formatted string (`Stat`, `RankedBar`, `SplitBar`, invoice rows) call
+`withPaise(formatted)` themselves. The paisa renders in a `.paise` span at
+65% of the figure's colour (85% in amber; not muted again in an `ink-3` amount), and the text stays one figure for
+screen readers and copy. `splitPaise` only splits money strings (a sign or code, then `.dd`), so "12.50%" or "₹3.12L"
+pass through. Leave sentences, sub-lines, inputs, aria labels, toasts and the PDF alone. In tests, find a split
+amount with `byAmount()` from `@/test/amount`, not a plain string. Right-align amount columns, `whitespace-nowrap`, never
 truncate a number (truncate the label instead). Foreign amounts: original first, INR equivalent below in
-`text-xs text-ink-3`. Pocket money is `text-amber`; company is ink or indigo.
+`text-xs text-ink-3`. Pocket money is `text-amber`; company is ink (the company share of a split bar is the accent).
 
 ## Icons
 
-lucide-react only, `strokeWidth` 1.5–1.75 (`ICON_STROKE`), 16–20px (13–15px inside captions/chips),
+lucide-react only, `strokeWidth={ICON_STROKE}` (1.5; never a literal), 16–20px (13–15px inside captions/chips), in a text colour
+(`ink-2` / `ink-3`), never the accent for decoration; AI auto-fill is marked with `ScanText`, never a sparkle,
 `aria-hidden="true"` when next to text, `IconButton` with `aria-label` when alone. One icon per meaning:
 use the nav icons from `nav.ts` for sections and `CategoryGlyph` for categories.
 
 ## Do / don't
 
-- Do: rules between sections, `bg-wash` once per view behind the headline, `aria-current` / `aria-pressed`
+- Do: rules between sections, the accent on one thing per view, `aria-current` / `aria-pressed`
   for state, `Panel` titles as `h2`, empty states via `EmptyState`.
-- Don't: gradient banners, coloured icon tiles on every card, shadows on panels, `rounded-xl/2xl`,
+- Don't: gradient banners or gradient bars, radial washes, coloured icon tiles on every card, uppercase tracked labels,
+  shadows on panels, `rounded-xl/2xl`,
   serif or extra font families, `max-w-6xl mx-auto` wrappers, raw hex colours, tailwind palette colours
   (`emerald-500`, `blue-400`…) for meaning, per-page re-implementations of buttons/inputs.
 

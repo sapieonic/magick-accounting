@@ -24,13 +24,13 @@ export default function StatusPage({ eyebrow, tone, title, top, children }: Stat
         <p
           className={cn(
             "text-sm font-medium",
-            tone === "danger" ? "text-danger" : "text-accent",
+            tone === "danger" ? "text-danger" : "text-ink-3",
             /^\d+$/.test(eyebrow) && "num"
           )}
         >
           {eyebrow}
         </p>
-        <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.025em] text-ink">{title}</h1>
+        <h1 className="text-[28px] font-medium leading-tight tracking-[-0.025em] text-ink">{title}</h1>
         {children}
       </div>
     </main>

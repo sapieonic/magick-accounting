@@ -26,6 +26,7 @@ import DetailList from "@/components/ui/DetailList";
 import { useReceiptOpener } from "@/components/assets/useReceiptOpener";
 import AssetFieldGroup from "@/components/assets/AssetFieldGroup";
 import { FieldGrid } from "@/components/ui/FormSection";
+import Money from "@/components/ui/Money";
 
 interface UserOption { _id: string; name: string; email: string }
 interface DepartmentOption { _id: string; name: string }
@@ -254,7 +255,7 @@ export default function AssetDetailPage() {
         title={asset.name}
         meta={
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="num font-medium text-accent">{asset.assetTag}</span>
+            <span className="num font-medium text-ink-2">{asset.assetTag}</span>
             <span aria-hidden="true">·</span>
             <span>{asset.assetCategory}</span>
             {asset.department?.name && (
@@ -319,7 +320,7 @@ export default function AssetDetailPage() {
                 value:
                   asset.canViewFinancials && asset.allocatedAmount != null && asset.allocatedGstAmount != null ? (
                     <span className="flex flex-col items-start">
-                      <span className="num font-medium">{money(asset.allocatedAmount)}</span>
+                      <Money value={money(asset.allocatedAmount)} className="font-medium" />
                       <span className="num text-xs text-ink-3">GST {money(asset.allocatedGstAmount)}</span>
                     </span>
                   ) : (

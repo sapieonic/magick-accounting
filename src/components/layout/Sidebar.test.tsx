@@ -255,19 +255,19 @@ describe("Sidebar", () => {
     expect(role).toHaveClass("whitespace-nowrap");
   });
 
-  it("outlines the active link with the rail-mark token, not a raw colour", () => {
+  it("lifts the active link with the rail tokens, not a raw colour", () => {
     render(<Sidebar open={false} onClose={() => {}} />);
     const active = screen.getAllByRole("link", { name: "Overview" })[0];
     expect(active).toHaveAttribute("aria-current", "page");
-    expect(active.className).toMatch(/\bring-rail-mark\/\[\.22\]/);
-    expect(active.className).not.toMatch(/rgba\(/);
+    expect(active).toHaveClass("bg-rail-active", "text-ink", "shadow-lift");
+    expect(active.className).not.toMatch(/rgba\(|#[0-9a-f]{3,6}/i);
   });
 
   describe("approvals count", () => {
     const withCount = (count: number) =>
       vi.mocked(useApprovalCount).mockReturnValue({ count, pendingAmount: 0, oldestPendingAt: null, refresh: () => {} });
 
-    it("lists Approvals first among the admin links, with a pill and the count in its name", () => {
+    it("lists Approvals first among the admin links, with a count and the count in its name", () => {
       withCount(4);
       const { container } = render(<Sidebar open={false} onClose={() => {}} />);
       const rail = container.querySelector("aside")!;
@@ -287,7 +287,7 @@ describe("Sidebar", () => {
       expect(within(link).getByTestId("rail-count-dot")).toBeInTheDocument();
     });
 
-    it("caps the pill at 99+ and drops it when nothing is waiting", () => {
+    it("caps the count at 99+ and drops it when nothing is waiting", () => {
       withCount(120);
       const { container, rerender } = render(<Sidebar open={false} onClose={() => {}} />);
       expect(within(container.querySelector("aside")!).getByText("99+")).toBeInTheDocument();

@@ -36,7 +36,7 @@ describe("form control classes", () => {
   });
 
   it("keeps the 3:1 control-line boundary on auto-filled fields (tint only)", () => {
-    expect(classes(aiFilledClass)).toEqual(["!bg-tint"]);
+    expect(classes(aiFilledClass)).toEqual(["!bg-accent-soft/50"]);
   });
 
   it("gives the compact select no w-full, so a width beside it applies (cn has no tailwind-merge)", () => {

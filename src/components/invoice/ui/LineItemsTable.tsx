@@ -5,6 +5,7 @@ import Button, { IconButton } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
 import { inputClass, panelPadX } from "@/components/ui/styles";
 import { formatRupees, lineItemAmount } from "@/lib/invoice";
+import Money from "@/components/ui/Money";
 
 export interface LineRow {
   /** Stable React key, so removing a row doesn't shift focus or state onto its neighbour. */
@@ -100,7 +101,7 @@ export default function LineItemsTable({ rows, onChange, onAdd, onRemove }: Line
               />
               <span className="flex items-baseline justify-between gap-2 [grid-area:amt] [@container(min-width:640px)]:justify-end">
                 <span className={cn("cap text-ink-3", narrowOnly)}>Amount</span>
-                <span className="num whitespace-nowrap text-sm font-medium text-ink">{formatRupees(amount)}</span>
+                <Money value={formatRupees(amount)} className="text-sm font-medium text-ink" />
               </span>
               <IconButton
                 icon={Trash2}

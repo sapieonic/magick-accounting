@@ -10,6 +10,7 @@ import { NOT_IN_TOTALS_SR, effectiveApprovalStatus } from "@/lib/approval";
 import { formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import { expenseDate, isForeign } from "@/components/expenses/ledger/format";
 import type { RecentExpense } from "./types";
+import Money from "@/components/ui/Money";
 
 /**
  * Ledger rows for the caller's latest expenses, any approval status; each
@@ -62,17 +63,13 @@ export default function LatestEntries({ expenses }: { expenses: RecentExpense[] 
                 </span>
               </span>
               <span className="flex flex-col items-end">
-                <span
-                  className={cn(
-                    "num whitespace-nowrap",
-                    counted ? "text-ink" : "text-ink-3",
-                    status === "rejected" && "line-through"
-                  )}
+                <Money
+                  value={formatCurrency(expense.amount, expense.currency?.code)}
+                  className={cn(counted ? "text-ink" : "text-ink-3", status === "rejected" && "line-through")}
                 >
-                  {formatCurrency(expense.amount, expense.currency?.code)}
                   {/* The strike/mute is visual only: say it too. */}
                   {status !== "approved" && <span className="sr-only">{NOT_IN_TOTALS_SR[status]}</span>}
-                </span>
+                </Money>
                 {isForeign(expense) && (
                   <span className={cn("num whitespace-nowrap text-xs text-ink-3", status === "rejected" && "line-through")}>
                     {formatBaseCurrency(expense.amountInBaseCurrency!)}

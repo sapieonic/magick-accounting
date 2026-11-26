@@ -26,6 +26,8 @@ interface RankedListProps {
 /** Ranked spend rows (bars scaled to the largest), each optionally a link. */
 export default function RankedList({ items, whole }: RankedListProps) {
   const max = Math.max(0, ...items.map((item) => item.total));
+  // The first row without a tone of its own leads in the accent (one per list).
+  const leadKey = items.find((item) => !item.tone)?.key;
   return (
     <ul className="-mx-2 flex flex-col">
       {items.map((item) => {
@@ -36,7 +38,7 @@ export default function RankedList({ items, whole }: RankedListProps) {
             ratio={max > 0 ? item.total / max : 0}
             share={percentOf(item.total, whole)}
             leading={item.leading}
-            tone={item.tone}
+            tone={item.tone ?? (item.key === leadKey ? "lead" : undefined)}
           />
         );
         const rowClass = "block rounded-control px-2 py-2";

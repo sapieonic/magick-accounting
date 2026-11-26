@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/components/ui/cn";
-import { target24 } from "@/components/ui/styles";
+import { target24, ICON_STROKE } from "@/components/ui/styles";
 
 export interface Crumb {
   label: string;
@@ -11,7 +11,7 @@ export interface Crumb {
 
 interface PageHeaderProps {
   title: ReactNode;
-  /** Small uppercase caption above the title (ignored when `breadcrumb` is set). */
+  /** Small caption above the title (ignored when `breadcrumb` is set). */
   eyebrow?: ReactNode;
   /** Trail of parent pages shown above the title; the last item may omit `href`. */
   breadcrumb?: Crumb[];
@@ -34,7 +34,7 @@ export default function PageHeader({ title, eyebrow, breadcrumb, meta, actions, 
                 <Fragment key={`${crumb.label}-${i}`}>
                   {i > 0 && (
                     <li aria-hidden="true" className="flex">
-                      <ChevronRight size={13} strokeWidth={1.75} />
+                      <ChevronRight size={13} strokeWidth={ICON_STROKE} />
                     </li>
                   )}
                   <li className="min-w-0">
@@ -56,10 +56,10 @@ export default function PageHeader({ title, eyebrow, breadcrumb, meta, actions, 
         ) : (
           eyebrow && <span className="cap text-ink-3">{eyebrow}</span>
         )}
-        <h1 className="text-[clamp(22px,2.2vw,28px)] font-semibold leading-tight tracking-[-0.025em] text-ink [text-wrap:balance]">
+        <h1 className="text-[clamp(24px,2.2vw,30px)] font-medium leading-[1.15] tracking-[-0.015em] text-ink [text-wrap:balance]">
           {title}
         </h1>
-        {meta && <div className="text-sm text-ink-3">{meta}</div>}
+        {meta && <div className="text-sm leading-5 text-ink-3">{meta}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>

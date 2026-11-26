@@ -7,6 +7,7 @@ import { CornerDownLeft, Plus, Search, type LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 import { useDialogLayer } from "@/hooks/useDialogLayer";
 import { ADMIN_ITEMS, NAV_ITEMS, NEW_EXPENSE_HREF, PROFILE_ITEM, type NavItem } from "@/components/layout/nav";
+import { ICON_STROKE, rowSelectedClass } from "@/components/ui/styles";
 
 export const OPEN_COMMAND_PALETTE_EVENT = "open-command-palette";
 
@@ -145,7 +146,7 @@ export default function CommandPalette() {
       />
       <div ref={panelRef} className="animate-slide-up relative w-full max-w-xl overflow-hidden rounded-panel border border-rule bg-surface shadow-elevated">
         <div className="flex items-center gap-3 border-b border-rule px-4">
-          <Search aria-hidden="true" size={16} strokeWidth={1.75} className="shrink-0 text-ink-3" />
+          <Search aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />
           <input
             ref={inputRef}
             type="text"
@@ -188,16 +189,16 @@ export default function CommandPalette() {
               onClick={() => run(item.href)}
               onMouseMove={() => setActiveIndex(i)}
               className={cn(
-                "flex min-h-11 cursor-pointer items-center gap-3 rounded-control px-3 text-sm transition-colors duration-140",
+                "flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 text-sm transition-colors duration-140",
                 i === activeIndex
-                  ? "bg-accent-soft text-accent shadow-[inset_3px_0_0_rgb(var(--accent))]"
+                  ? cn(rowSelectedClass, "text-accent")
                   : "text-ink-2"
               )}
             >
-              <item.icon aria-hidden="true" size={16} strokeWidth={1.75} className="shrink-0" />
+              <item.icon aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="shrink-0" />
               <span className="flex-1 truncate">{item.label}</span>
               {item.hint && <span className="cap shrink-0 text-ink-3">{item.hint}</span>}
-              {i === activeIndex && <CornerDownLeft aria-hidden="true" size={14} strokeWidth={1.75} className="shrink-0" />}
+              {i === activeIndex && <CornerDownLeft aria-hidden="true" size={14} strokeWidth={ICON_STROKE} className="shrink-0" />}
             </li>
           ))}
         </ul>

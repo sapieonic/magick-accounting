@@ -51,7 +51,7 @@ import { RemovableChip } from "@/components/ui/Badge";
 import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
 import SplitBar from "@/components/ui/SplitBar";
 import { cn } from "@/components/ui/cn";
-import { focusRing, panelClass, panelPadX, textButtonClass, transition } from "@/components/ui/styles";
+import { focusRing, panelClass, panelPadX, textButtonClass, transition, ICON_STROKE } from "@/components/ui/styles";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseDetailPanel from "@/components/expenses/ledger/ExpenseDetailPanel";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
@@ -241,7 +241,7 @@ function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: (
           )}
         />
       </span>
-      <Luggage aria-hidden="true" size={16} strokeWidth={1.6} className="text-cat-tr" />
+      <Luggage aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="text-ink-3" />
       Group trips
     </button>
   );
@@ -1085,7 +1085,7 @@ export default function ExpensesPage() {
                   focusRing
                 )}
               >
-                <CircleX aria-hidden="true" size={14} strokeWidth={1.75} />
+                <CircleX aria-hidden="true" size={14} strokeWidth={ICON_STROKE} />
                 {rejectedCount} rejected — see why
               </button>
             ) : undefined
@@ -1239,7 +1239,7 @@ export default function ExpensesPage() {
                 canModify={canModify}
                 onClose={() => setSelectedId(null)}
                 showHeader
-                className="bg-wash-r p-5"
+                className="p-5"
               />
             ) : (
               <EmptyState

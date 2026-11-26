@@ -123,12 +123,11 @@ export default function DashboardPage() {
   );
 
   const departmentItems = withRemainder(
-    (charts?.departmentSpend ?? []).map((d, i) => ({
+    (charts?.departmentSpend ?? []).map((d) => ({
       key: d._id ?? d.name,
       label: d.name,
       total: d.total,
       href: d._id ? `/dashboard/expenses?department=${d._id}` : undefined,
-      tone: i === 0 ? ("ramp" as const) : ("accent" as const),
     })),
     total,
     "Other departments"
