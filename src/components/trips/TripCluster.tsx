@@ -9,13 +9,14 @@ import { formatBaseCurrency } from "@/lib/currency";
 import { formatTripDates, getTripStatus } from "@/lib/trip";
 import Button from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
-import { focusRing, ledgerPad, textButtonClass } from "@/components/ui/styles";
+import { focusRing, ledgerPad, textButtonClass, ICON_STROKE } from "@/components/ui/styles";
 import { TripStatusBadge } from "@/components/trips/TripMeta";
 import TripTimeline from "@/components/trips/TripTimeline";
 import type { ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import { baseAmount } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
+import Money from "@/components/ui/Money";
 
 interface TripClusterProps extends ExpenseActions {
   trip: TripSummary;
@@ -124,7 +125,7 @@ export default function TripCluster({
       {/* Narrow: name and total, then the status line. Wide (container ≥ 620px): one line. */}
       <div
         className={cn(
-          "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3.5 border-t border-rule-2 bg-gradient-to-r from-cat-tr-soft to-accent-soft py-1.5 [@container(min-width:620px)]:grid-cols-[minmax(0,1fr)_auto_auto]",
+          "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3.5 border-t border-rule-2 bg-sunk py-1.5 [@container(min-width:620px)]:grid-cols-[minmax(0,1fr)_auto_auto]",
           ledgerPad()
         )}
       >
@@ -140,12 +141,12 @@ export default function TripCluster({
           <ChevronRight
             aria-hidden="true"
             size={14}
-            strokeWidth={1.75}
+            strokeWidth={ICON_STROKE}
             className={cn("shrink-0 text-ink-2 transition-transform duration-140", expanded && "rotate-90")}
           />
-          <Luggage aria-hidden="true" size={18} strokeWidth={1.6} className="shrink-0 text-cat-tr" />
+          <Luggage aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />
           <span className="flex min-w-0 flex-col">
-            <span className="ell font-semibold text-ink">{trip.name}</span>
+            <span className="ell font-medium text-ink">{trip.name}</span>
             <span className="flex min-w-0 gap-1.5 text-xs text-ink-2">
               <span className="shrink-0">{dates}</span>
               <span aria-hidden="true">·</span>
@@ -165,7 +166,7 @@ export default function TripCluster({
           <TripStatusBadge status={getTripStatus(trip)} />
           {missingReceipts > 0 && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-amber">
-              <FileWarning aria-hidden="true" size={13} strokeWidth={1.75} />
+              <FileWarning aria-hidden="true" size={13} strokeWidth={ICON_STROKE} />
               {missingReceipts} without receipt
             </span>
           )}
@@ -175,11 +176,11 @@ export default function TripCluster({
             className={textButtonClass}
           >
             Open trip
-            <ArrowUpRight aria-hidden="true" size={13} strokeWidth={1.75} />
+            <ArrowUpRight aria-hidden="true" size={13} strokeWidth={ICON_STROKE} />
           </Link>
         </span>
         <span className="col-start-2 row-start-1 flex flex-col items-end text-right [@container(min-width:620px)]:col-start-3 [@container(min-width:620px)]:min-w-[104px]">
-          <span className="num whitespace-nowrap font-medium text-ink">{formatBaseCurrency(total)}</span>
+          <Money value={formatBaseCurrency(total)} className="font-medium text-ink" />
           {pendingLabel && (
             <span className="num whitespace-nowrap text-xs text-ink-3" title="Awaiting approval, not in the total">
               {pendingLabel}
@@ -194,13 +195,13 @@ export default function TripCluster({
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5">
               {trip.travelers.length > 0 && (
                 <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <Users aria-hidden="true" size={13} strokeWidth={1.75} className="shrink-0" />
+                  <Users aria-hidden="true" size={13} strokeWidth={ICON_STROKE} className="shrink-0" />
                   <span className="ell">{travellers}</span>
                 </span>
               )}
               {trip.destinations.length > 0 && (
                 <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <MapPin aria-hidden="true" size={13} strokeWidth={1.75} className="shrink-0" />
+                  <MapPin aria-hidden="true" size={13} strokeWidth={ICON_STROKE} className="shrink-0" />
                   <span className="ell">{trip.destinations.join(", ")}</span>
                 </span>
               )}

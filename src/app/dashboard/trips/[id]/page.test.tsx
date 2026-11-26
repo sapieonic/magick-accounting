@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatBaseCurrency } from "@/lib/currency";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse } from "@/types/trip";
+import { byAmount } from "@/test/amount";
 
 const pushMock = vi.fn();
 const router = { push: pushMock };
@@ -226,7 +227,7 @@ describe("TripDetailPage", () => {
       `/dashboard/expenses/new?trip=${TRIP_ID}`
     );
 
-    expect(screen.getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+    expect(screen.getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
     expect(screen.getByText("Owed to travelers")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Budget used" })).toHaveAttribute("aria-valuenow", "63");
 
@@ -303,7 +304,7 @@ describe("TripDetailPage", () => {
 
     await act(async () => resolveSlow(withoutHotel));
     expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Taj stay");
-    expect(screen.getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+    expect(screen.getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
   });
 
   it("passes ?expand= to the timeline", async () => {
@@ -399,7 +400,7 @@ describe("TripDetailPage", () => {
 
     const panel = await screen.findByRole("region", { name: "Might belong here" });
     await within(panel).findByText("Airport cab");
-    const [amount] = within(panel).getAllByText(formatBaseCurrency(100));
+    const [amount] = within(panel).getAllByText(byAmount(formatBaseCurrency(100)));
     expect(amount).toHaveClass("whitespace-nowrap");
     expect(amount.closest(".ell")).toBeNull();
   });
@@ -466,8 +467,8 @@ describe("TripDetailPage", () => {
 
     expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
     // Total drops to the hotel alone and nothing is owed any more.
-    expect(screen.getAllByText(formatBaseCurrency(5500)).length).toBeGreaterThan(0);
-    expect(screen.queryByText(formatBaseCurrency(12500))).not.toBeInTheDocument();
+    expect(screen.getAllByText(byAmount(formatBaseCurrency(5500))).length).toBeGreaterThan(0);
+    expect(screen.queryByText(byAmount(formatBaseCurrency(12500)))).not.toBeInTheDocument();
     expect(toastMock).toHaveBeenCalledWith('Deleted "IndiGo BOM"', "info", expect.objectContaining({ durationMs: 5000 }));
     expect(api.delete).not.toHaveBeenCalled();
 
@@ -613,7 +614,7 @@ describe("TripDetailPage", () => {
     const options = toastMock.mock.calls.find(([message]) => message === 'Deleted "IndiGo BOM"')?.[2];
     act(() => options.action.onClick());
     expect(screen.getByTestId("trip-timeline")).not.toHaveTextContent("IndiGo BOM");
-    expect(screen.queryByText(formatBaseCurrency(12500))).not.toBeInTheDocument();
+    expect(screen.queryByText(byAmount(formatBaseCurrency(12500)))).not.toBeInTheDocument();
 
     // Leaving the page doesn't send it again.
     unmount();
@@ -655,7 +656,7 @@ describe("TripDetailPage", () => {
     act(() => options.action.onClick());
 
     expect(screen.getByTestId("trip-timeline")).toHaveTextContent("IndiGo BOM");
-    expect(screen.getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+    expect(screen.getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
     await act(async () => {
       vi.advanceTimersByTime(6000);
     });
@@ -694,7 +695,7 @@ describe("TripDetailPage", () => {
       render(<TripDetailPage />);
 
       const totals = await screen.findByRole("region", { name: "Trip totals" });
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
       expect(totals).toHaveTextContent("2 approved expenses ·");
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval (1 expense)`);
       const meter = within(totals).getByRole("progressbar", { name: "Budget used" });
@@ -723,9 +724,9 @@ describe("TripDetailPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Delete Airport cab" }));
 
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
       expect(totals).not.toHaveTextContent(/awaiting approval/);
-      expect(within(totals).getByText(formatBaseCurrency(7000))).toBeInTheDocument(); // pocket unchanged
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(7000)))).toBeInTheDocument(); // pocket unchanged
       expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7000));
     });
 
@@ -745,9 +746,9 @@ describe("TripDetailPage", () => {
         screen.getByRole("button", { name: "Approve Airport cab" }).click();
       });
       // In the totals at once, with Undo.
-      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(13300)))).toBeInTheDocument();
       expect(totals).not.toHaveTextContent(/awaiting approval/);
-      expect(within(totals).getByText(formatBaseCurrency(7800))).toBeInTheDocument(); // from pocket
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(7800)))).toBeInTheDocument(); // from pocket
       expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7800));
       expect(screen.getAllByTestId("type-row")).toHaveLength(3);
       expect(api.post).not.toHaveBeenCalled();
@@ -775,7 +776,7 @@ describe("TripDetailPage", () => {
 
       expect(api.post).toHaveBeenCalledWith(`/api/expenses/${cab._id}/approval`, { action: "approve", revision: 0 });
       await waitFor(() => expect(tripLoads()).toBe(loadsBefore + 1));
-      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(13300)))).toBeInTheDocument();
       expect(totals).toHaveTextContent("3 expenses ·");
     });
 
@@ -785,9 +786,9 @@ describe("TripDetailPage", () => {
       act(() => {
         screen.getByRole("button", { name: "Approve Airport cab" }).click();
       });
-      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(13300)))).toBeInTheDocument();
       act(() => toastMock.mock.calls.at(-1)![2].action.onClick());
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
     });
 
@@ -833,7 +834,7 @@ describe("TripDetailPage", () => {
       });
       render(<TripDetailPage />);
       const totals = await screen.findByRole("region", { name: "Trip totals" });
-      expect(within(totals).getByText(formatBaseCurrency(13300))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(13300)))).toBeInTheDocument();
 
       vi.mocked(api.post).mockResolvedValue({ expense: { ...approvedCab, approvalStatus: "pending" } });
       // The summary the page reloads afterwards: the server agrees.
@@ -855,12 +856,12 @@ describe("TripDetailPage", () => {
         expect(api.post).toHaveBeenCalledWith(`/api/expenses/${cab._id}/approval`, expect.objectContaining({ action: "reopen" }))
       );
       await waitFor(() => expect(vi.mocked(api.get).mock.calls.length).toBeGreaterThan(before));
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval (1 expense)`);
       expect(screen.getAllByTestId("type-row")).toHaveLength(2);
       expect(screen.getAllByTestId("payer-row")[0]).toHaveTextContent(formatBaseCurrency(7000));
       await act(async () => release());
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
     });
 
     it("won't delete an approved expense for an admin, and says only the master admin can", async () => {
@@ -911,7 +912,7 @@ describe("TripDetailPage", () => {
       await waitFor(() => expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Airport cab"));
       expect(screen.getByTestId("trip-timeline")).toHaveTextContent("Team dinner");
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
       // And the trip is read again, so the rows show what the server has now.
       await waitFor(() => expect(tripLoads()).toBeGreaterThan(1));
     });
@@ -923,7 +924,7 @@ describe("TripDetailPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Delete Team dinner" }));
 
-      expect(within(totals).getByText(formatBaseCurrency(12500))).toBeInTheDocument();
+      expect(within(totals).getByText(byAmount(formatBaseCurrency(12500)))).toBeInTheDocument();
       expect(totals).toHaveTextContent(`Excludes ${formatBaseCurrency(800)} awaiting approval`);
       expect(screen.getAllByTestId("type-row")).toHaveLength(2);
     });

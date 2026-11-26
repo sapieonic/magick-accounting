@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import TripCluster from "./TripCluster";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripSummary } from "@/types/trip";
+import { byAmount } from "@/test/amount";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: any) => (
@@ -106,7 +107,7 @@ describe("TripCluster approval totals", () => {
       makeGoaExpense({ _id: "bar", amount: 900, amountInBaseCurrency: 900, approvalStatus: "rejected" }),
     ]);
 
-    expect(screen.getByText("₹20,000.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹20,000.00"))).toBeInTheDocument();
     expect(screen.getByText("+₹650.00 awaiting approval")).toBeInTheDocument();
     // The count still lists every expense in the cluster.
     expect(screen.getByText("4 expenses")).toBeInTheDocument();
@@ -118,7 +119,7 @@ describe("TripCluster approval totals", () => {
   it("shows only the total when everything is approved", () => {
     renderGoaCluster([makeGoaExpense({ _id: "hotel", amount: 8000, amountInBaseCurrency: 8000, approvalStatus: "approved" })]);
 
-    expect(screen.getByText("₹8,000.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹8,000.00"))).toBeInTheDocument();
     expect(screen.queryByText(/awaiting approval|pending/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Goa client visit/ })).toHaveAccessibleName(/₹8,000\.00$/);
   });

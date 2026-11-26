@@ -21,21 +21,15 @@ describe("BrandLogo", () => {
   });
 
   it.each([{ compact: false }, { compact: true }])(
-    "puts the mark on the rail's white tile in dark mode (%o)",
+    "shows the mark as supplied, with no tile in either theme (%o)",
     ({ compact }) => {
       const { container } = render(<BrandLogo compact={compact} size="sm" />);
       const mark = container.querySelector('img[src="/logo.png"]')?.parentElement;
 
-      expect(mark).toHaveClass("dark:bg-white", "dark:p-[3px]", "dark:rounded-md");
+      expect(mark?.className).not.toMatch(/(^|\s)(dark:)?bg-/);
+      expect(mark?.className).not.toMatch(/(^|\s)(dark:)?p-/);
     }
   );
-
-  it("always tiles the mark on dark surfaces", () => {
-    const { container } = render(<BrandLogo variant="onDark" compact />);
-    const mark = container.querySelector('img[src="/logo.png"]')?.parentElement;
-
-    expect(mark).toHaveClass("bg-white", "p-[3px]", "rounded-md");
-  });
 
   it("hides the wordmark in compact mode", () => {
     render(<BrandLogo compact />);

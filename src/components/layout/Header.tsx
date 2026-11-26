@@ -9,7 +9,7 @@ import Button, { IconButton } from "@/components/ui/Button";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/ui/CommandPalette";
 import { NEW_EXPENSE_HREF, currentSection } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
-import { transition } from "@/components/ui/styles";
+import { transition, ICON_STROKE } from "@/components/ui/styles";
 
 const openPalette = () => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
 
@@ -31,8 +31,8 @@ export default function Header() {
         {section && (
           <p className="flex min-w-0 items-center gap-1.5 text-sm">
             <span className="hidden text-ink-3 sm:inline">{section.group}</span>
-            <ChevronRight aria-hidden="true" size={14} strokeWidth={1.75} className="hidden shrink-0 text-ink-3 sm:block" />
-            <span className="ell font-semibold text-ink">{section.label}</span>
+            <ChevronRight aria-hidden="true" size={14} strokeWidth={ICON_STROKE} className="hidden shrink-0 text-ink-3 sm:block" />
+            <span className="ell font-medium text-ink">{section.label}</span>
           </p>
         )}
       </div>
@@ -42,11 +42,11 @@ export default function Header() {
         onClick={openPalette}
         aria-keyshortcuts="Meta+K Control+K"
         className={cn(
-          "hidden h-11 min-w-0 max-w-[520px] flex-[1_1_240px] cursor-pointer items-center gap-2 rounded-control border border-rule bg-surface px-3 text-left text-ink-3 hover:border-accent-line md:flex lg:ml-4",
+          "hidden h-11 min-w-0 max-w-[520px] flex-[1_1_240px] cursor-pointer items-center gap-2 rounded-control border border-control-line bg-surface px-3 text-left text-ink-3 hover:border-ink-3 md:flex lg:ml-4",
           transition
         )}
       >
-        <Search aria-hidden="true" size={16} strokeWidth={1.5} className="shrink-0" />
+        <Search aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="shrink-0" />
         <span className="ell flex-1">Search expenses, trips, people</span>
         <kbd className="num shrink-0 rounded border border-rule bg-sunk px-1.5 py-0.5 text-[11px]">⌘K</kbd>
       </button>

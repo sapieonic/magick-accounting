@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import EditExpensePage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiError, api } from "@/lib/api";
+import { byAmount } from "@/test/amount";
 
 /**
  * The innermost Notice whose text includes `text`. Notices are found by their
@@ -519,7 +520,7 @@ describe("EditExpensePage INR preview", () => {
     expect(select.selectedOptions[0]).toHaveTextContent("USD $");
     expect(screen.getByText(/≈ ₹8,000\.00 at this expense's saved USD rate/)).toBeInTheDocument();
     expect(screen.queryByText(/base currency, no conversion/i)).not.toBeInTheDocument();
-    expect(screen.getByText("$100.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("$100.00"))).toBeInTheDocument();
   });
 });
 

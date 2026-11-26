@@ -1,19 +1,22 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { X, type LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
-import { focusRing, transition } from "@/components/ui/styles";
+import { focusRing, transition, ICON_STROKE } from "@/components/ui/styles";
 
-export type Tone = "neutral" | "accent" | "amber" | "success" | "danger";
+/** Badge tones. No accent: the accent marks actions and selection, never a status. */
+export type Tone = "neutral" | "amber" | "success" | "danger";
+
+/** Dots also mark the company share of a split (the accent). */
+export type DotTone = Tone | "accent";
 
 const toneClass: Record<Tone, string> = {
   neutral: "bg-sunk text-ink-2",
-  accent: "bg-accent-soft text-accent",
   amber: "bg-amber-soft text-amber",
   success: "bg-success-soft text-success",
   danger: "bg-danger-soft text-danger",
 };
 
-const dotClass: Record<Tone, string> = {
+const dotClass: Record<DotTone, string> = {
   neutral: "bg-ink-3",
   accent: "bg-accent",
   amber: "bg-pocket",
@@ -22,7 +25,7 @@ const dotClass: Record<Tone, string> = {
 };
 
 /** 7px status dot in a tone's colour (company = accent, pocket = amber). */
-export function Dot({ tone = "neutral", className }: { tone?: Tone; className?: string }) {
+export function Dot({ tone = "neutral", className }: { tone?: DotTone; className?: string }) {
   return <span aria-hidden="true" className={cn("inline-block h-[7px] w-[7px] shrink-0 rounded-full", dotClass[tone], className)} />;
 }
 
@@ -40,12 +43,12 @@ export default function Badge({ tone = "neutral", icon: Icon, dot, className, ch
   return (
     <span
       className={cn(
-        "inline-flex h-6 max-w-full items-center gap-1.5 whitespace-nowrap rounded-[5px] px-2 text-xs font-medium",
+        "inline-flex h-6 max-w-full items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-medium",
         toneClass[tone],
         className
       )}
     >
-      {Icon ? <Icon aria-hidden="true" size={13} strokeWidth={1.75} className="shrink-0" /> : dot && <Dot tone={tone} />}
+      {Icon ? <Icon aria-hidden="true" size={13} strokeWidth={ICON_STROKE} className="shrink-0" /> : dot && <Dot tone={tone} />}
       <span className="ell">{children}</span>
     </span>
   );
@@ -72,14 +75,14 @@ export function Chip({ pressed = false, icon: Icon, className, children, type = 
         transition,
         focusRing,
         pressed
-          ? "border-accent bg-accent-soft font-semibold text-accent"
-          : "border-control-line bg-surface text-ink hover:border-accent-2 hover:bg-hover",
+          ? "border-accent bg-accent-soft font-medium text-accent"
+          : "border-control-line bg-surface text-ink hover:border-ink-3 hover:bg-hover",
         className
       )}
       {...rest}
     >
       {Icon && (
-        <Icon aria-hidden="true" size={15} strokeWidth={1.75} className={pressed ? undefined : "text-ink-3"} />
+        <Icon aria-hidden="true" size={15} strokeWidth={ICON_STROKE} className={pressed ? undefined : "text-ink-3"} />
       )}
       {children}
     </button>
@@ -94,7 +97,7 @@ interface RemovableChipProps {
   children: ReactNode;
 }
 
-/** A picked value shown as an indigo chip; the whole chip is the remove button. */
+/** A picked value shown as an accent chip; the whole chip is the remove button. */
 export function RemovableChip({ onRemove, removeLabel, children }: RemovableChipProps) {
   return (
     <button
@@ -109,7 +112,7 @@ export function RemovableChip({ onRemove, removeLabel, children }: RemovableChip
       )}
     >
       <span className="ell">{children}</span>
-      <X aria-hidden="true" size={14} strokeWidth={1.75} className="shrink-0" />
+      <X aria-hidden="true" size={14} strokeWidth={ICON_STROKE} className="shrink-0" />
       {!removeLabel && <span className="sr-only">(remove)</span>}
     </button>
   );

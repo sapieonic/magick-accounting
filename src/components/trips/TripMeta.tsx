@@ -12,7 +12,7 @@ import type { TripPerson } from "@/types/trip";
 export function TripStatusBadge({ status, children }: { status: TripStatus; children?: ReactNode }) {
   const label = children ?? TRIP_STATUS_LABELS[status];
   if (status === "ongoing") return <Badge tone="success" dot>{label}</Badge>;
-  if (status === "upcoming") return <Badge tone="accent" icon={CalendarClock}>{label}</Badge>;
+  if (status === "upcoming") return <Badge tone="neutral" icon={CalendarClock}>{label}</Badge>;
   return <Badge icon={CircleCheck}>{label}</Badge>;
 }
 
@@ -29,7 +29,7 @@ export function TravelerAvatars({ travelers, max = 4 }: { travelers: TripPerson[
         <Avatar key={person._id} name={person.name || person.email} photoURL={person.photoURL} size={28} className="ring-2 ring-surface" />
       ))}
       {extra > 0 && (
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sunk text-[10px] font-semibold text-ink-2 ring-2 ring-surface">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sunk text-[10px] font-medium text-ink-2 ring-2 ring-surface">
           +{extra}
         </span>
       )}
@@ -38,7 +38,7 @@ export function TravelerAvatars({ travelers, max = 4 }: { travelers: TripPerson[
 }
 
 /**
- * How much of a trip budget is spent: indigo, amber above 80%, red once over.
+ * How much of a trip budget is spent: the accent, amber above 80%, red once over.
  * `pending` (awaiting approval, not in `spent`) shows as a hatched segment
  * after it, so a budget about to be used up isn't a surprise.
  * Only meaningful for totals covering the whole trip (admins).
@@ -66,7 +66,7 @@ export function BudgetMeter({
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div
-        className="flex h-1.5 overflow-hidden rounded-[3px] bg-sunk"
+        className="flex h-1.5 overflow-hidden rounded-full bg-sunk"
         role="progressbar"
         aria-label="Budget used"
         aria-valuemin={0}
@@ -75,7 +75,7 @@ export function BudgetMeter({
         aria-valuetext={`${percent}%${hasPending ? `, plus ${formatBaseCurrency(pending)} awaiting approval` : ""}`}
       >
         <div
-          className={cn("h-full shrink-0 rounded-[3px]", over ? "bg-danger" : warn ? "bg-pocket" : "bg-ramp")}
+          className={cn("h-full shrink-0 rounded-full", over ? "bg-danger" : warn ? "bg-pocket" : "bg-accent")}
           style={{ width: `${spentWidth}%` }}
         />
         {pendingWidth > 0 && (

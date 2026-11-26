@@ -46,26 +46,26 @@ export default function MonthlySpendPanel({ data }: { data: MonthPoint[] }) {
                     href={`/dashboard/expenses?month=${m.key}`}
                     aria-label={label}
                     title={label}
-                    className={cn("flex min-w-0 flex-1 flex-col rounded-control hover:bg-tint", transition, focusRing)}
+                    className={cn("flex min-w-0 flex-1 flex-col rounded-control hover:bg-tint-2", transition, focusRing)}
                   >
                     <span
                       className={cn(
-                        "num whitespace-nowrap pb-1.5 pt-1 text-center text-xs",
-                        isPeak ? "font-semibold text-accent" : "text-ink-2"
+                        "num whitespace-nowrap pb-2 pt-1 text-center text-xs",
+                        isPeak ? "font-medium text-ink" : "text-ink-3"
                       )}
                     >
                       {formatCompactBase(m.total)}
                     </span>
-                    <span className="flex flex-1 items-end justify-center border-b border-ink px-[clamp(3px,0.6vw,6px)]">
+                    <span className="flex flex-1 items-end justify-center border-b border-ink/70 px-[clamp(4px,0.8vw,10px)]">
                       <span
                         className={cn(
-                          "w-full max-w-[84px] rounded-t-md",
-                          isCurrent ? "bg-hatch" : isPeak ? "bg-gradient-to-t from-accent to-accent-2" : "bg-bar"
+                          "w-full max-w-[72px] rounded-t",
+                          isCurrent ? "bg-hatch" : isPeak ? "bg-accent" : "bg-bar"
                         )}
                         style={{ height: `${max > 0 ? (m.total / max) * 100 : 0}%`, minHeight: m.total > 0 ? 2 : 0 }}
                       />
                     </span>
-                    <span className={cn("pb-1 pt-2 text-center text-xs", isPeak ? "font-semibold text-accent" : "text-ink-3")}>
+                    <span className={cn("pb-1 pt-2 text-center text-xs", isPeak ? "font-medium text-ink" : "text-ink-3")}>
                       {m.month}
                     </span>
                   </Link>

@@ -12,6 +12,7 @@ import Panel from "@/components/ui/Panel";
 import Button from "@/components/ui/Button";
 import Badge, { Dot, type Tone } from "@/components/ui/Badge";
 import { ICON_STROKE, linkClass } from "@/components/ui/styles";
+import Notice from "@/components/ui/Notice";
 
 export interface TelegramLinkStatus {
   available: boolean;
@@ -118,7 +119,7 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
         ? { label: "Linked", tone: "success" }
         : { label: "Bot offline", tone: "amber" }
       : pending
-        ? { label: "Waiting", tone: "accent" }
+        ? { label: "Waiting", tone: "neutral" }
         : { label: status.available ? "Not linked" : "Not set up", tone: "neutral" };
 
   return (
@@ -220,28 +221,27 @@ export default function TelegramLinkCard({ isAdmin }: { isAdmin: boolean }) {
       )}
 
       {status?.available && !status.link && pending && (
-        <div className="flex flex-col gap-3 rounded-panel border border-accent-line bg-tint p-4">
-          <div>
-            <p className="text-sm font-medium text-ink">Finish linking in Telegram</p>
-            <p className="mt-1 text-sm text-ink-2">
-              Open Telegram, tap <span className="font-medium text-ink">Start</span> in the chat with @
-              {status.botUsername}, then confirm with <span className="font-medium text-ink">Yes, link it</span>. This
-              page updates once you&apos;re linked.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button icon={ExternalLink} href={pending.url} target="_blank" rel="noopener noreferrer">
-              Open Telegram
-            </Button>
-            <Button variant="ghost" onClick={() => setPending(null)}>
-              Cancel
-            </Button>
-            <span role="status" className="flex items-center gap-2 text-[13px] text-ink-3">
-              <Spinner size="sm" decorative /> Waiting… link expires at{" "}
-              <span className="tabular-nums">{format(new Date(pending.expiresAt), "h:mm a")}</span>
-            </span>
-          </div>
-        </div>
+        <Notice
+          title="Finish linking in Telegram"
+          actions={
+            <>
+              <Button icon={ExternalLink} href={pending.url} target="_blank" rel="noopener noreferrer">
+                Open Telegram
+              </Button>
+              <Button variant="ghost" onClick={() => setPending(null)}>
+                Cancel
+              </Button>
+              <span role="status" className="flex items-center gap-2 text-[13px] text-ink-3">
+                <Spinner size="sm" decorative /> Waiting… link expires at{" "}
+                <span className="tabular-nums">{format(new Date(pending.expiresAt), "h:mm a")}</span>
+              </span>
+            </>
+          }
+        >
+          Open Telegram, tap <span className="font-medium text-ink">Start</span> in the chat with @{status.botUsername},
+          then confirm with <span className="font-medium text-ink">Yes, link it</span>. This page updates once you&apos;re
+          linked.
+        </Notice>
       )}
 
       <ConfirmDialog

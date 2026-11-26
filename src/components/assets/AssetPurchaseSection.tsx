@@ -6,6 +6,7 @@ import Field, { inputClass, selectClass } from "@/components/ui/Field";
 import { FieldGrid } from "@/components/ui/FormSection";
 import { cn } from "@/components/ui/cn";
 import AssetFieldGroup from "@/components/assets/AssetFieldGroup";
+import { ICON_STROKE, sectionTitleClass, dashedPromptClass } from "@/components/ui/styles";
 
 export interface AssetDraft {
   id: string;
@@ -109,9 +110,9 @@ export default function AssetPurchaseSection({
 
   if (assets.length === 0) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-dashed border-accent-line bg-tint p-4">
+      <div className={cn("flex flex-wrap items-center justify-between gap-4 rounded-panel p-4", dashedPromptClass)}>
         <div className="flex min-w-0 flex-1 basis-[280px] items-start gap-3">
-          <PackagePlus aria-hidden="true" size={20} strokeWidth={1.5} className="mt-0.5 shrink-0 text-accent" />
+          <PackagePlus aria-hidden="true" size={20} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0 text-ink-3" />
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium text-ink">Does this purchase contain company assets?</p>
             <p className="text-[13px] text-ink-3 [text-wrap:pretty]">
@@ -133,7 +134,7 @@ export default function AssetPurchaseSection({
     <section aria-labelledby="company-assets-heading" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 id="company-assets-heading" className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+          <h2 id="company-assets-heading" className={sectionTitleClass}>
             Company assets
           </h2>
           <p className="text-[13px] text-ink-3">
@@ -157,7 +158,7 @@ export default function AssetPurchaseSection({
             className="flex flex-col gap-4 rounded-panel border border-rule p-[clamp(14px,2vw,20px)]"
           >
             <div className="flex items-center justify-between gap-2">
-              <p id={headingId} className="text-sm font-semibold text-ink">
+              <p id={headingId} className="text-sm font-medium text-ink">
                 Asset {n}
               </p>
               <div className="flex items-center gap-1">

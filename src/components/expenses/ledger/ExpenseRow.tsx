@@ -10,7 +10,7 @@ import { IconButton } from "@/components/ui/Button";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import Checkbox from "@/components/ui/Checkbox";
 import { cn } from "@/components/ui/cn";
-import { ledgerPad, peerFocusRing, rowClass, rowSelectedClass, target24, transition } from "@/components/ui/styles";
+import { ledgerPad, peerFocusRing, rowClass, rowSelectedClass, target24, transition, ICON_STROKE } from "@/components/ui/styles";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
 import ExpenseDetail, { type ExpenseActions } from "@/components/expenses/ledger/ExpenseDetail";
 import PaymentMark from "@/components/expenses/ledger/PaymentMark";
@@ -19,6 +19,7 @@ import { relativeTime, submittedAt } from "@/components/approvals/approval-forma
 import { expenseDate, expensePayerSummary, isForeign } from "@/components/expenses/ledger/format";
 import { deleteOffer } from "@/components/expenses/review-status";
 import type { ExpenseListItem } from "@/types/expense";
+import Money from "@/components/ui/Money";
 
 /*
  * Ledger rows lay out against their list's width, not the viewport: the
@@ -299,14 +300,14 @@ export default function ExpenseRow({
               {expense.title}
             </button>
             {expense.receiptKey && (
-              <Paperclip role="img" aria-label="Receipt attached" size={13} strokeWidth={1.75} className="shrink-0 text-accent" />
+              <Paperclip role="img" aria-label="Receipt attached" size={13} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />
             )}
             {assets > 0 && (
               <span
                 title={`${assets} linked asset${assets !== 1 ? "s" : ""}`}
-                className="inline-flex shrink-0 items-center gap-0.5 rounded-[5px] bg-accent-soft px-1 text-[11px] font-medium text-accent"
+                className="inline-flex shrink-0 items-center gap-0.5 rounded bg-sunk px-1 text-xs font-medium text-ink-2"
               >
-                <Package aria-hidden="true" size={11} strokeWidth={1.75} />
+                <Package aria-hidden="true" size={11} strokeWidth={ICON_STROKE} />
                 <span className="num">{assets}</span>
                 <span className="sr-only"> linked asset{assets !== 1 ? "s" : ""}</span>
               </span>
@@ -328,11 +329,11 @@ export default function ExpenseRow({
               title={`Open trip: ${trip.name}`}
               className={cn(
                 target24,
-                "relative z-10 w-fit max-w-full gap-1 text-xs font-medium text-cat-tr hover:text-ink",
+                "relative z-10 w-fit max-w-full gap-1 text-xs font-medium text-ink-2 hover:text-ink",
                 transition
               )}
             >
-              <Luggage aria-hidden="true" size={12} strokeWidth={1.75} className="shrink-0" />
+              <Luggage aria-hidden="true" size={12} strokeWidth={ICON_STROKE} className="shrink-0" />
               <span className="ell">{trip.name}</span>
               {expense.travelType && <span className="shrink-0 font-normal text-ink-3">· {typeLabel}</span>}
             </Link>
@@ -360,16 +361,12 @@ export default function ExpenseRow({
               "sm:[@media(hover:hover)]:group-hover:invisible sm:[@media(hover:hover)]:group-has-[[data-row-actions]:focus-within]:invisible"
             )}
           >
-            <span
-              className={cn(
-                "num whitespace-nowrap font-medium",
-                flagStatus ? "text-ink-3" : "text-ink",
-                flagStatus && status === "rejected" && "line-through"
-              )}
+            <Money
+              value={formatCurrency(expense.amount, code)}
+              className={cn("font-medium", flagStatus ? "text-ink-3" : "text-ink", flagStatus && status === "rejected" && "line-through")}
             >
-              {formatCurrency(expense.amount, code)}
               {flagStatus && <span className="sr-only">{NOT_IN_TOTALS_SR[status]}</span>}
-            </span>
+            </Money>
             {isForeign(expense) && (
               <span className={cn("num whitespace-nowrap text-xs text-ink-3", flagStatus && status === "rejected" && "line-through")}>
                 {formatBaseCurrency(expense.amountInBaseCurrency!)}

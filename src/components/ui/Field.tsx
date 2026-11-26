@@ -3,6 +3,7 @@
 import { Children, cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 export { inputClass, selectClass, textareaClass, aiFilledClass } from "@/components/ui/styles";
 
@@ -29,7 +30,7 @@ interface FieldProps {
 
 type ControlProps = { id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean | "true" | "false" };
 
-/** Label + control + hint/error, stacked. Labels are 11px captions. */
+/** Label + control + hint/error, stacked. Labels are 12px captions. */
 export default function Field({
   label,
   children,
@@ -61,14 +62,14 @@ export default function Field({
     <div className={cn("flex min-w-0 flex-col gap-1", className)}>
       <div className="flex items-center justify-between gap-2">
         <label htmlFor={controlId} className="cap flex items-center gap-1.5 text-ink-3">
-          {Icon && <Icon aria-hidden="true" size={13} strokeWidth={1.8} />}
+          {Icon && <Icon aria-hidden="true" size={13} strokeWidth={ICON_STROKE} />}
           <span>
             {label}
-            {optional && <span className="font-normal normal-case tracking-normal">, optional</span>}
+            {optional && <span className="font-normal">, optional</span>}
           </span>
         </label>
         {/* The marker keeps to one line, so labels in a FieldGrid row stay level. */}
-        {aside && <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-accent">{aside}</span>}
+        {aside && <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-ink-3">{aside}</span>}
       </div>
       {control}
       {error && (

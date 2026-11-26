@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
+import { withPaise } from "@/components/ui/Money";
 
-export type RankedBarTone = "ramp" | "accent" | "muted" | "pocket";
+export type RankedBarTone = "lead" | "neutral" | "muted" | "pocket";
 
+/**
+ * One accent per list: the list marks its top row `lead` (the accent); other
+ * rows are `neutral` (the default), `muted` for a remainder row, `pocket` owed money.
+ */
 const fillClass: Record<RankedBarTone, string> = {
-  ramp: "bg-ramp",
-  accent: "bg-accent-2",
+  lead: "bg-accent",
+  neutral: "bg-ink-3/45",
   muted: "bg-bar",
   pocket: "bg-pocket",
 };
@@ -31,7 +36,7 @@ export default function RankedBar({
   ratio,
   share,
   leading,
-  tone = "ramp",
+  tone = "neutral",
   className,
 }: RankedBarProps) {
   // NaN would survive Math.min/max and fill the whole bar.
@@ -53,9 +58,9 @@ export default function RankedBar({
           <span className="shrink-0 text-xs text-ink-3">{share.toFixed(1)}%</span>
         )}
       </span>
-      <span className="num whitespace-nowrap text-right text-[13px]">{amount}</span>
-      <div className={cn("h-1.5 overflow-hidden rounded-[3px] bg-sunk", leading ? "col-[2/-1]" : "col-span-full")}>
-        <div className={cn("h-full rounded-[3px]", fillClass[tone])} style={{ width }} />
+      <span className="num whitespace-nowrap text-right text-[13px]">{withPaise(amount)}</span>
+      <div className={cn("h-1 overflow-hidden rounded-full bg-sunk", leading ? "col-[2/-1]" : "col-span-full")}>
+        <div className={cn("h-full rounded-full", fillClass[tone])} style={{ width }} />
       </div>
     </div>
   );

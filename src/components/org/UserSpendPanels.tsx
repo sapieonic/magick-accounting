@@ -8,6 +8,7 @@ import { textButtonClass } from "@/components/ui/styles";
 import { cn } from "@/components/ui/cn";
 import { formatBaseCurrency } from "@/lib/currency";
 import Avatar from "@/components/ui/Avatar";
+import Money, { withPaise } from "@/components/ui/Money";
 
 interface UserSpend {
   _id: string;
@@ -38,14 +39,23 @@ function sourceRows(users: UserSpend[]) {
 }
 
 /** A ranked panel list that shows the top rows and expands on demand. */
-function TopList<T extends { user: { _id: string } }>({ rows, render, label }: { rows: T[]; render: (row: T) => ReactNode; label: string }) {
+function TopList<T extends { user: { _id: string } }>({
+  rows,
+  render,
+  label,
+}: {
+  rows: T[];
+  /** `index` is the row's rank (0 = top). */
+  render: (row: T, index: number) => ReactNode;
+  label: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? rows : rows.slice(0, TOP);
   return (
     <>
       <ul aria-label={label} className="flex flex-col gap-3.5">
-        {shown.map((row) => (
-          <li key={row.user._id}>{render(row)}</li>
+        {shown.map((row, index) => (
+          <li key={row.user._id}>{render(row, index)}</li>
         ))}
       </ul>
       {rows.length > TOP && (
@@ -76,12 +86,13 @@ export default function UserSpendPanels({ users }: { users: UserSpend[] }) {
   return (
     <PanelGrid min={420}>
       {spend.length > 0 && (
-        <Panel title="Spend by user" meta={<span className="num">{formatBaseCurrency(total)}</span>}>
+        <Panel title="Spend by user" meta={<Money value={formatBaseCurrency(total)} />}>
           <TopList
             label="Spend by user"
             rows={spend}
-            render={({ user, value }) => (
+            render={({ user, value }, index) => (
               <RankedBar
+                tone={index === 0 ? "lead" : undefined}
                 leading={<Avatar name={user.name} photoURL={user.photoURL} size={24} />}
                 label={user.name}
                 amount={formatBaseCurrency(value)}
@@ -108,11 +119,11 @@ export default function UserSpendPanels({ users }: { users: UserSpend[] }) {
                   <span className="flex flex-wrap justify-end gap-x-2 text-[13px]">
                     <span className="num whitespace-nowrap">
                       <span className="sr-only">Company </span>
-                      {formatBaseCurrency(c)}
+                      {withPaise(formatBaseCurrency(c))}
                     </span>
                     <span className="num whitespace-nowrap text-amber">
                       <span className="sr-only">Pocket </span>
-                      {formatBaseCurrency(p)}
+                      {withPaise(formatBaseCurrency(p))}
                     </span>
                   </span>
                   <SplitBar company={c} pocket={p} legend="none" size="sm" className="col-[2/-1]" />

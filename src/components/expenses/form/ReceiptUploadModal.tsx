@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { ScanText } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Checkbox from "@/components/ui/Checkbox";
 import Modal from "@/components/ui/Modal";
 import ReceiptDropzone from "@/components/ui/ReceiptDropzone";
 import Spinner from "@/components/ui/Spinner";
-import { peerFocusRing } from "@/components/ui/styles";
+import { peerFocusRing, ICON_STROKE } from "@/components/ui/styles";
 
 const SKIP_UPLOAD_MODAL_KEY = "expense-upload-modal-skip";
 
@@ -45,8 +45,8 @@ export default function ReceiptUploadModal({ isOpen, extracting, onFile, onClose
   return (
     <Modal isOpen={isOpen} onClose={() => !extracting && onClose()} title="Upload a receipt">
       <div className="flex flex-col gap-4">
-        <div className="flex items-start gap-3 rounded-control bg-accent-soft px-4 py-3">
-          <Sparkles aria-hidden="true" size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent" />
+        <div className="flex items-start gap-3 rounded-control bg-sunk px-4 py-3">
+          <ScanText aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0 text-ink-2" />
           <p className="text-sm text-ink-2 [text-wrap:pretty]">
             Just upload your receipt — we&apos;ll read it with AI and fill in the title, amount, category, date and
             more for you. You can review and edit everything before creating the expense.

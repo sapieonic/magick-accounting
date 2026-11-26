@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
-import { transition } from "@/components/ui/styles";
+import { transition, ICON_STROKE } from "@/components/ui/styles";
 
 export interface SegmentOption<T extends string> {
   value: T;
@@ -69,12 +69,12 @@ export default function SegmentedControl<T extends string>({
               i > 0 && "border-l border-rule",
               fullWidth && "flex-1",
               active
-                ? "bg-accent-soft font-semibold text-accent shadow-[inset_0_-2px_0_rgb(var(--accent))]"
+                ? "bg-sunk font-medium text-ink shadow-[inset_0_-2px_0_rgb(var(--ink))]"
                 : "text-ink-2 enabled:hover:bg-tint-2"
             )}
           >
             {Icon && (
-              <Icon aria-hidden="true" size={15} strokeWidth={1.75} className={compact ? "hidden sm:block" : undefined} />
+              <Icon aria-hidden="true" size={15} strokeWidth={ICON_STROKE} className={compact ? "hidden sm:block" : undefined} />
             )}
             {text}
           </button>

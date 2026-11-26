@@ -5,6 +5,7 @@ import InvoicesPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { byAmount } from "@/test/amount";
 
 vi.mock("next/navigation", () => ({
   useRouter: vi.fn(() => ({
@@ -106,10 +107,10 @@ describe("InvoicesPage discounts", () => {
     await user.type(screen.getByLabelText("Discount value"), "10");
 
     expect(screen.getByText("Discount (10%)")).toBeInTheDocument();
-    expect(screen.getByText("-₹100.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("-₹100.00"))).toBeInTheDocument();
     expect(screen.getByText("Taxable amount")).toBeInTheDocument();
-    expect(screen.getByText("₹900.00")).toBeInTheDocument();
-    expect(screen.getByText("₹1,062.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹900.00"))).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹1,062.00"))).toBeInTheDocument();
   });
 
   it("applies a labelled fixed discount to the live summary", async () => {
@@ -122,9 +123,9 @@ describe("InvoicesPage discounts", () => {
     await user.type(screen.getByPlaceholderText("e.g. Volume discount"), "Loyalty");
 
     expect(screen.getByText("Discount (Loyalty)")).toBeInTheDocument();
-    expect(screen.getByText("-₹50.00")).toBeInTheDocument();
-    expect(screen.getByText("₹200.00")).toBeInTheDocument();
-    expect(screen.getByText("₹236.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("-₹50.00"))).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹200.00"))).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹236.00"))).toBeInTheDocument();
   });
 
   it("includes the discount in the generate-invoice payload", async () => {

@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import { GLYPH_SIZES, ICON_STROKE, glyphTileClass } from "@/components/ui/styles";
 
 // First match wins; mirrors the asset categories offered when recording a purchase.
 const KEYWORDS: [LucideIcon, RegExp][] = [
@@ -27,11 +28,8 @@ export default function AssetGlyph({ category, className }: { category?: string 
   const name = (category ?? "").toLowerCase();
   const Icon = KEYWORDS.find(([, re]) => re.test(name))?.[0] ?? Package;
   return (
-    <span
-      aria-hidden="true"
-      className={cn("inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-sunk text-ink-2", className)}
-    >
-      <Icon size={16} strokeWidth={1.6} />
+    <span aria-hidden="true" className={cn(glyphTileClass("md"), className)}>
+      <Icon size={GLYPH_SIZES.md.icon} strokeWidth={ICON_STROKE} />
     </span>
   );
 }

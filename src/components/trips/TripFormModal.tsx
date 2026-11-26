@@ -13,6 +13,7 @@ import { cn } from "@/components/ui/cn";
 import { RemovableChip } from "@/components/ui/Badge";
 import { DialogActions } from "@/components/ui/ConfirmDialog";
 import { FieldGrid } from "@/components/ui/FormSection";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 function Required() {
   return (
@@ -385,7 +386,7 @@ export default function TripFormModal({ isOpen, onClose, trip, onSaved }: TripFo
 
         {error && (
           <div role="alert" className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
-            <AlertCircle aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+            <AlertCircle aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}

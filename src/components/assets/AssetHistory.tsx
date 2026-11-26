@@ -30,9 +30,9 @@ export interface AssetEvent {
 }
 
 const EVENT_ICONS: Record<string, { icon: LucideIcon; className: string }> = {
-  created: { icon: PackagePlus, className: "text-accent" },
+  created: { icon: PackagePlus, className: "text-ink-3" },
   updated: { icon: PencilLine, className: "text-ink-3" },
-  assigned: { icon: UserPlus, className: "text-accent" },
+  assigned: { icon: UserPlus, className: "text-ink-3" },
   unassigned: { icon: UserMinus, className: "text-amber" },
   reversed: { icon: Undo2, className: "text-danger" },
 };

@@ -58,7 +58,7 @@ describe("InlineLoader", () => {
 });
 
 describe("Spinner tone", () => {
-  it("defaults to the indigo ring", () => {
+  it("defaults to the accent ring", () => {
     render(<Spinner />);
     expect(screen.getByRole("status")).toHaveClass("border-accent/20", "border-t-accent");
   });

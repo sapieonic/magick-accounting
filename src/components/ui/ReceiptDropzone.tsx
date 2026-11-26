@@ -3,6 +3,7 @@
 import { useEffect, useState, ReactNode } from "react";
 import { Upload } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 const RECEIPT_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 
@@ -68,7 +69,7 @@ export default function ReceiptDropzone({
       onDrop={handleDrop}
       className={cn(
         "relative flex cursor-pointer flex-col items-center gap-1 rounded-panel border-[1.5px] border-dashed px-4 py-6 text-center",
-        "transition-[background-color,border-color] duration-150",
+        "transition-[background-color,border-color] duration-140",
         "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent",
         dragging ? "border-accent bg-tint-2" : "border-accent-line bg-tint hover:border-accent hover:bg-tint-2",
         disabled && "pointer-events-none opacity-60",
@@ -77,7 +78,7 @@ export default function ReceiptDropzone({
     >
       {children ?? (
         <>
-          <Upload aria-hidden="true" size={22} strokeWidth={1.5} className="mb-1 text-accent" />
+          <Upload aria-hidden="true" size={22} strokeWidth={ICON_STROKE} className="mb-1 text-ink-3" />
           <span className="text-sm font-medium text-ink">
             {dragging ? "Drop your receipt here" : "Click, drag & drop, or paste a receipt"}
           </span>

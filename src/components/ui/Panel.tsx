@@ -1,6 +1,6 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
-import { panelClass, panelPadX } from "@/components/ui/styles";
+import { panelClass, panelPadX, sectionTitleClass } from "@/components/ui/styles";
 
 interface PanelProps {
   /** Section heading (h2). Also labels the section for assistive tech. */
@@ -17,8 +17,6 @@ interface PanelProps {
   flush?: boolean;
   /** Relative width inside a PanelGrid (flex-grow). Default 1. */
   grow?: number;
-  /** Faint indigo wash in the head corner (detail panels, headline totals). */
-  wash?: boolean;
   className?: string;
   bodyClassName?: string;
   children?: ReactNode;
@@ -37,7 +35,6 @@ export default function Panel({
   footer,
   flush = false,
   grow,
-  wash = false,
   className,
   bodyClassName,
   children,
@@ -49,7 +46,7 @@ export default function Panel({
     <section
       id={id}
       aria-labelledby={title ? headingId : undefined}
-      className={cn(panelClass, "flex min-w-0 flex-col", wash && "bg-wash", className)}
+      className={cn(panelClass, "flex min-w-0 flex-col", className)}
       style={grow ? { flexGrow: grow } : undefined}
     >
       {hasHead && (
@@ -57,11 +54,11 @@ export default function Panel({
           {(title || description) && (
             <div className="flex min-w-0 flex-col gap-0.5">
               {title && (
-                <h2 id={headingId} className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+                <h2 id={headingId} className={sectionTitleClass}>
                   {title}
                 </h2>
               )}
-              {description && <p className="text-[13px] text-ink-3 [text-wrap:pretty]">{description}</p>}
+              {description && <p className="text-[13px] leading-5 text-ink-3 [text-wrap:pretty]">{description}</p>}
             </div>
           )}
           {(meta || actions) && (
@@ -78,7 +75,7 @@ export default function Panel({
         {children}
       </div>
       {footer && (
-        <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", panelPadX)}>
+        <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-3 text-[13px] text-ink-3", panelPadX)}>
           {footer}
         </div>
       )}

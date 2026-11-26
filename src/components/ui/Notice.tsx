@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import { ICON_STROKE } from "@/components/ui/styles";
 
 export type NoticeTone = "neutral" | "danger" | "success";
 
@@ -41,9 +42,9 @@ export default function Notice({ tone = "neutral", icon: Icon, title, children, 
       data-tone={tone}
       className={cn("flex gap-3 rounded-panel border p-3 text-sm text-ink", t.box, className)}
     >
-      {Icon && <Icon aria-hidden="true" size={18} strokeWidth={1.75} className={cn("mt-px shrink-0", t.icon)} />}
+      {Icon && <Icon aria-hidden="true" size={18} strokeWidth={ICON_STROKE} className={cn("mt-px shrink-0", t.icon)} />}
       <div className="min-w-0 flex-1 space-y-1.5">
-        <p id={titleId} className="font-semibold">
+        <p id={titleId} className="font-medium">
           {title}
         </p>
         {children && <div className="text-ink-2">{children}</div>}

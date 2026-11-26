@@ -18,6 +18,7 @@ import SearchInput from "@/components/ui/SearchInput";
 import Notice from "@/components/ui/Notice";
 import ApprovalBadge from "@/components/expenses/ApprovalBadge";
 import { CircleX } from "lucide-react";
+import { byAmount } from "@/test/amount";
 
 describe("Button", () => {
   it("renders a button by default and a link with href", () => {
@@ -141,13 +142,13 @@ describe("data primitives", () => {
   it("describes the company/pocket split", () => {
     render(<SplitBar company={812} pocket={188} format={(n) => `₹${n}`} />);
     expect(screen.getByRole("img", { name: "Company paid 81.2%, pocket 18.8%" })).toBeInTheDocument();
-    expect(screen.getByText("₹812")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹812"))).toBeInTheDocument();
   });
 
   it("shows a ranked row's share and amount", () => {
     render(<RankedBar label="Travel" amount="₹1,02,769.18" share={5.7} ratio={0.1} />);
     expect(screen.getByText("5.7%")).toBeInTheDocument();
-    expect(screen.getByText("₹1,02,769.18")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹1,02,769.18"))).toBeInTheDocument();
   });
 
   it("truncates a ranked row's label, never its share", () => {
@@ -229,7 +230,9 @@ describe("data primitives", () => {
   it("keeps category glyphs decorative", () => {
     const { container } = render(<CategoryGlyph name="Travel" />);
     expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
-    expect(container.firstElementChild?.className).toMatch(/bg-cat-tr-soft/);
+    // Neutral tile; the matched icon tells the category apart.
+    expect(container.firstElementChild).toHaveClass("bg-sunk");
+    expect(container.querySelector("svg")).toHaveClass("lucide-map-pin");
   });
 });
 

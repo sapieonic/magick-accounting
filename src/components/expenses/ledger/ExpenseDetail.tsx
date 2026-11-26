@@ -43,9 +43,9 @@ import { travelTypeLabel } from "@/lib/trip";
 import { useToast } from "@/components/ui/Toast";
 import Spinner from "@/components/ui/Spinner";
 import Button, { IconButton } from "@/components/ui/Button";
-import CategoryGlyph, { CategoryDot } from "@/components/ui/CategoryGlyph";
+import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import { cn } from "@/components/ui/cn";
-import { linkClass } from "@/components/ui/styles";
+import { linkClass, ICON_STROKE, dashedPromptClass } from "@/components/ui/styles";
 import DetailList, { type DetailItem } from "@/components/ui/DetailList";
 import Notice from "@/components/ui/Notice";
 import {
@@ -61,6 +61,7 @@ import PaymentMark from "@/components/expenses/ledger/PaymentMark";
 import { conversionNote, expenseDate, isImageFile, paymentSourceDetail } from "@/components/expenses/ledger/format";
 import { deleteOffer } from "@/components/expenses/review-status";
 import type { ExpenseListItem } from "@/types/expense";
+import Money, { withPaise } from "@/components/ui/Money";
 
 /**
  * The approval buttons of an expense's detail. `useApprovalActions().handlers`
@@ -172,14 +173,14 @@ function Receipt({ expense, prominent = false }: { expense: ExpenseListItem; pro
 
   return (
     <section aria-label="Receipt" className="flex flex-col gap-2">
-      <div className="flex items-center gap-3 rounded-control border border-dashed border-accent-line bg-tint p-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control border border-rule bg-surface text-accent">
-          <FileIcon aria-hidden="true" size={18} strokeWidth={1.6} />
+      <div className={cn("flex items-center gap-3 rounded-control p-3", dashedPromptClass)}>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control border border-rule bg-surface text-ink-2">
+          <FileIcon aria-hidden="true" size={18} strokeWidth={ICON_STROKE} />
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="ell font-medium text-ink">{expense.receiptFilename || "Receipt"}</span>
           <span className="flex items-center gap-1 text-xs text-ink-3">
-            <Paperclip aria-hidden="true" size={12} strokeWidth={1.75} />
+            <Paperclip aria-hidden="true" size={12} strokeWidth={ICON_STROKE} />
             Receipt · link valid 1 hour
           </span>
         </div>
@@ -202,7 +203,7 @@ function Receipt({ expense, prominent = false }: { expense: ExpenseListItem; pro
           )
         ) : failed ? (
           <div className={cn("flex flex-col items-center justify-center gap-2 text-ink-3", prominent ? "min-h-48" : "py-10")}>
-            <FileText aria-hidden="true" size={28} strokeWidth={1.5} />
+            <FileText aria-hidden="true" size={28} strokeWidth={ICON_STROKE} />
             <p className="text-sm">Could not load receipt preview</p>
           </div>
         ) : (
@@ -225,7 +226,7 @@ function PaidFrom({ expense }: { expense: ExpenseListItem }) {
               expense={{ ...expense, paymentSource: entry.source === "company" ? "company" : "pocket" }}
             />
             <span>{payerName(entry)}</span>
-            <span className="num">{formatCurrency(entry.amount, expense.currency?.code)}</span>
+            <Money value={formatCurrency(entry.amount, expense.currency?.code)} />
           </li>
         ))}
       </ul>
@@ -244,7 +245,7 @@ function KeyHint({ children }: { children: string }) {
   return (
     <kbd
       aria-hidden="true"
-      className="num ml-0.5 hidden rounded px-1 text-[11px] font-medium leading-4 opacity-70 ring-1 ring-inset ring-current lg:inline"
+      className="num ml-0.5 hidden rounded px-1 text-[11px] font-medium leading-4 ring-1 ring-inset ring-current lg:inline"
     >
       {children}
     </kbd>
@@ -505,18 +506,13 @@ export default function ExpenseDetail({
     ...(status === "approved" ? [{ label: "Approval", icon: CircleCheck, value: <ApprovedValue expense={expense} /> }] : []),
     ...(!showHeader && conversion ? [{ label: "Converted", icon: ArrowLeftRight, value: <span className="num text-xs">{conversion}</span> }] : []),
     ...(expense.gstAmount != null && expense.gstAmount > 0
-      ? [{ label: "GST (incl.)", icon: Percent, value: <span className="num">{formatCurrency(expense.gstAmount, code)}</span> }]
+      ? [{ label: "GST (incl.)", icon: Percent, value: <Money value={formatCurrency(expense.gstAmount, code)} /> }]
       : []),
     { label: "Date", icon: Calendar, value: expenseDate(expense, "EEE, d MMM yyyy") },
     {
       label: "Category",
       icon: Tag,
-      value: (
-        <span className="inline-flex items-center gap-2">
-          <CategoryDot name={expense.category?.name} />
-          {expense.category?.name}
-        </span>
-      ),
+      value: expense.category?.name,
     },
     { label: "Department", icon: Building2, value: expense.department?.name },
     { label: "Submitted by", icon: User, value: expense.createdBy?.name },
@@ -558,13 +554,13 @@ export default function ExpenseDetail({
             <CategoryGlyph name={expense.category?.name} size="xl" />
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="cap text-ink-3">Selected</span>
-              <h2 className="text-lg font-semibold tracking-[-0.015em] text-ink [text-wrap:pretty]">{expense.title}</h2>
+              <h2 className="text-lg font-medium text-ink [text-wrap:pretty]">{expense.title}</h2>
             </div>
             {onClose && <IconButton icon={X} size="sm" onClick={onClose} aria-label="Close details" />}
           </div>
           <div className="flex flex-col gap-0.5 [container-type:inline-size]">
-            <span className="num whitespace-nowrap text-[clamp(22px,11cqi,30px)] font-medium tracking-[-0.035em] text-ink">
-              {formatCurrency(expense.amount, code)}
+            <span className="figure text-[clamp(22px,11cqi,30px)] font-medium text-ink">
+              {withPaise(formatCurrency(expense.amount, code))}
             </span>
             <span className="text-[13px] text-ink-3">{conversion ?? "Base currency, no conversion"}</span>
           </div>
@@ -618,7 +614,7 @@ export default function ExpenseDetail({
         )}
         {deleteState === "locked" && (
           <p className="flex basis-full items-start gap-1.5 text-xs text-ink-3 [text-wrap:pretty]">
-            <Lock aria-hidden="true" size={13} strokeWidth={1.75} className="mt-px shrink-0" />
+            <Lock aria-hidden="true" size={13} strokeWidth={ICON_STROKE} className="mt-px shrink-0" />
             <span>{APPROVED_DELETE_MESSAGE}</span>
           </p>
         )}

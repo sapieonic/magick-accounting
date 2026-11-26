@@ -16,11 +16,11 @@ const SIZES = {
 } as const;
 
 const TONES = {
-  accent: "bg-accent-soft text-accent",
+  neutral: "bg-sunk text-ink-2",
   /** Pocket-money contexts. */
   amber: "bg-amber-soft text-amber",
-  /** On the dark navigation rail. */
-  rail: "bg-rail-line text-rail-ink",
+  /** On the navigation rail. */
+  rail: "bg-surface text-ink-2 ring-1 ring-inset ring-rule",
 } as const;
 
 interface AvatarProps {
@@ -38,7 +38,7 @@ interface AvatarProps {
  * A person's photo, or their initials on a soft tint. Decorative: show the
  * name beside it (or label the group, as TravelerAvatars does).
  */
-export default function Avatar({ name, photoURL, size = 32, tone = "accent", title, className }: AvatarProps) {
+export default function Avatar({ name, photoURL, size = 32, tone = "neutral", title, className }: AvatarProps) {
   const box = cn("shrink-0 rounded-full", SIZES[size], className);
   if (photoURL) {
     // eslint-disable-next-line @next/next/no-img-element -- remote Google avatars, no loader configured
@@ -48,7 +48,7 @@ export default function Avatar({ name, photoURL, size = 32, tone = "accent", tit
     <span
       aria-hidden="true"
       title={title}
-      className={cn(box, "inline-flex items-center justify-center font-semibold", TONES[tone])}
+      className={cn(box, "inline-flex items-center justify-center font-medium", TONES[tone])}
     >
       {initials(name)}
     </span>

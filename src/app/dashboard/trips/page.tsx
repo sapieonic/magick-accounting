@@ -20,10 +20,11 @@ import Field from "@/components/ui/Field";
 import SearchInput from "@/components/ui/SearchInput";
 import SegmentedControl from "@/components/ui/SegmentedControl";
 import { cn } from "@/components/ui/cn";
-import { focusRing, panelClass, transition } from "@/components/ui/styles";
+import { focusRing, panelClass, transition, ICON_STROKE, sectionTitleClass } from "@/components/ui/styles";
 import TripFormModal from "@/components/trips/TripFormModal";
 import { BudgetMeter, TravelerAvatars, TripStatusBadge } from "@/components/trips/TripMeta";
 import type { TripListItem } from "@/types/trip";
+import Money from "@/components/ui/Money";
 
 type StatusFilter = "all" | TripStatus;
 
@@ -70,10 +71,10 @@ function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: stri
     <Link
       href={`/dashboard/trips/${trip._id}`}
       data-testid="trip-card"
-      className={cn(panelClass, "group flex min-w-0 flex-col gap-3 p-5 hover:border-accent-line hover:bg-hover", transition, focusRing)}
+      className={cn(panelClass, "group flex min-w-0 flex-col gap-3 p-5 hover:border-ink-3 hover:bg-hover", transition, focusRing)}
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="min-w-0 text-[15px] font-semibold tracking-[-0.01em] text-ink [overflow-wrap:anywhere] group-hover:text-accent">
+        <h3 className={cn("min-w-0 [overflow-wrap:anywhere] group-hover:text-accent", sectionTitleClass)}>
           {trip.name}
         </h3>
         <TripStatusBadge status={trip.status}>{statusHint(trip, today)}</TripStatusBadge>
@@ -81,14 +82,14 @@ function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: stri
 
       <div className="flex flex-col gap-1 text-[13px] text-ink-2">
         <span className="flex items-center gap-1.5">
-          <CalendarDays aria-hidden="true" size={14} strokeWidth={1.6} className="shrink-0 text-ink-3" />
+          <CalendarDays aria-hidden="true" size={14} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" />
           <span className="num">
             {formatTripDates(trip)} · {days} day{days !== 1 ? "s" : ""}
           </span>
         </span>
         {trip.destinations.length > 0 && (
           <span className="flex items-start gap-1.5">
-            <MapPin aria-hidden="true" size={14} strokeWidth={1.6} className="mt-0.5 shrink-0 text-ink-3" />
+            <MapPin aria-hidden="true" size={14} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0 text-ink-3" />
             <span className="line-clamp-2">{trip.destinations.join(" → ")}</span>
           </span>
         )}
@@ -102,7 +103,7 @@ function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: stri
       <div className="mt-auto flex items-end justify-between gap-3 border-t border-rule-2 pt-3">
         <TravelerAvatars travelers={trip.travelers} />
         <div className="flex flex-col items-end">
-          <span className="num whitespace-nowrap font-medium text-ink">{formatBaseCurrency(trip.totalAmount)}</span>
+          <Money value={formatBaseCurrency(trip.totalAmount)} className="font-medium text-ink" />
           <span className="text-xs text-ink-3">
             {trip.expenseCount} {pending > 0 ? "approved " : ""}expense{trip.expenseCount !== 1 ? "s" : ""}
           </span>
@@ -295,7 +296,7 @@ export default function TripsPage() {
           {sections.map((section) => (
             <section key={section.status} aria-labelledby={`trips-${section.status}`} className="flex flex-col gap-3">
               <div className="flex items-baseline gap-2">
-                <h2 id={`trips-${section.status}`} className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+                <h2 id={`trips-${section.status}`} className={sectionTitleClass}>
                   {section.title}
                 </h2>
                 <span className="num text-xs text-ink-3">{section.items.length}</span>

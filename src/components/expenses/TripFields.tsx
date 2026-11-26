@@ -20,7 +20,7 @@ import Button, { IconButton } from "@/components/ui/Button";
 import Field, { selectClass } from "@/components/ui/Field";
 import { Chip } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
-import { inlineLinkClass } from "@/components/ui/styles";
+import { inlineLinkClass, ICON_STROKE } from "@/components/ui/styles";
 import type { TripListItem } from "@/types/trip";
 
 /** The parts of a `GET /api/trips` item the expense form uses. */
@@ -201,11 +201,11 @@ export default function TripFields({
       {suggestion && (
         <div
           role="status"
-          className="animate-fade-in flex flex-wrap items-center gap-x-3 gap-y-2 rounded-control border border-accent-line bg-tint py-2 pl-3 pr-2"
+          className="animate-fade-in flex flex-wrap items-center gap-x-3 gap-y-2 rounded-control border border-rule bg-sunk py-2 pl-3 pr-2"
         >
-          <Plane size={18} strokeWidth={1.75} className="shrink-0 text-accent" aria-hidden="true" />
+          <Plane size={18} strokeWidth={ICON_STROKE} className="shrink-0 text-ink-3" aria-hidden="true" />
           <p className="min-w-0 flex-1 basis-[200px] text-sm text-ink-2">
-            Looks like this is part of <b className="font-semibold text-ink">{suggestion.name}</b>{" "}
+            Looks like this is part of <b className="font-medium text-ink">{suggestion.name}</b>{" "}
             <span className="whitespace-nowrap">({formatTripDates(suggestion)})</span>. Add it?
           </p>
           <div className="flex items-center gap-1">
@@ -234,7 +234,7 @@ export default function TripFields({
             className={cn(inlineLinkClass, "gap-1")}
           >
             {trips.length > 0 ? "Manage trips" : "New trip"}
-            <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />
+            <ExternalLink size={12} strokeWidth={ICON_STROKE} aria-hidden="true" />
             <span className="sr-only">(opens in a new tab)</span>
           </Link>
         }
@@ -257,7 +257,7 @@ export default function TripFields({
       {trip && (
         <div className="animate-fade-in flex flex-col gap-1">
           <p id="travelType-label" className="cap text-ink-3">
-            Travel type<span className="font-normal normal-case tracking-normal">, optional</span>
+            Travel type<span className="font-normal">, optional</span>
           </p>
           <div ref={chipGroupRef} role="radiogroup" aria-labelledby="travelType-label" className="flex flex-wrap gap-2">
             {TRAVEL_TYPES.map((type, index) => {

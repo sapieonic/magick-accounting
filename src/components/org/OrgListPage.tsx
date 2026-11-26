@@ -17,7 +17,7 @@ import Panel from "@/components/ui/Panel";
 import Badge from "@/components/ui/Badge";
 import Field, { inputClass, textareaClass } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
-import { panelPadL, rowClass } from "@/components/ui/styles";
+import { panelPadL, rowClass, ICON_STROKE } from "@/components/ui/styles";
 import ConfirmDialog, { DialogActions } from "@/components/ui/ConfirmDialog";
 
 export interface OrgItem {
@@ -218,7 +218,7 @@ export default function OrgListPage<T extends OrgItem>({ config }: { config: Org
                     <ArrowUpRight
                       aria-hidden="true"
                       size={15}
-                      strokeWidth={1.75}
+                      strokeWidth={ICON_STROKE}
                       className="ml-auto shrink-0 text-ink-3 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                     />
                   </Link>

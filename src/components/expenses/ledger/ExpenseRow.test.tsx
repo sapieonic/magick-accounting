@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import ExpenseRow from "./ExpenseRow";
 import { api } from "@/lib/api";
 import type { ExpenseListItem } from "@/types/expense";
+import { byAmount } from "@/test/amount";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: any) => (
@@ -57,8 +58,8 @@ describe("ExpenseRow", () => {
 
   it("shows the bill amount with its INR equivalent and opens on click", () => {
     const { onSelect } = renderRow();
-    expect(screen.getByText("$100.00")).toBeInTheDocument();
-    expect(screen.getByText("₹8,350.00")).toBeInTheDocument();
+    expect(screen.getByText(byAmount("$100.00"))).toBeInTheDocument();
+    expect(screen.getByText(byAmount("₹8,350.00"))).toBeInTheDocument();
 
     const title = screen.getByRole("button", { name: "Team dinner" });
     expect(title).toHaveAttribute("aria-expanded", "false");
@@ -133,9 +134,9 @@ describe("ExpenseRow", () => {
     const detail = document.getElementById("expense-detail-exp-1")!;
     expect(screen.getByRole("button", { name: "Team dinner" })).toHaveAttribute("aria-controls", "expense-detail-exp-1");
     expect(within(detail).getByText("Ravi Iyer")).toBeInTheDocument();
-    expect(within(detail).getByText("$60.00")).toBeInTheDocument();
+    expect(within(detail).getByText(byAmount("$60.00"))).toBeInTheDocument();
     expect(within(detail).getByText("= ₹8,350.00 at ₹83.50 per USD, fixed on entry")).toBeInTheDocument();
-    expect(within(detail).getByText("$5.00")).toBeInTheDocument();
+    expect(within(detail).getByText(byAmount("$5.00"))).toBeInTheDocument();
     expect(within(detail).getByRole("link", { name: "1 linked asset" })).toHaveAttribute("href", "/dashboard/assets");
     expect(within(detail).getByRole("link", { name: /Pune visit/ })).toHaveAttribute("href", "/dashboard/trips/trip-1");
     expect(within(detail).getByRole("link", { name: "Edit" })).toHaveAttribute("href", "/edit");
@@ -214,9 +215,9 @@ describe("ExpenseRow", () => {
   it("keeps the payment chip above the row click target, and a click on it still opens the row", () => {
     const { onSelect } = renderRow();
     const chip = screen.getByRole("img", { name: "Company account" });
-    // The selected row uses the same soft accent fill, so the ring is what keeps the chip a chip.
+    // A neutral chip with a hairline ring, so it still reads as a chip on the selected row's accent fill.
     expect(chip).toHaveAttribute("title", "Company account");
-    expect(chip).toHaveClass("ring-inset", "ring-accent-line");
+    expect(chip).toHaveClass("ring-inset", "ring-rule");
     expect(chip.parentElement).toHaveClass("relative", "z-10");
     fireEvent.click(chip);
     expect(onSelect).toHaveBeenCalledTimes(1);
@@ -234,7 +235,7 @@ describe("ExpenseRow", () => {
   it("stacks the hover toolbar over the amount, which hides meanwhile, in a cell sized to the wider", () => {
     renderRow({ onDelete: vi.fn(), onRemoveFromTrip: vi.fn() });
     const toolbar = screen.getByTestId("row-actions");
-    const amount = screen.getByText("$100.00").parentElement!;
+    const amount = screen.getByText(byAmount("$100.00")).parentElement!;
     // One grid area of one cell: the cell grows to fit the toolbar, so it never
     // reaches over the category or title columns.
     expect(toolbar.parentElement).toBe(amount.parentElement);
@@ -322,7 +323,7 @@ describe("ExpenseRow", () => {
     it("badges a pending row and keeps its amount out of the totals for screen readers too", () => {
       renderRow({ expense: makeExpense({ approvalStatus: "pending" }) });
       expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
-      const amount = screen.getByText("$100.00", { exact: false });
+      const amount = screen.getByText(byAmount("$100.00"));
       expect(amount).toHaveClass("text-ink-3");
       expect(amount).not.toHaveClass("line-through");
       expect(amount).toHaveTextContent("$100.00 (awaiting approval, not in totals)");
@@ -331,7 +332,7 @@ describe("ExpenseRow", () => {
     it("strikes through a rejected amount and says why", () => {
       renderRow({ expense: makeExpense({ approvalStatus: "rejected" }) });
       expect(screen.getByText("Rejected")).toBeInTheDocument();
-      const amount = screen.getByText("$100.00", { exact: false });
+      const amount = screen.getByText(byAmount("$100.00"));
       expect(amount).toHaveClass("text-ink-3", "line-through");
       expect(amount).toHaveTextContent("(rejected, not in totals)");
     });
@@ -339,7 +340,7 @@ describe("ExpenseRow", () => {
     it("leaves approved and legacy rows unbadged", () => {
       renderRow({ expense: makeExpense({ approvalStatus: "approved" }) });
       expect(screen.queryByText("Approved")).not.toBeInTheDocument();
-      expect(screen.getByText("$100.00")).toHaveClass("text-ink");
+      expect(screen.getByText(byAmount("$100.00"))).toHaveClass("text-ink");
     });
 
     it("review rows: a labelled checkbox that toggles without opening the row", () => {

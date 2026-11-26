@@ -4,6 +4,7 @@ import ExpensesPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiError, api } from "@/lib/api";
 import { downloadCsv } from "@/lib/csv";
+import { byAmount } from "@/test/amount";
 
 const toastMock = vi.fn();
 
@@ -200,7 +201,7 @@ describe("ExpensesPage", () => {
     // The split comes with the list's summary, so it follows the same filters.
     expect(await within(totals).findByRole("img", { name: "Company paid 100.0%, pocket 0.0%" })).toBeInTheDocument();
     // The total, and all of it company-paid.
-    expect(within(totals).getAllByText("₹5,678.76")).toHaveLength(2);
+    expect(within(totals).getAllByText(byAmount("₹5,678.76"))).toHaveLength(2);
     expect(expenseRequests()[0]).toContain("includeSummary=true");
     expect(vi.mocked(api.get).mock.calls.some(([url]) => url.startsWith("/api/dashboard"))).toBe(false);
     // The old analytics rail is gone.
@@ -735,7 +736,7 @@ describe("ExpensesPage", () => {
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/expenses\?.*paidBy=user-1/))
     );
-    expect(await screen.findByText("₹1,200.00")).toBeInTheDocument();
+    expect(await screen.findByText(byAmount("₹1,200.00"))).toBeInTheDocument();
     expect(screen.getByText(/₹1,000\.00 pocket/)).toBeInTheDocument();
     expect(window.location.search).toContain("paidBy=user-1");
   });
@@ -988,7 +989,7 @@ describe("ExpensesPage", () => {
       });
       expect(statValue(totals, "All time total")).toBe("₹5,678.76");
       expect(screen.getAllByText("Rejected").length).toBeGreaterThan(0);
-      expect(screen.getByText("₹450.00", { exact: false })).toHaveTextContent("(rejected, not in totals)");
+      expect(screen.getByText(byAmount("₹450.00"))).toHaveTextContent("(rejected, not in totals)");
     });
 
     it("drops an approved expense from the 'Awaiting approval' filter", async () => {
@@ -1454,7 +1455,7 @@ describe("ExpensesPage", () => {
       expect(expenseRequests()[0]).toContain("groupTrips=true");
 
       expect(screen.getByText("2 expenses")).toBeInTheDocument();
-      expect(screen.getByText("₹20,000.00")).toBeInTheDocument();
+      expect(screen.getByText(byAmount("₹20,000.00"))).toBeInTheDocument();
       expect(screen.getByText("1 without receipt")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Open trip Goa client visit" })).toHaveAttribute(
         "href",

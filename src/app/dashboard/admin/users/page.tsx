@@ -12,7 +12,7 @@ import { ListPageSkeleton } from "@/components/ui/Skeleton";
 import EmptyState from "@/components/ui/EmptyState";
 import PageHeader from "@/components/ui/PageHeader";
 import Panel from "@/components/ui/Panel";
-import Badge, { type Tone } from "@/components/ui/Badge";
+import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import SegmentedControl from "@/components/ui/SegmentedControl";
 import SearchInput from "@/components/ui/SearchInput";
@@ -37,10 +37,10 @@ interface UserRecord {
 
 type RoleFilter = "all" | "admins" | "members";
 
-const ROLE_BADGE: Record<Role, { label: string; icon: LucideIcon; tone: Tone }> = {
-  master_admin: { label: "Master admin", icon: ShieldCheck, tone: "accent" },
-  admin: { label: "Admin", icon: Shield, tone: "accent" },
-  user: { label: "Member", icon: UserIcon, tone: "neutral" },
+const ROLE_BADGE: Record<Role, { label: string; icon: LucideIcon }> = {
+  master_admin: { label: "Master admin", icon: ShieldCheck },
+  admin: { label: "Admin", icon: Shield },
+  user: { label: "Member", icon: UserIcon },
 };
 
 const isAdminRole = (role: Role) => role !== "user";
@@ -200,7 +200,7 @@ export default function AdminUsersPage() {
                         </span>
                       </span>
                       <span className="ml-auto flex items-center gap-2">
-                        <Badge tone={badge.tone} icon={badge.icon}>
+                        <Badge icon={badge.icon}>
                           {badge.label}
                         </Badge>
                         {canManageRole && (

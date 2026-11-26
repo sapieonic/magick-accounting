@@ -13,7 +13,7 @@ import {
   MapPin,
   Pencil,
   Plus,
-  Sparkles,
+  ScanText,
   StickyNote,
   Trash2,
   Users,
@@ -58,6 +58,9 @@ import {
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
+import { ICON_STROKE, dashedPromptClass } from "@/components/ui/styles";
+import Money from "@/components/ui/Money";
+import { cn } from "@/components/ui/cn";
 
 /** Suggestions shown in the "Might belong here" panel. */
 const SUGGESTIONS = 3;
@@ -167,7 +170,7 @@ function DetailSkeleton() {
 function MetaItem({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
     <span className="inline-flex min-w-0 items-start gap-1.5">
-      <Icon aria-hidden="true" size={15} strokeWidth={1.5} className="mt-0.5 shrink-0 text-ink-3" />
+      <Icon aria-hidden="true" size={15} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0 text-ink-3" />
       {children}
     </span>
   );
@@ -513,13 +516,13 @@ export default function TripDetailPage() {
         <div className="flex flex-col gap-1.5 text-[13px] text-ink-3">
           {trip.notes && (
             <p className="flex items-start gap-1.5 whitespace-pre-line text-ink-2">
-              <StickyNote aria-hidden="true" size={15} strokeWidth={1.5} className="mt-0.5 shrink-0 text-ink-3" />
+              <StickyNote aria-hidden="true" size={15} strokeWidth={ICON_STROKE} className="mt-0.5 shrink-0 text-ink-3" />
               {trip.notes}
             </p>
           )}
           {!isAdmin && (
             <p className="flex items-center gap-1.5">
-              <Info aria-hidden="true" size={14} strokeWidth={1.5} className="shrink-0" />
+              <Info aria-hidden="true" size={14} strokeWidth={ICON_STROKE} className="shrink-0" />
               Showing your expenses on this trip
             </p>
           )}
@@ -538,7 +541,7 @@ export default function TripDetailPage() {
                 : `${hasPending ? "Nothing approved yet" : "No expenses yet"} · ${days} day${days !== 1 ? "s" : ""}`}
               {hasPending && (
                 <span className="mt-0.5 flex items-center gap-1.5">
-                  <Clock3 aria-hidden="true" size={13} strokeWidth={1.75} className="shrink-0" />
+                  <Clock3 aria-hidden="true" size={13} strokeWidth={ICON_STROKE} className="shrink-0" />
                   <span>
                     Excludes <span className="num">{formatBaseCurrency(pendingAmount)}</span> awaiting approval
                     {pendingCount > 0 && ` (${pendingCount} expense${pendingCount !== 1 ? "s" : ""})`}
@@ -617,11 +620,12 @@ export default function TripDetailPage() {
               description={isAdmin ? "Where the trip money went." : "Where your money on this trip went."}
             >
               <ul className="flex flex-col gap-3">
-                {byType.map((row) => {
+                {byType.map((row, index) => {
                   const total = Math.max(row.total, 0);
                   return (
                     <li key={row.travelType ?? "none"} data-testid="type-row">
                       <RankedBar
+                        tone={index === 0 ? "lead" : undefined}
                         leading={<TravelGlyph type={row.travelType} />}
                         label={
                           // Up to two lines in the narrow side column, rather than
@@ -666,7 +670,7 @@ export default function TripDetailPage() {
                       {row.pocketSpend > 0 ? (
                         <span className="flex shrink-0 flex-col items-end">
                           <span className="cap text-amber">Owed</span>
-                          <span className="num font-medium text-amber">{formatBaseCurrency(row.pocketSpend)}</span>
+                          <Money value={formatBaseCurrency(row.pocketSpend)} className="font-medium text-amber" />
                         </span>
                       ) : (
                         <span className="shrink-0 text-xs text-ink-3">Nothing owed</span>
@@ -681,7 +685,7 @@ export default function TripDetailPage() {
           <Panel
             title={
               <span className="flex items-center gap-2">
-                <Sparkles aria-hidden="true" size={16} strokeWidth={1.5} className="text-accent" />
+                <ScanText aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="text-ink-2" />
                 Might belong here
               </span>
             }
@@ -698,7 +702,7 @@ export default function TripDetailPage() {
                 {suggestions.map((expense) => (
                   <li
                     key={expense._id}
-                    className="flex items-start gap-3 rounded-control border border-dashed border-accent-line bg-tint p-2.5"
+                    className={cn("flex items-start gap-3 rounded-control p-2.5", dashedPromptClass)}
                   >
                     <CategoryGlyph name={expense.category?.name} />
                     {/* The side column is narrow: title and who/when may each take two
@@ -711,9 +715,7 @@ export default function TripDetailPage() {
                       </span>
                       <ApprovalBadge status={expense.approvalStatus} className="self-start" />
                       <span className="flex items-center justify-between gap-2">
-                        <span className="num whitespace-nowrap text-[13px] text-ink">
-                          {formatBaseCurrency(baseAmount(expense))}
-                        </span>
+                        <Money value={formatBaseCurrency(baseAmount(expense))} className="text-[13px] text-ink" />
                         <Button
                           variant="secondary"
                           size="sm"
@@ -758,7 +760,7 @@ export default function TripDetailPage() {
       >
         <div className="flex flex-col gap-3">
           <p>
-            Delete <span className="font-semibold text-ink">{trip.name}</span>?
+            Delete <span className="font-medium text-ink">{trip.name}</span>?
           </p>
           <p className="rounded-control border border-rule bg-sunk px-3 py-2.5">
             Expenses are kept. They&apos;re just unlinked from this trip and stay in Expenses with their

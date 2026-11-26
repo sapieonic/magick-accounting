@@ -181,7 +181,7 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
                   "flex h-11 items-center gap-2 whitespace-nowrap rounded-control px-3 text-sm",
                   transition,
                   focusRing,
-                  current ? "bg-accent-soft font-medium text-accent" : "text-ink-2 hover:bg-hover hover:text-ink"
+                  current ? "bg-sunk font-medium text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"
                 )}
               >
                 <Icon aria-hidden="true" size={16} strokeWidth={ICON_STROKE} className="shrink-0" />

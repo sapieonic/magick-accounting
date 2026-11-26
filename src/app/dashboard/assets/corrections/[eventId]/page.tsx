@@ -68,7 +68,7 @@ export default function AssetCorrectionPage() {
         actions={<Badge tone="danger" dot>Reversed</Badge>}
       />
       <PanelGrid min={360}>
-        <Panel title="Correction" wash>
+        <Panel title="Correction">
           <DetailList layout="columns" items={details} />
         </Panel>
         <Panel

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
-import { panelPadX } from "@/components/ui/styles";
+import { panelPadX, sectionTitleClass } from "@/components/ui/styles";
 
 interface FormSectionProps {
   /** Section heading (h2); omit for an untitled group (notes, extras). */
@@ -34,7 +34,7 @@ export default function FormSection({ title, description, actions, flush = false
         <div className={cn("flex flex-wrap items-start justify-between gap-x-3 gap-y-2", panelPadX)}>
           <div className="flex min-w-0 flex-col gap-0.5">
             {title && (
-              <h2 id={headingId} className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+              <h2 id={headingId} className={sectionTitleClass}>
                 {title}
               </h2>
             )}

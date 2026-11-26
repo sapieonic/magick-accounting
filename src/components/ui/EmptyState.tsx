@@ -1,6 +1,8 @@
 "use client";
 
 import { ReactNode, type Ref } from "react";
+import { sectionTitleClass } from "@/components/ui/styles";
+import { cn } from "@/components/ui/cn";
 
 interface EmptyStateProps {
   icon: ReactNode;
@@ -14,10 +16,10 @@ interface EmptyStateProps {
 export default function EmptyState({ icon, title, description, action, headingRef }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-14 text-center">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-accent-soft text-accent [&_svg]:h-5 [&_svg]:w-5 [&_svg]:stroke-[1.6]">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-panel bg-sunk text-ink-3 ring-1 ring-inset ring-rule-2 [&_svg]:h-5 [&_svg]:w-5 [&_svg]:stroke-[1.5]">
         {icon}
       </div>
-      <h3 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="mb-1 rounded-control text-[15px] font-semibold text-ink">
+      <h3 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className={cn("mb-1 rounded-control", sectionTitleClass)}>
         {title}
       </h3>
       <p className="max-w-sm text-sm text-ink-3 [text-wrap:pretty]">{description}</p>

@@ -9,14 +9,14 @@ const SIZES = {
 } as const;
 
 const TONES = {
-  /** Faint indigo ring, indigo arc. */
+  /** Faint accent ring, accent arc. */
   accent: "border-accent/20 border-t-accent",
   /** Text-coloured arc with a gap: inside buttons, whatever their variant. */
   current: "border-current border-r-transparent",
 } as const;
 
 /**
- * Thin indigo ring with a rotating arc: a "Loading" status on its own, or a
+ * Thin accent ring with a rotating arc: a "Loading" status on its own, or a
  * decorative ring (aria-hidden) when visible text beside it says what's loading.
  */
 export default function Spinner({
