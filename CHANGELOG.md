@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/sapieonic/magick-accounting/compare/v1.16.0...v1.17.0) (2026-11-26)
+
+
+### Features
+
+* give the UI a quieter, hand-built look ([#35](https://github.com/sapieonic/magick-accounting/issues/35)) ([28dd028](https://github.com/sapieonic/magick-accounting/commit/28dd028c1e98fe8f740e446ac260eb161780e09a))
+
 # [1.16.0](https://github.com/sapieonic/magick-accounting/compare/v1.15.1...v1.16.0) (2026-11-26)
 
 
