@@ -13,9 +13,15 @@ import {
   paymentEntriesEqual,
   storedRateToBase,
 } from "@/lib/expense";
-import { assertPayersExist, storedPaymentEntries } from "@/lib/expense-server";
+import { assertPayersExist, revisionMatch, storedPaymentEntries } from "@/lib/expense-server";
+import {
+  approvalChangeAfterEdit,
+  parseEditRevision,
+  staleEditConflict,
+} from "@/lib/approval-server";
 import { assertLinkedExpenseCurrencyUnchanged, roundMoney } from "@/lib/asset";
 import { assertReceiptOwnedByUser } from "@/lib/receipt";
+import { APPROVED_DELETE_MESSAGE, canDeleteExpense, type ApprovalStatus } from "@/lib/approval";
 import { normalizeTravelType } from "@/lib/trip";
 import { resolveTripAssignment } from "@/lib/trip-server";
 import mongoose from "mongoose";
@@ -42,6 +48,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .populate("createdBy", "name email photoURL")
     .populate("payments.paidBy", "name email")
     .populate("trip", "name")
+    .populate("reviewedBy", "name email")
+    .populate("approvalHistory.by", "name email")
     .lean();
 
   if (!expense) {
@@ -83,6 +91,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const body = await req.json();
+    // The form sends the revision it loaded: an edit based on an older version
+    // (an admin reviewed it, another tab saved) must not overwrite it.
+    const clientRevision = parseEditRevision(body?.revision);
+    if (clientRevision !== null && clientRevision !== Number(expense.assetAllocationRevision || 0)) {
+      return NextResponse.json(staleEditConflict(expense), { status: 409 });
+    }
     const requestedReceiptKey =
       body.receiptKey !== undefined ? body.receiptKey || null : expense.receiptKey || null;
     if (requestedReceiptKey !== (expense.receiptKey || null)) {
@@ -175,13 +189,25 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       paymentSplit.paymentSource !== expense.paymentSource ||
       paymentSplit.pocketAmount !== getPaymentBreakdown(expense).pocket ||
       !paymentEntriesEqual(paymentSplit.payments ?? [], storedPayments) ||
-      (body.receiptKey !== undefined && body.receiptKey !== (expense.receiptKey || null));
+      (body.receiptKey !== undefined && body.receiptKey !== (expense.receiptKey || null)) ||
+      // What the expense says it was for is reviewed too, so an approved
+      // expense can't be relabelled without another look.
+      // Both sides trimmed: older documents may have stored stray spaces.
+      (body.title !== undefined && String(body.title ?? "").trim() !== String(expense.title ?? "").trim()) ||
+      (body.description !== undefined &&
+        String(body.description ?? "").trim() !== String(expense.description ?? "").trim());
     if (hasLinkedAssets && authResult.role === "user" && changedProtectedField) {
       return NextResponse.json(
-        { error: "An administrator must approve accounting changes to a linked asset purchase" },
+        { error: "Assets are registered against this expense, so only an admin can change its details" },
         { status: 403 }
       );
     }
+    // An owner's save can send the expense back for approval (`statusAfterEdit`).
+    const approvalChange = approvalChangeAfterEdit({
+      expense,
+      editor: authResult,
+      accountingChanged: changedProtectedField,
+    });
 
     // Trip and travel type aren't accounting fields, so they're left out of
     // the linked-asset check above. The trip is only re-checked when it
@@ -239,14 +265,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       travelType: newTravelType,
     };
     const previousReceiptKey = expense.receiptKey;
-    const revision = Number(expense.assetAllocationRevision || 0);
-    const revisionFilter =
-      revision === 0
-        ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
-        : { assetAllocationRevision: revision };
+    // The revision CAS also loses to an approve/reject that landed after the
+    // read above, since those increment it too.
     const updated = await Expense.findOneAndUpdate(
-      { _id: id, ...revisionFilter },
-      { $set: update, $inc: { assetAllocationRevision: 1 } },
+      { _id: id, ...revisionMatch(Number(expense.assetAllocationRevision || 0)) },
+      {
+        $set: { ...update, ...(approvalChange?.$set ?? {}) },
+        ...(approvalChange ? { $push: approvalChange.$push } : {}),
+        $inc: { assetAllocationRevision: 1 },
+      },
       { new: true, runValidators: true }
     )
       .populate("category", "name")
@@ -255,9 +282,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate("createdBy", "name email photoURL")
       .populate("payments.paidBy", "name email")
       .populate("trip", "name")
+      .populate("reviewedBy", "name email")
+      .populate("approvalHistory.by", "name email")
       .lean();
     if (!updated) {
-      throw new Error("Expense changed while you were editing it; reload and try again");
+      // Lost the revision check: someone (an admin's review, another edit)
+      // changed it after the read above.
+      const current = (await Expense.findById(id).select("approvalStatus").lean()) as {
+        approvalStatus?: ApprovalStatus | null;
+      } | null;
+      if (!current) {
+        return NextResponse.json(
+          { error: "This expense no longer exists. It may have been deleted.", code: "not_found" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(staleEditConflict(current), { status: 409 });
     }
 
     if (previousReceiptKey && update.receiptKey !== previousReceiptKey) {
@@ -270,6 +310,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+const DELETE_ASSET_LINKED = {
+  error: "This expense is linked to company assets and cannot be deleted",
+  code: "asset_linked",
+};
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authResult = await verifyAuth(req);
@@ -289,24 +334,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (authResult.role === "user" && expense.createdBy.toString() !== authResult._id) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
-
-  const linkedAssetCount = await Asset.countDocuments({ purchaseExpense: id });
-  if (linkedAssetCount > 0) {
-    return NextResponse.json(
-      { error: "This expense is linked to company assets and cannot be deleted" },
-      { status: 409 }
-    );
+  // Approved spend (legacy included) is in the books: only the master admin removes it.
+  if (!canDeleteExpense(authResult, expense)) {
+    return NextResponse.json({ error: APPROVED_DELETE_MESSAGE, code: "approved_locked" }, { status: 403 });
   }
 
-  const revision = Number(expense.assetAllocationRevision || 0);
-  const revisionCondition =
-    revision === 0
-      ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
-      : { assetAllocationRevision: revision };
+  const linkedAssetCount = await Asset.countDocuments({ purchaseExpense: id });
+  if (linkedAssetCount > 0) return NextResponse.json(DELETE_ASSET_LINKED, { status: 409 });
+
+  const revisionCondition = revisionMatch(Number(expense.assetAllocationRevision || 0));
   const deletion = await Expense.deleteOne({
     _id: expense._id,
     $and: [
       revisionCondition,
+      // Everyone but the master admin may only delete what isn't approved;
+      // the revision check already loses to a review, this states the rule.
+      ...(authResult.role === "master_admin" ? [] : [{ approvalStatus: { $in: ["pending", "rejected"] } }]),
       {
         $or: [
           { assetAllocatedAmount: { $exists: false } },
@@ -316,8 +359,25 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     ],
   });
   if (deletion.deletedCount !== 1) {
+    // Say which condition lost: assets reserved against it meanwhile, gone, or edited.
+    const current = await Expense.findById(id);
+    if (!current) {
+      return NextResponse.json(
+        { error: "This expense no longer exists. It may have been deleted.", code: "not_found" },
+        { status: 404 }
+      );
+    }
+    if (Number(current.assetAllocatedAmount || 0) > 0) {
+      return NextResponse.json(DELETE_ASSET_LINKED, { status: 409 });
+    }
+    if (!canDeleteExpense(authResult, current)) {
+      return NextResponse.json({ error: APPROVED_DELETE_MESSAGE, code: "approved_locked" }, { status: 403 });
+    }
     return NextResponse.json(
-      { error: "Expense or asset allocation changed; reload and try again" },
+      {
+        error: "This expense changed after you opened it (for example, an admin reviewed it). Reload and try again.",
+        code: "stale",
+      },
       { status: 409 }
     );
   }

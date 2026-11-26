@@ -43,6 +43,7 @@ describe("DELETE /api/expenses/:id", () => {
       createdBy: { toString: () => "owner-id" },
       receiptKey: "receipts/owner-id/key.pdf",
       assetAllocationRevision: 4,
+      approvalStatus: "pending",
     } as never);
     vi.mocked(Asset.countDocuments).mockResolvedValue(0);
     vi.mocked(deleteObject).mockResolvedValue(undefined);
@@ -70,15 +71,154 @@ describe("DELETE /api/expenses/:id", () => {
     );
   });
 
-  it("returns a conflict when a concurrent asset reservation wins", async () => {
-    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+  function remove() {
+    return DELETE({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+  }
 
-    const response = await DELETE({} as NextRequest, {
-      params: Promise.resolve({ id: expenseId }),
-    });
+  it("returns asset_linked when a concurrent asset reservation wins", async () => {
+    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce({
+        _id: expenseId,
+        createdBy: { toString: () => "owner-id" },
+        receiptKey: "receipts/owner-id/key.pdf",
+        assetAllocationRevision: 4,
+        approvalStatus: "pending",
+      } as never)
+      .mockResolvedValueOnce({
+        _id: expenseId,
+        assetAllocatedAmount: 500,
+        assetAllocationRevision: 5,
+        approvalStatus: "pending",
+      } as never);
+
+    const response = await remove();
 
     expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This expense is linked to company assets and cannot be deleted",
+      code: "asset_linked",
+    });
     expect(deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("returns asset_linked when assets are already registered against it", async () => {
+    vi.mocked(Asset.countDocuments).mockResolvedValue(2);
+
+    const response = await remove();
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("asset_linked");
+    expect(Expense.deleteOne).not.toHaveBeenCalled();
+  });
+
+  it("returns stale when it was edited or reviewed after the read", async () => {
+    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+
+    const response = await remove();
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This expense changed after you opened it (for example, an admin reviewed it). Reload and try again.",
+      code: "stale",
+    });
+    expect(deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("returns not_found when it was deleted after the read", async () => {
+    vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce({
+        _id: expenseId,
+        createdBy: { toString: () => "owner-id" },
+        approvalStatus: "pending",
+      } as never)
+      .mockResolvedValueOnce(null as never);
+
+    const response = await remove();
+
+    expect(response.status).toBe(404);
+    expect((await response.json()).code).toBe("not_found");
+  });
+
+  describe("approved expenses are in the books", () => {
+    const LOCKED = {
+      error: "Approved expenses are part of the books, so only the master admin can delete them.",
+      code: "approved_locked",
+    };
+    const stored = (approvalStatus?: string) =>
+      ({
+        _id: expenseId,
+        createdBy: { toString: () => "owner-id" },
+        assetAllocationRevision: 4,
+        ...(approvalStatus ? { approvalStatus } : {}),
+      }) as never;
+    const signIn = (role: "user" | "admin" | "master_admin", _id = role === "user" ? "owner-id" : `${role}-id`) =>
+      vi.mocked(verifyAuth).mockResolvedValue({ _id, email: "x@example.com", name: role, role });
+
+    it.each([
+      ["its submitter", "user", "approved"],
+      ["its submitter, for a legacy expense", "user", undefined],
+      ["an admin", "admin", "approved"],
+      ["an admin, for a legacy expense", "admin", undefined],
+    ] as const)("refuses %s", async (_label, role, status) => {
+      signIn(role);
+      vi.mocked(Expense.findById).mockResolvedValue(stored(status));
+
+      const response = await remove();
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual(LOCKED);
+      expect(Expense.deleteOne).not.toHaveBeenCalled();
+    });
+
+    it("lets the master admin delete an approved or legacy expense", async () => {
+      signIn("master_admin");
+      vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 1 } as never);
+      for (const status of ["approved", undefined]) {
+        vi.mocked(Expense.findById).mockResolvedValue(stored(status));
+        expect((await remove()).status).toBe(200);
+      }
+      // No status condition for the master admin.
+      const filter = vi.mocked(Expense.deleteOne).mock.calls[0][0] as { $and: Record<string, unknown>[] };
+      expect(filter.$and.some((part) => "approvalStatus" in part)).toBe(false);
+    });
+
+    it.each([
+      ["its submitter", "user", "pending"],
+      ["its submitter", "user", "rejected"],
+      ["an admin", "admin", "pending"],
+      ["an admin", "admin", "rejected"],
+    ] as const)("lets %s delete a %s expense, only while it isn't approved", async (_label, role, status) => {
+      signIn(role);
+      vi.mocked(Expense.findById).mockResolvedValue(stored(status));
+      vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 1 } as never);
+
+      expect((await remove()).status).toBe(200);
+      const filter = vi.mocked(Expense.deleteOne).mock.calls[0][0] as { $and: Record<string, unknown>[] };
+      expect(filter.$and).toContainEqual({ approvalStatus: { $in: ["pending", "rejected"] } });
+    });
+
+    it("refuses a submitter's delete that loses to an approval landing meanwhile", async () => {
+      signIn("user");
+      vi.mocked(Expense.deleteOne).mockResolvedValue({ deletedCount: 0 } as never);
+      vi.mocked(Expense.findById)
+        .mockResolvedValueOnce(stored("pending"))
+        .mockResolvedValueOnce({ ...(stored("approved") as object), assetAllocationRevision: 5 } as never);
+
+      const response = await remove();
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual(LOCKED);
+    });
+
+    it("still refuses another member's expense with a 403", async () => {
+      signIn("user", "someone-else");
+      vi.mocked(Expense.findById).mockResolvedValue(stored("pending"));
+
+      expect((await remove()).status).toBe(403);
+      expect(Expense.deleteOne).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -298,7 +438,7 @@ describe("PUT /api/expenses/:id payment split", () => {
     expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it("lets a user edit unprotected fields of an asset-linked legacy expense", async () => {
+  it("lets a user resave an asset-linked legacy expense unchanged", async () => {
     // Legacy docs predate pocketAmount; the whole amount counts as pocket.
     mockStoredExpense({
       paymentSource: "pocket",
@@ -313,12 +453,12 @@ describe("PUT /api/expenses/:id payment split", () => {
       role: "user",
     });
 
-    const response = await put({ title: "Standing desk", paymentSource: "pocket" });
+    const response = await put({ title: "Laptop stand", paymentSource: "pocket" });
 
     expect(response.status).toBe(200);
     expect(storedUpdate().$set).toEqual(
       expect.objectContaining({
-        title: "Standing desk",
+        title: "Laptop stand",
         paymentSource: "pocket",
         pocketAmount: 100,
         pocketAmountInBaseCurrency: 8300,
@@ -371,7 +511,7 @@ describe("PUT /api/expenses/:id payment split", () => {
     );
   });
 
-  it("lets a user resave an asset-linked split unchanged apart from unprotected fields", async () => {
+  it("lets a user resave an asset-linked split unchanged", async () => {
     mockStoredExpense();
     linkAsset();
     vi.mocked(verifyAuth).mockResolvedValue({
@@ -382,12 +522,34 @@ describe("PUT /api/expenses/:id payment split", () => {
     });
 
     // The edit form resends every field, including the unchanged split.
-    const response = await put({ title: "Monitor arm", amount: 100, paymentSource: "split", pocketAmount: 40 });
+    const response = await put({ title: " Laptop stand ", amount: 100, paymentSource: "split", pocketAmount: 40 });
 
     expect(response.status).toBe(200);
     expect(storedUpdate().$set).toEqual(
-      expect.objectContaining({ title: "Monitor arm", paymentSource: "split", pocketAmount: 40 })
+      expect.objectContaining({ paymentSource: "split", pocketAmount: 40 })
     );
+  });
+
+  it("requires an admin when a user retitles or redescribes an asset-linked expense", async () => {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: "owner-id",
+      email: "owner@example.com",
+      name: "Owner",
+      role: "user",
+    });
+    for (const body of [{ title: "Monitor arm" }, { description: "For the office" }]) {
+      mockStoredExpense();
+      linkAsset();
+      vi.mocked(Expense.findOneAndUpdate).mockClear();
+
+      const response = await put(body);
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: "Assets are registered against this expense, so only an admin can change its details",
+      });
+      expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+    }
   });
 
   it("keeps a stored split when the amount grows, so the company share absorbs it", async () => {
@@ -504,7 +666,7 @@ describe("PUT /api/expenses/:id payment split", () => {
       });
 
       const response = await put({
-        title: "Team lunch",
+        title: "Laptop stand",
         amount: 100,
         paymentSource: "multiple",
         payments: [
@@ -514,7 +676,7 @@ describe("PUT /api/expenses/:id payment split", () => {
       });
 
       expect(response.status).toBe(200);
-      expect(storedUpdate().$set).toEqual(expect.objectContaining({ title: "Team lunch", pocketAmount: 60 }));
+      expect(storedUpdate().$set).toEqual(expect.objectContaining({ title: "Laptop stand", pocketAmount: 60 }));
     });
 
     it("requires an admin when a user changes the payers of an asset-linked expense", async () => {
@@ -675,5 +837,295 @@ describe("PUT /api/expenses/:id trip", () => {
 
     expect(response.status).toBe(200);
     expect(storedUpdate()).toEqual(expect.objectContaining({ travelType: "visa" }));
+  });
+});
+
+describe("GET /api/expenses/:id approval", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+
+  it("populates the reviewer and who did each approval step", async () => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: "admin-id",
+      email: "admin@example.com",
+      name: "Admin",
+      role: "admin",
+    });
+    const query = {
+      populate: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue({ _id: expenseId, createdBy: { _id: "owner-id" }, approvalStatus: "rejected" }),
+    };
+    vi.mocked(Expense.findById).mockReturnValue(query as never);
+    const assets = { populate: vi.fn(), sort: vi.fn(), lean: vi.fn().mockResolvedValue([]) };
+    assets.populate.mockReturnValue(assets);
+    assets.sort.mockReturnValue(assets);
+    vi.mocked(Asset.find).mockReturnValue(assets as never);
+
+    const response = await GET({} as NextRequest, { params: Promise.resolve({ id: expenseId }) });
+
+    expect(response.status).toBe(200);
+    expect(query.populate).toHaveBeenCalledWith("reviewedBy", "name email");
+    expect(query.populate).toHaveBeenCalledWith("approvalHistory.by", "name email");
+  });
+});
+
+describe("PUT /api/expenses/:id approval", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+  const ownerId = "66c1884c0853f8a76a4da201";
+  const objectIdLike = (value: string) => ({ toString: () => value });
+
+  function mockStoredExpense(overrides: Record<string, unknown> = {}) {
+    const stored = {
+      _id: expenseId,
+      title: "Taxi",
+      description: "",
+      createdBy: objectIdLike(ownerId),
+      amount: 100,
+      gstAmount: null,
+      currency: objectIdLike("inr-id"),
+      amountInBaseCurrency: 100,
+      exchangeRateToBase: 1,
+      date: new Date("2026-11-01T00:00:00.000Z"),
+      category: objectIdLike("category-id"),
+      department: objectIdLike("department-id"),
+      paymentSource: "pocket",
+      pocketAmount: 100,
+      pocketAmountInBaseCurrency: 100,
+      assetAllocationRevision: 4,
+      approvalStatus: "approved",
+      ...overrides,
+    };
+    vi.mocked(Expense.findById).mockResolvedValue(stored as never);
+    return stored;
+  }
+
+  function signInAs(role: "user" | "admin") {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: role === "user" ? ownerId : "admin-id",
+      email: `${role}@example.com`,
+      name: role,
+      role,
+    });
+  }
+
+  function put(body: Record<string, unknown>) {
+    return PUT({ json: async () => body } as unknown as NextRequest, {
+      params: Promise.resolve({ id: expenseId }),
+    });
+  }
+
+  function storedCall() {
+    const [filter, update] = vi.mocked(Expense.findOneAndUpdate).mock.calls[0] as unknown as [
+      Record<string, unknown>,
+      { $set: Record<string, unknown>; $push?: Record<string, unknown>; $inc: Record<string, number> },
+    ];
+    return { filter, update };
+  }
+
+  const sentBack = (note: string) => ({
+    approvalHistory: { action: "resubmitted", by: ownerId, at: expect.any(Date), note },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    signInAs("user");
+    vi.mocked(Asset.find).mockResolvedValue([] as never);
+    mockStoredExpense();
+    const query = {
+      populate: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue({ _id: expenseId, approvalStatus: "pending" }),
+    };
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue(query as never);
+  });
+
+  it("sends an approved expense back for approval when its submitter changes the amount", async () => {
+    const response = await put({ amount: 120 });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).expense.approvalStatus).toBe("pending");
+    const { filter, update } = storedCall();
+    expect(filter).toEqual({ _id: expenseId, assetAllocationRevision: 4 });
+    expect(update.$set).toEqual(
+      expect.objectContaining({
+        amount: 120,
+        approvalStatus: "pending",
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+      })
+    );
+    expect(update.$push).toEqual(sentBack("Edited after approval"));
+    expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
+  });
+
+  it("treats a legacy expense without a status as approved", async () => {
+    mockStoredExpense({ approvalStatus: undefined, assetAllocationRevision: undefined });
+
+    expect((await put({ category: "other-category" })).status).toBe(200);
+    const { filter, update } = storedCall();
+    expect(filter).toEqual(expect.objectContaining({ $or: expect.any(Array) }));
+    expect(update.$set.approvalStatus).toBe("pending");
+    expect(update.$push).toEqual(sentBack("Edited after approval"));
+  });
+
+  it("sends an approved expense back for approval when its title or description changes", async () => {
+    for (const body of [{ title: "Taxi to client" }, { description: "Meeting" }]) {
+      mockStoredExpense();
+      vi.mocked(Expense.findOneAndUpdate).mockClear();
+
+      expect((await put(body)).status).toBe(200);
+      const { update } = storedCall();
+      expect(update.$set.approvalStatus).toBe("pending");
+      expect(update.$push).toEqual(sentBack("Edited after approval"));
+    }
+  });
+
+  it("ignores stray spaces stored around an older expense's title and description", async () => {
+    mockStoredExpense({ title: " Taxi  ", description: " Meeting " });
+
+    expect((await put({ title: "Taxi", description: "Meeting" })).status).toBe(200);
+    const { update } = storedCall();
+    expect(update.$set).not.toHaveProperty("approvalStatus");
+    expect(update).not.toHaveProperty("$push");
+  });
+
+  it("keeps an approved expense approved when it's resaved unchanged", async () => {
+    // The edit form resends every field, with the same title and description.
+    const response = await put({
+      title: " Taxi ",
+      description: "",
+      amount: 100,
+      currency: "inr-id",
+      category: "category-id",
+      department: "department-id",
+      date: "2026-11-01T00:00:00.000Z",
+      paymentSource: "pocket",
+    });
+
+    expect(response.status).toBe(200);
+    const { update } = storedCall();
+    expect(update.$set).not.toHaveProperty("approvalStatus");
+    expect(update).not.toHaveProperty("$push");
+    expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
+  });
+
+  it("sends a rejected expense back for approval on any save by its submitter", async () => {
+    mockStoredExpense({ approvalStatus: "rejected", rejectionReason: "Receipt missing", reviewedBy: "admin-id" });
+
+    expect((await put({ title: "Taxi (receipt attached)" })).status).toBe(200);
+    const { update } = storedCall();
+    expect(update.$set).toEqual(
+      expect.objectContaining({ approvalStatus: "pending", rejectionReason: null, reviewedBy: null })
+    );
+    expect(update.$push).toEqual(sentBack("Edited after rejection"));
+  });
+
+  it("never changes the status on an admin's edit", async () => {
+    signInAs("admin");
+    for (const approvalStatus of ["approved", "rejected", "pending"]) {
+      vi.mocked(Expense.findOneAndUpdate).mockClear();
+      mockStoredExpense({ approvalStatus });
+
+      expect((await put({ amount: 250 })).status).toBe(200);
+      const { update } = storedCall();
+      expect(update.$set).not.toHaveProperty("approvalStatus");
+      expect(update).not.toHaveProperty("$push");
+    }
+  });
+
+  it("keeps a pending expense pending, still moving its revision on", async () => {
+    mockStoredExpense({ approvalStatus: "pending" });
+
+    expect((await put({ amount: 80 })).status).toBe(200);
+    const { filter, update } = storedCall();
+    expect(filter).toEqual({ _id: expenseId, assetAllocationRevision: 4 });
+    expect(update.$set).not.toHaveProperty("approvalStatus");
+    expect(update).not.toHaveProperty("$push");
+    expect(update.$inc).toEqual({ assetAllocationRevision: 1 });
+  });
+
+  const STALE_EDIT =
+    "This expense changed while you were editing it (for example, an admin reviewed it). Reload to see the latest version.";
+
+  it("loses to a review that landed after the expense was read", async () => {
+    // An admin rejected it (revision 4 → 5) between the read and the write.
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue({
+      populate: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as never);
+    const stored = mockStoredExpense();
+    const reread = (doc: unknown) =>
+      ({ select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(doc) }) as never;
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce(stored as never)
+      .mockReturnValueOnce(reread({ ...stored, approvalStatus: "rejected", assetAllocationRevision: 5 }));
+
+    const response = await put({ amount: 80 });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: STALE_EDIT, code: "stale", approvalStatus: "rejected" });
+  });
+
+  it("says the expense is gone when it was deleted between the read and the write", async () => {
+    vi.mocked(Expense.findOneAndUpdate).mockReturnValue({
+      populate: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as never);
+    const stored = mockStoredExpense();
+    vi.mocked(Expense.findById)
+      .mockResolvedValueOnce(stored as never)
+      .mockReturnValueOnce({ select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(null) } as never);
+
+    const response = await put({ amount: 80 });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "This expense no longer exists. It may have been deleted.",
+      code: "not_found",
+    });
+  });
+
+  it("refuses an edit of an older version than the one stored, before validating or writing", async () => {
+    // The form loaded revision 3; an admin approved it since (now 4).
+    const response = await put({ revision: 3, amount: -5 });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: STALE_EDIT, code: "stale", approvalStatus: "approved" });
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("saves when the form's revision matches, still checking it in the write", async () => {
+    const response = await put({ revision: 4, amount: 120 });
+
+    expect(response.status).toBe(200);
+    expect(storedCall().filter).toEqual({ _id: expenseId, assetAllocationRevision: 4 });
+  });
+
+  it("matches revision 0 on a legacy expense without one", async () => {
+    mockStoredExpense({ assetAllocationRevision: undefined });
+
+    expect((await put({ revision: 0, title: "Taxi" })).status).toBe(200);
+    expect((await put({ revision: 1, title: "Taxi" })).status).toBe(409);
+  });
+
+  it("refuses a malformed revision", async () => {
+    for (const revision of ["4", -1, 2.5]) {
+      const response = await put({ revision, title: "Taxi" });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "Expense version is missing or invalid. Reload and try again.",
+      });
+    }
+    expect(Expense.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("populates the reviewer in the response", async () => {
+    await put({ title: "Taxi" });
+
+    const query = vi.mocked(Expense.findOneAndUpdate).mock.results[0].value;
+    expect(query.populate).toHaveBeenCalledWith("reviewedBy", "name email");
+    expect(query.populate).toHaveBeenCalledWith("approvalHistory.by", "name email");
   });
 });

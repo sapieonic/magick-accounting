@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth";
+import { withApproved } from "@/lib/approval";
 import { connectDB } from "@/lib/mongodb";
 import { roundMoney } from "@/lib/asset";
 import { buildExpenseFilter, spendExprs } from "@/lib/expense-query";
@@ -67,10 +68,13 @@ export async function GET(req: NextRequest) {
   const trendStart = buckets[0].start;
   const trendEnd = buckets[buckets.length - 1].end;
 
-  const trendFilter = {
+  // Charts show spend, so only approved expenses count. The trend window
+  // reads the list's own date range, so it is built before narrowing.
+  const trendFilter = withApproved({
     ...filter,
     date: buildTrendDateFilter(filter.date, trendStart, trendEnd),
-  };
+  });
+  const spendFilter = withApproved(filter);
 
   const [trendRows, categoryRows, departmentSpendRows] = await Promise.all([
     Expense.aggregate([
@@ -84,7 +88,7 @@ export async function GET(req: NextRequest) {
       },
     ]),
     Expense.aggregate([
-      { $match: filter },
+      { $match: spendFilter },
       {
         $group: {
           _id: "$category",
@@ -113,7 +117,7 @@ export async function GET(req: NextRequest) {
       },
     ]),
     Expense.aggregate([
-      { $match: filter },
+      { $match: spendFilter },
       {
         $group: {
           _id: "$department",

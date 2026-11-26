@@ -3,6 +3,14 @@ import Expense from "@/models/Expense";
 import type { AuthUser } from "./auth";
 import { roundMoney } from "./asset";
 import {
+  APPROVED_MATCH,
+  isApprovedExpr,
+  isPendingExpr,
+  isRejectedExpr,
+  parseApprovalFilter,
+  withApproved,
+} from "./approval";
+import {
   isAdminViewer,
   MAX_EXPENSE_PAGE,
   paidByFilter,
@@ -121,6 +129,15 @@ export function buildExpenseFilter(
     };
   }
 
+  // `approval=pending|approved|rejected` narrows the list; absent or `all`
+  // lists every status. Approved includes legacy documents without a status.
+  const approval = parseApprovalFilter(searchParams.get("approval"));
+  if (approval === "approved") {
+    filter.approvalStatus = { ...APPROVED_MATCH.approvalStatus };
+  } else if (approval) {
+    filter.approvalStatus = approval;
+  }
+
   return filter;
 }
 
@@ -130,11 +147,17 @@ export interface PayerSpend {
   companySpend: number;
 }
 
+/** Accumulator: `$sum` of `value` over the documents where `condition` holds. */
+export function sumWhere(condition: unknown, value: unknown) {
+  return { $sum: { $cond: [condition, value, 0] } };
+}
+
 /**
  * How `viewer` counts each expense, as `{ total, pocket, company }` aggregation
  * expressions in base currency: the whole expense for an admin, their own
  * share (`payerShareExprs`) for a `user`, so their totals match what Spend by
- * User credits them. Client-side counterpart: `viewerAmounts`.
+ * User credits them. Client-side counterpart: `viewerAmounts`. These ignore
+ * approval: spend totals must also gate on `isApprovedExpr` / `APPROVED_MATCH`.
  */
 export function spendExprs(viewer: Pick<AuthUser, "_id" | "role">) {
   return isAdminViewer(viewer)
@@ -142,7 +165,13 @@ export function spendExprs(viewer: Pick<AuthUser, "_id" | "role">) {
     : payerShareExprs(new mongoose.Types.ObjectId(viewer._id));
 }
 
-/** Pipeline counting the expenses matching `filter` and summing them as `viewer` counts them. */
+/**
+ * Pipeline counting the expenses matching `filter` and summing them as
+ * `viewer` counts them (`spendExprs`), in one pass. The spend figures count
+ * approved expenses only (legacy documents without a status included); what's
+ * left out is reported as `pendingCount` / `pendingAmount` (awaiting an admin,
+ * summed by the same viewer rule) and `rejectedCount`.
+ */
 export function expenseSummaryPipeline(
   filter: Record<string, unknown>,
   viewer: Pick<AuthUser, "_id" | "role">
@@ -153,11 +182,14 @@ export function expenseSummaryPipeline(
     {
       $group: {
         _id: null,
-        totalExpenses: { $sum: 1 },
-        totalAmount: { $sum: amounts.total },
+        totalExpenses: sumWhere(isApprovedExpr, 1),
+        totalAmount: sumWhere(isApprovedExpr, amounts.total),
         // Company vs pocket, with the legacy fallbacks every aggregation uses.
-        companyAmount: { $sum: amounts.company },
-        pocketAmount: { $sum: amounts.pocket },
+        companyAmount: sumWhere(isApprovedExpr, amounts.company),
+        pocketAmount: sumWhere(isApprovedExpr, amounts.pocket),
+        pendingCount: sumWhere(isPendingExpr, 1),
+        pendingAmount: sumWhere(isPendingExpr, amounts.total),
+        rejectedCount: sumWhere(isRejectedExpr, 1),
       },
     },
   ];
@@ -166,8 +198,10 @@ export function expenseSummaryPipeline(
 /**
  * Count and totals of the expenses matching `filter`, in base currency and
  * rounded to the paisa. An admin gets whole expenses; a `user` their own share
- * of each (what Spend by User credits them). With `paidBy` (admins), also that
- * person's share as `payerSpend`.
+ * of each (what Spend by User credits them). Spend counts approved expenses
+ * only; pending ones are reported as `pendingCount` / `pendingAmount` (by the
+ * same rule) and rejected ones as `rejectedCount`. With `paidBy` (admins),
+ * also that person's approved share as `payerSpend`.
  */
 export async function getExpenseSummary(
   filter: Record<string, unknown>,
@@ -176,7 +210,9 @@ export async function getExpenseSummary(
 ) {
   const [[summary], payerRows] = await Promise.all([
     Expense.aggregate(expenseSummaryPipeline(filter, viewer)),
-    paidBy ? Expense.aggregate(payerSpendPipeline(filter, paidBy)) : Promise.resolve(null),
+    paidBy
+      ? Expense.aggregate(payerSpendPipeline(withApproved(filter), paidBy))
+      : Promise.resolve(null),
   ]);
 
   const payerSpend: PayerSpend | null = payerRows
@@ -192,6 +228,9 @@ export async function getExpenseSummary(
     totalAmount: roundMoney(summary?.totalAmount ?? 0),
     companyAmount: roundMoney(summary?.companyAmount ?? 0),
     pocketAmount: roundMoney(summary?.pocketAmount ?? 0),
+    pendingCount: summary?.pendingCount ?? 0,
+    pendingAmount: roundMoney(summary?.pendingAmount ?? 0),
+    rejectedCount: summary?.rejectedCount ?? 0,
     // With a payer filter: that person's own share, as Spend by User counts it.
     ...(payerSpend ? { payerSpend } : {}),
   };

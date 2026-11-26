@@ -15,6 +15,9 @@ import PageHeader from "@/components/ui/PageHeader";
 import Avatar, { initials } from "@/components/ui/Avatar";
 import { Chip, RemovableChip } from "@/components/ui/Badge";
 import SearchInput from "@/components/ui/SearchInput";
+import Notice from "@/components/ui/Notice";
+import ApprovalBadge from "@/components/expenses/ApprovalBadge";
+import { CircleX } from "lucide-react";
 
 describe("Button", () => {
   it("renders a button by default and a link with href", () => {
@@ -98,6 +101,18 @@ describe("layout primitives", () => {
     const cell = screen.getByText("Active assets").parentElement!;
     expect(cell).toHaveClass("justify-start");
     expect(cell).not.toHaveClass("justify-between");
+  });
+
+  it("puts a stat's action under its sub line", () => {
+    render(
+      <StatBand>
+        <Stat label="Awaiting approval" value="₹4,560.00" sub="3 expenses · not in total" action={<a href="/dashboard/approvals">Review</a>} />
+      </StatBand>
+    );
+    const sub = screen.getByText("3 expenses · not in total");
+    const action = screen.getByRole("link", { name: "Review" });
+    expect(sub.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(action.parentElement?.parentElement).toBe(sub.parentElement);
   });
 });
 
@@ -323,5 +338,40 @@ describe("Avatar", () => {
     expect(container).toHaveTextContent("AR");
     rerender(<Avatar name="Asha Rao" photoURL="https://example.com/a.png" />);
     expect(container.querySelector("img")).toHaveAttribute("src", "https://example.com/a.png");
+  });
+});
+
+describe("Notice", () => {
+  it("is a group named by its title, with its detail and actions, and no live region", () => {
+    render(
+      <Notice tone="danger" icon={CircleX} title="Rejected" actions={<button type="button">Edit &amp; resubmit</button>}>
+        Receipt missing
+      </Notice>
+    );
+    const notice = screen.getByRole("group", { name: "Rejected" });
+    expect(notice).toHaveAttribute("data-notice");
+    expect(notice).toHaveAttribute("data-tone", "danger");
+    expect(notice).toHaveTextContent("Receipt missing");
+    expect(notice).toContainElement(screen.getByRole("button", { name: "Edit & resubmit" }));
+    // Re-mounting it (moving between expenses) must not re-announce it: toasts do announcements.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(notice.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+});
+
+describe("ApprovalBadge", () => {
+  it("names each state in words, and leaves approved out unless asked", () => {
+    const { container, rerender } = render(<ApprovalBadge status="pending" />);
+    expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
+    rerender(<ApprovalBadge status="rejected" />);
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    rerender(<ApprovalBadge status="approved" />);
+    expect(container).toBeEmptyDOMElement();
+    // A missing status is a legacy expense: approved.
+    rerender(<ApprovalBadge status={null} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<ApprovalBadge status={null} showApproved />);
+    expect(screen.getByText("Approved")).toBeInTheDocument();
   });
 });

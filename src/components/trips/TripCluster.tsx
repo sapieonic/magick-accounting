@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowUpRight, ChevronRight, FileWarning, Luggage, MapPin, Plus, Users } from "lucide-react";
+import { countsAsSpend, effectiveApprovalStatus } from "@/lib/approval";
+import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { formatTripDates, getTripStatus } from "@/lib/trip";
 import Button from "@/components/ui/Button";
@@ -95,14 +97,22 @@ export default function TripCluster({
   detailId,
   onDelete,
   onRemoveFromTrip,
+  review,
   canModify,
   filtered = false,
 }: TripClusterProps) {
   // Totals come from the expenses on hand so optimistic deletes stay correct.
-  const total = useMemo(
-    () => Math.round(expenses.reduce((sum, e) => sum + baseAmount(e), 0) * 100) / 100,
-    [expenses]
-  );
+  // Only approved expenses count; those awaiting approval are a separate figure.
+  const { total, pendingTotal } = useMemo(() => {
+    let approved = 0;
+    let pending = 0;
+    for (const e of expenses) {
+      if (countsAsSpend(e)) approved += baseAmount(e);
+      else if (effectiveApprovalStatus(e) === "pending") pending += baseAmount(e);
+    }
+    return { total: roundMoney(approved), pendingTotal: roundMoney(pending) };
+  }, [expenses]);
+  const pendingLabel = pendingTotal > 0 ? `+${formatBaseCurrency(pendingTotal)} awaiting approval` : null;
   const missingReceipts = expenses.filter((e) => !e.receiptKey).length;
   const dates = formatTripDates(trip);
   const count = expenses.length;
@@ -122,7 +132,9 @@ export default function TripCluster({
           type="button"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-label={`${trip.name}, ${dates}, ${countLabel}, ${formatBaseCurrency(total)}`}
+          aria-label={`${trip.name}, ${dates}, ${countLabel}, ${formatBaseCurrency(total)}${
+            pendingLabel ? `, plus ${formatBaseCurrency(pendingTotal)} awaiting approval` : ""
+          }`}
           className={cn("col-start-1 row-start-1 flex min-h-11 min-w-0 cursor-pointer items-center gap-2.5 rounded-control text-left", focusRing)}
         >
           <ChevronRight
@@ -166,8 +178,13 @@ export default function TripCluster({
             <ArrowUpRight aria-hidden="true" size={13} strokeWidth={1.75} />
           </Link>
         </span>
-        <span className="num col-start-2 row-start-1 whitespace-nowrap text-right font-medium text-ink [@container(min-width:620px)]:col-start-3 [@container(min-width:620px)]:min-w-[104px]">
-          {formatBaseCurrency(total)}
+        <span className="col-start-2 row-start-1 flex flex-col items-end text-right [@container(min-width:620px)]:col-start-3 [@container(min-width:620px)]:min-w-[104px]">
+          <span className="num whitespace-nowrap font-medium text-ink">{formatBaseCurrency(total)}</span>
+          {pendingLabel && (
+            <span className="num whitespace-nowrap text-xs text-ink-3" title="Awaiting approval, not in the total">
+              {pendingLabel}
+            </span>
+          )}
         </span>
       </div>
 
@@ -203,6 +220,7 @@ export default function TripCluster({
             detailId={detailId}
             onDelete={onDelete}
             onRemoveFromTrip={onRemoveFromTrip}
+            review={review}
             canModify={canModify}
           />
         </div>

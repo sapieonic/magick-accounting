@@ -68,7 +68,8 @@ const TRAVEL = new mongoose.Types.ObjectId("66c1884c0853f8a76a4da301");
 const ENG = new mongoose.Types.ObjectId("66c1884c0853f8a76a4da401");
 const INR = new mongoose.Types.ObjectId("66c1884c0853f8a76a4da601");
 const USD = new mongoose.Types.ObjectId("66c1884c0853f8a76a4da602");
-const ASHA = { _id: USER_ID, name: "Asha", email: "asha@example.com" };
+const ASHA = { _id: USER_ID, name: "Asha", email: "asha@example.com", role: "user" };
+const ASHA_CREATOR = { _id: USER_ID, role: "user" as const };
 const FROM = { id: 42, is_bot: false, first_name: "Asha", username: "asha" };
 const LONG_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
@@ -480,6 +481,24 @@ describe("buttons", () => {
     expect(editedTexts()[0]).toContain("Paid by the company");
   });
 
+  it("labels the save button by whether the person's expenses need approval", async () => {
+    const saveButton = (call: number) => {
+      const keyboard = vi.mocked(editMessageText).mock.calls[call][4] ?? [];
+      return keyboard[0][0].text;
+    };
+    vi.mocked(TelegramDraft.findOne).mockReturnValue(query(draftDoc()));
+    vi.mocked(TelegramDraft.findOneAndUpdate).mockResolvedValue(draftDoc({ paymentSource: "company" }) as never);
+
+    await handleTelegramUpdate(callback(draftAction("togglePayment")), BOT);
+    expect(saveButton(0)).toBe("📨 Submit for approval");
+    expect(editedTexts()[0]).toContain("Submit this expense for approval?");
+
+    vi.mocked(User.findOne).mockReturnValue(query({ ...ASHA, role: "admin" }));
+    await handleTelegramUpdate(callback(draftAction("togglePayment")), BOT);
+    expect(saveButton(1)).toBe("✅ Save expense");
+    expect(editedTexts()[1]).toContain("Save this expense?");
+  });
+
   it("leaves a card alone when the draft was saved in the meantime", async () => {
     vi.mocked(TelegramDraft.findOne).mockReturnValue(query(draftDoc()));
     vi.mocked(TelegramDraft.findOneAndUpdate).mockResolvedValue(null);
@@ -550,15 +569,41 @@ describe("saving", () => {
       { new: true }
     );
     expect(Expense.create).toHaveBeenCalledWith(
-      expect.objectContaining({ createdBy: USER_ID, amount: 450, paymentSource: "pocket", pocketAmount: 450 })
+      expect.objectContaining({
+        createdBy: USER_ID,
+        amount: 450,
+        paymentSource: "pocket",
+        pocketAmount: 450,
+        approvalStatus: "pending",
+      })
     );
     expect(TelegramDraft.updateOne).toHaveBeenCalledWith(
       { _id: DRAFT_ID },
       { $set: { expense: expenseId, expiresAt: expect.any(Date) } }
     );
-    expect(answerCallbackQuery).toHaveBeenCalledWith(BOT.token, "cb", "Saved");
+    // A user's expense waits for an admin, and the card says so.
+    expect(answerCallbackQuery).toHaveBeenCalledWith(BOT.token, "cb", "Submitted for approval");
+    expect(editedTexts()[0]).toContain("Expense submitted for approval");
+    expect(editedTexts()[0]).toContain("An admin will review it. It counts as spend once approved.");
     const keyboard = vi.mocked(editMessageText).mock.calls[0][4];
     expect(keyboard?.[0][0].url).toBe(`https://app.example.com/dashboard/expenses/${expenseId}/edit`);
+  });
+
+  it("saves an admin's expense as approved, with the role they hold now", async () => {
+    saveMocks();
+    vi.mocked(User.findOne).mockReturnValue(query({ ...ASHA, role: "admin" }));
+    vi.mocked(Expense.create).mockResolvedValue({ _id: new mongoose.Types.ObjectId() } as never);
+
+    await handleTelegramUpdate(callback(draftAction("save")), BOT);
+
+    const userQuery = vi.mocked(User.findOne).mock.results[0].value as unknown as { select: ReturnType<typeof vi.fn> };
+    expect(userQuery.select).toHaveBeenCalledWith("_id name email role");
+    expect(Expense.create).toHaveBeenCalledWith(
+      expect.objectContaining({ approvalStatus: "approved", reviewedBy: String(USER_ID) })
+    );
+    expect(answerCallbackQuery).toHaveBeenCalledWith(BOT.token, "cb", "Saved");
+    expect(editedTexts()[0]).toContain("✅ <b>Expense saved</b>");
+    expect(editedTexts()[0]).not.toContain("approval");
   });
 
   it("doesn't save twice when the button is tapped again", async () => {
@@ -624,7 +669,7 @@ describe("createExpenseFromDraft", () => {
 
     await createExpenseFromDraft(
       draftDoc({ currency: USD, amount: 10, gstAmount: 1.5, paymentSource: "company" }) as never,
-      USER_ID
+      ASHA_CREATOR
     );
 
     expect(Expense.create).toHaveBeenCalledWith(
@@ -641,20 +686,52 @@ describe("createExpenseFromDraft", () => {
     );
   });
 
+  it("decides the approval status from the creator's role and returns it", async () => {
+    const expenseId = new mongoose.Types.ObjectId();
+    vi.mocked(Expense.create).mockResolvedValue({ _id: expenseId } as never);
+
+    expect(await createExpenseFromDraft(draftDoc() as never, ASHA_CREATOR)).toEqual({
+      id: expenseId,
+      approvalStatus: "pending",
+    });
+    expect(Expense.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        createdBy: USER_ID,
+        approvalStatus: "pending",
+        reviewedBy: null,
+        approvalHistory: [{ action: "submitted", by: String(USER_ID), at: expect.any(Date), note: null }],
+      })
+    );
+
+    for (const role of ["admin", "master_admin"] as const) {
+      expect(await createExpenseFromDraft(draftDoc() as never, { _id: USER_ID, role })).toEqual({
+        id: expenseId,
+        approvalStatus: "approved",
+      });
+      expect(Expense.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          approvalStatus: "approved",
+          reviewedBy: String(USER_ID),
+          approvalHistory: [{ action: "auto_approved", by: String(USER_ID), at: expect.any(Date), note: null }],
+        })
+      );
+    }
+  });
+
   it("requires a category and a department that still exist", async () => {
     vi.mocked(Category.exists).mockResolvedValue(null);
-    await expect(createExpenseFromDraft(draftDoc() as never, USER_ID)).rejects.toThrow(DraftSaveError);
+    await expect(createExpenseFromDraft(draftDoc() as never, ASHA_CREATOR)).rejects.toThrow(DraftSaveError);
     expect(Expense.create).not.toHaveBeenCalled();
   });
 
   it("reports GST above the total as a user-facing error", async () => {
-    await expect(createExpenseFromDraft(draftDoc({ gstAmount: 999 }) as never, USER_ID)).rejects.toThrow(
+    await expect(createExpenseFromDraft(draftDoc({ gstAmount: 999 }) as never, ASHA_CREATOR)).rejects.toThrow(
       new DraftSaveError("GST amount cannot exceed the total amount")
     );
   });
 
   it("refuses a receipt that's already attached elsewhere", async () => {
     vi.mocked(Expense.exists).mockResolvedValue({ _id: new mongoose.Types.ObjectId() } as never);
-    await expect(createExpenseFromDraft(draftDoc() as never, USER_ID)).rejects.toThrow(/already attached/);
+    await expect(createExpenseFromDraft(draftDoc() as never, ASHA_CREATOR)).rejects.toThrow(/already attached/);
   });
 });

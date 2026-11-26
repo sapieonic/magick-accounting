@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Building2, CalendarDays, ReceiptText, Tag, Users, Wallet } from "lucide-react";
+import { Building2, CalendarDays, CircleX, Clock3, ReceiptText, Tag, Users, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { api } from "@/lib/api";
@@ -16,8 +16,10 @@ import SplitBar from "@/components/ui/SplitBar";
 import Avatar from "@/components/ui/Avatar";
 import CategoryGlyph from "@/components/ui/CategoryGlyph";
 import EmptyState from "@/components/ui/EmptyState";
+import Notice from "@/components/ui/Notice";
 import { DashboardSkeleton } from "@/components/ui/Skeleton";
-import { ICON_STROKE, linkClass } from "@/components/ui/styles";
+import { ICON_STROKE, linkClass, textButtonClass } from "@/components/ui/styles";
+import { APPROVALS_HREF } from "@/components/layout/nav";
 import MonthlySpendPanel from "@/components/dashboard/overview/MonthlySpendPanel";
 import RankedList, { type RankedItem } from "@/components/dashboard/overview/RankedList";
 import LatestEntries from "@/components/dashboard/overview/LatestEntries";
@@ -91,6 +93,18 @@ export default function DashboardPage() {
   // Label and day count both from the server's (UTC) month bucket.
   const progress = thisMonth ? monthProgress(thisMonth.key) : null;
 
+  // Totals are approved-only; what's waiting or was rejected is said beside them.
+  const pendingCount = stats?.pendingCount ?? 0;
+  const pendingAmount = stats?.pendingAmount ?? 0;
+  const rejectedCount = stats?.rejectedCount ?? 0;
+  const hasUnapproved = pendingCount > 0 || rejectedCount > 0;
+  const totalSub = [
+    plural(count, hasUnapproved ? "approved expense" : "expense"),
+    plural(departmentCount, "department"),
+    plural(categoryCount, "category", "categories"),
+    ...(pendingCount > 0 ? [`${formatBaseCurrency(pendingAmount)} awaiting approval`] : []),
+  ].join(" · ");
+
   const pocket = stats?.pocketAmount ?? 0;
   const company = stats?.companyAmount ?? 0;
 
@@ -152,13 +166,40 @@ export default function DashboardPage() {
         }
       />
 
+      {isAdmin && pendingCount > 0 && (
+        <Notice
+          icon={Clock3}
+          title={`Awaiting approval: ${plural(pendingCount, "expense")} · ${formatBaseCurrency(pendingAmount)}`}
+          actions={
+            <Link className={textButtonClass} href={APPROVALS_HREF}>
+              Review
+            </Link>
+          }
+        >
+          They aren&apos;t in these totals until an admin approves them.
+        </Notice>
+      )}
+      {!isAdmin && rejectedCount > 0 && (
+        <Notice
+          tone="danger"
+          icon={CircleX}
+          title={
+            rejectedCount === 1
+              ? "1 of your expenses was rejected"
+              : `${rejectedCount.toLocaleString("en-IN")} of your expenses were rejected`
+          }
+          actions={
+            <Link className={textButtonClass} href="/dashboard/expenses?approval=rejected">
+              {rejectedCount === 1 ? "See the rejected expense" : "See rejected expenses"}
+            </Link>
+          }
+        >
+          {rejectedCount === 1 ? "Open it to see why, then fix and resubmit it." : "Open them to see why, then fix and resubmit them."}
+        </Notice>
+      )}
+
       <StatBand>
-        <Stat
-          headline
-          label="Total spend"
-          value={formatBaseCurrency(total)}
-          sub={`${plural(count, "expense")} · ${plural(departmentCount, "department")} · ${plural(categoryCount, "category", "categories")}`}
-        />
+        <Stat headline label="Total spend" value={formatBaseCurrency(total)} sub={totalSub} />
         {thisMonth && progress && (
           <Stat
             label={`${format(monthFromKey(thisMonth.key), "MMMM")} to date`}
@@ -254,7 +295,8 @@ export default function DashboardPage() {
           flush
           actions={
             <Link className={linkClass} href="/dashboard/expenses">
-              All {plural(count, "expense")}
+              {/* The count is approved-only, so it can't label a list holding every status. */}
+              {hasUnapproved ? "All expenses" : `All ${plural(count, "expense")}`}
             </Link>
           }
         >

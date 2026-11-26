@@ -64,6 +64,8 @@ function statusHint(trip: TripListItem, today: string): string {
 
 function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: string; showBudget: boolean }) {
   const days = tripDayCount(trip);
+  // Totals are approved-only; what's waiting is named under them.
+  const pending = trip.pendingAmount ?? 0;
   return (
     <Link
       href={`/dashboard/trips/${trip._id}`}
@@ -93,15 +95,22 @@ function TripCard({ trip, today, showBudget }: { trip: TripListItem; today: stri
       </div>
 
       {/* A user's totals are only their own share, so they can't be read against the trip budget. */}
-      {showBudget && trip.budget != null && <BudgetMeter spent={trip.totalAmount} budget={trip.budget} />}
+      {showBudget && trip.budget != null && (
+        <BudgetMeter spent={trip.totalAmount} budget={trip.budget} pending={trip.pendingAmount ?? 0} />
+      )}
 
       <div className="mt-auto flex items-end justify-between gap-3 border-t border-rule-2 pt-3">
         <TravelerAvatars travelers={trip.travelers} />
         <div className="flex flex-col items-end">
           <span className="num whitespace-nowrap font-medium text-ink">{formatBaseCurrency(trip.totalAmount)}</span>
           <span className="text-xs text-ink-3">
-            {trip.expenseCount} expense{trip.expenseCount !== 1 ? "s" : ""}
+            {trip.expenseCount} {pending > 0 ? "approved " : ""}expense{trip.expenseCount !== 1 ? "s" : ""}
           </span>
+          {pending > 0 && (
+            <span className="text-xs text-ink-3">
+              + <span className="num">{formatBaseCurrency(pending)}</span> awaiting approval
+            </span>
+          )}
         </div>
       </div>
     </Link>

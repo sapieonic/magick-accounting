@@ -12,6 +12,7 @@ import {
 } from "@/lib/expense-query";
 import { buildPaymentFields, normalizeGstAmount, normalizePaymentSplit } from "@/lib/expense";
 import { assertPayersExist } from "@/lib/expense-server";
+import { creationApprovalFields } from "@/lib/approval";
 import { normalizeTravelType } from "@/lib/trip";
 import { resolveTripAssignment } from "@/lib/trip-server";
 import {
@@ -101,6 +102,16 @@ export async function POST(req: NextRequest) {
     await connectDB();
     const body = await req.json();
     const rawAssets = body.assets;
+    // Decided by the creator's role now: a user's expense waits for an admin.
+    const approvalFields = creationApprovalFields(authResult);
+    if (
+      approvalFields.approvalStatus === "pending" &&
+      Array.isArray(rawAssets) &&
+      rawAssets.length > 0
+    ) {
+      // Only approved spend can carry assets (see the assets route).
+      throw new Error("Assets can be registered once an admin approves this expense.");
+    }
     assertReceiptOwnedByUser(body.receiptKey, authResult._id);
     if (body.receiptKey && (await Expense.exists({ receiptKey: body.receiptKey }))) {
       throw new Error("Receipt is already attached to another expense");
@@ -169,13 +180,14 @@ export async function POST(req: NextRequest) {
             trip,
             travelType: trip ? travelType : null,
             createdBy: authResult._id,
+            ...approvalFields,
           },
         ],
         sessionOptions(session)
       );
       createdExpenseId = expense._id;
       await createAssetsForExpense({
-        rawAssets,
+        rawAssets: approvalFields.approvalStatus === "pending" ? [] : rawAssets,
         expense,
         authUser: authResult,
         rateToBase,

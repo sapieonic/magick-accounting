@@ -328,13 +328,22 @@ const shareTotals = {
   pocketSpend: { $sum: "$shares.pocket" },
 };
 
-/** Aggregation pipeline totalling base-currency spend per person (see `payerShareStages`). */
+/**
+ * Aggregation pipeline totalling base-currency spend per person (see
+ * `payerShareStages`). It counts every document it is given: callers must
+ * prepend `{ $match: APPROVED_MATCH }` (`@/lib/approval`) so expenses awaiting
+ * approval or rejected don't count as spend.
+ */
 export const spendByPayerPipeline = [
   ...payerShareStages,
   { $group: { _id: "$shares.user", ...shareTotals } },
 ];
 
-/** Pipeline totalling one person's share of the expenses matching `filter`. */
+/**
+ * Pipeline totalling one person's share of the expenses matching `filter`.
+ * `filter` is used as is: pass `withApproved(filter)` (`@/lib/approval`) to
+ * count approved spend only.
+ */
 export function payerSpendPipeline(filter: Record<string, unknown>, payerId: unknown) {
   return [
     { $match: filter },
@@ -394,6 +403,8 @@ export function visibleToUserFilter(userId: unknown): Record<string, unknown> {
 /**
  * Query matching the expenses credited to `payerId` by `payerShareStages`:
  * shared expenses listing them as a payer, and their other submissions.
+ * It matches every approval status (a list shows them all); totals built on
+ * it must also apply `APPROVED_MATCH` / `withApproved` (`@/lib/approval`).
  */
 export function paidByFilter(payerId: unknown): Record<string, unknown> {
   const shared = { paymentSource: "multiple", "payments.0": { $exists: true } };
@@ -478,7 +489,9 @@ function sharedPayments(expense: PayerShareFields) {
  * server's rule (`payerShareStages` / `payerShareExprs`): a "several people"
  * expense credits each payer's own entries, anything else counts wholly to its
  * submitter. Works on listed (populated) and raw documents alike. Sums in
- * paise, so the result is exact to the paisa.
+ * paise, so the result is exact to the paisa. It ignores approval: callers
+ * keeping spend totals must gate it with `countsAsSpend` (`@/lib/approval`),
+ * as the server counts approved only.
  */
 export function payerShare(expense: PayerShareFields, payerId: string): { pocket: number; company: number } {
   const payer = idString(payerId);
@@ -512,7 +525,9 @@ export function isAdminViewer(viewer: Pick<SpendViewer, "role">): boolean {
 /**
  * The amounts of one expense as `viewer` counts them, in base currency:
  * the whole expense for an admin, their own share (`payerShare`) for anyone
- * else. Client-side counterpart of `spendExprs` in `expense-query.ts`.
+ * else. Client-side counterpart of `spendExprs` in `expense-query.ts`. Like
+ * `payerShare` it ignores approval: gate it with `countsAsSpend` for spend
+ * totals, or use it on its own for the pending/rejected figures.
  */
 export function viewerAmounts(
   expense: PayerShareFields,

@@ -1,4 +1,5 @@
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { countsAsSpend, effectiveApprovalStatus, type ApprovalStatus } from "@/lib/approval";
 
 // Kept here (not in the model) so client code can import it without mongoose.
 export type TravelType =
@@ -141,8 +142,11 @@ export interface TripDaySection<T> {
   kind: "pre" | "day" | "post";
   /** 1-based day of the trip; only for `day` sections. */
   dayNumber?: number;
+  /** Every expense of the section, whatever its approval status. */
   items: T[];
-  /** Base-currency total of `items`. */
+  /** Base-currency total of the `items` awaiting approval (not in `total`). */
+  pendingTotal?: number;
+  /** Base-currency total of the approved `items` (rejected and pending left out). */
   total: number;
 }
 
@@ -150,6 +154,12 @@ interface DatedAmount {
   date: string;
   amount: number;
   amountInBaseCurrency?: number | null;
+  /** Missing on expenses from before approvals; those count as approved. */
+  approvalStatus?: ApprovalStatus | null;
+}
+
+function addMoney(total: number, amount: number): number {
+  return Math.round((total + amount) * 100) / 100;
 }
 
 function baseAmount(item: DatedAmount): number {
@@ -160,6 +170,8 @@ function baseAmount(item: DatedAmount): number {
  * Groups a trip's expenses into a day-by-day timeline. Bookings made before
  * the trip (a flight booked weeks early) and stragglers after it get their
  * own sections instead of being rejected. Only days with expenses appear.
+ * Sections list every expense; `total` counts approved ones only and
+ * `pendingTotal` those awaiting approval.
  */
 export function groupByTripDay<T extends DatedAmount>(items: T[], trip: TripDates): TripDaySection<T>[] {
   const start = dayKey(trip.startDate);
@@ -188,12 +200,16 @@ export function groupByTripDay<T extends DatedAmount>(items: T[], trip: TripDate
     }
     let existing = byKey.get(key);
     if (!existing) {
-      existing = { ...section, items: [], total: 0 };
+      existing = { ...section, items: [], total: 0, pendingTotal: 0 };
       byKey.set(key, existing);
       sections.push(existing);
     }
     existing.items.push(item);
-    existing.total = Math.round((existing.total + baseAmount(item)) * 100) / 100;
+    if (countsAsSpend(item)) {
+      existing.total = addMoney(existing.total, baseAmount(item));
+    } else if (effectiveApprovalStatus(item) === "pending") {
+      existing.pendingTotal = addMoney(existing.pendingTotal ?? 0, baseAmount(item));
+    }
   }
   return sections;
 }
@@ -204,15 +220,19 @@ interface TravelTypeTotal {
   count: number;
 }
 
-/** Base-currency spend per travel type, largest first; untagged last. */
+/**
+ * Base-currency spend per travel type, largest first; untagged last. Only
+ * approved expenses count (in the total and the count).
+ */
 export function totalsByTravelType(
   items: (DatedAmount & { travelType?: TravelType | null })[]
 ): TravelTypeTotal[] {
   const totals = new Map<TravelType | null, TravelTypeTotal>();
   for (const item of items) {
+    if (!countsAsSpend(item)) continue;
     const type = item.travelType ?? null;
     const row = totals.get(type) ?? { travelType: type, total: 0, count: 0 };
-    row.total = Math.round((row.total + baseAmount(item)) * 100) / 100;
+    row.total = addMoney(row.total, baseAmount(item));
     row.count += 1;
     totals.set(type, row);
   }

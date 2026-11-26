@@ -1,6 +1,17 @@
 import User from "@/models/User";
 import type { PaymentEntry, PaymentSplit } from "@/lib/expense";
 
+/**
+ * Matches an expense still at `revision` of its edit revision
+ * (`assetAllocationRevision`), for compare-and-swap writes. Documents that
+ * predate the field are at revision 0.
+ */
+export function revisionMatch(revision: number): Record<string, unknown> {
+  return revision === 0
+    ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
+    : { assetAllocationRevision: revision };
+}
+
 /** Rejects a payment shared between people that names someone who isn't a user. */
 export async function assertPayersExist(split: PaymentSplit): Promise<void> {
   if (!split.payments?.length) return;

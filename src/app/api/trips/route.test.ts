@@ -50,6 +50,10 @@ const expenses = [
   { _id: new mongoose.Types.ObjectId(), trip: oid(GOA), createdBy: oid(RAVI), amount: 1200 },
   { _id: new mongoose.Types.ObjectId(), trip: oid(GOA), createdBy: oid(ASHA), amount: 450.5, amountInBaseCurrency: 450.5 },
   { _id: new mongoose.Types.ObjectId(), trip: null, createdBy: oid(ASHA), amount: 999 },
+  // Not spend yet (or ever): reported apart from the totals.
+  { _id: new mongoose.Types.ObjectId(), trip: oid(GOA), createdBy: oid(ASHA), amount: 640.25, approvalStatus: "pending" },
+  { _id: new mongoose.Types.ObjectId(), trip: oid(GOA), createdBy: oid(RAVI), amount: 300, approvalStatus: "pending" },
+  { _id: new mongoose.Types.ObjectId(), trip: oid(GOA), createdBy: oid(ASHA), amount: 5000, approvalStatus: "rejected" },
 ];
 
 const goaTrip = {
@@ -103,7 +107,7 @@ describe("GET /api/trips", () => {
     expect(Trip.find).not.toHaveBeenCalled();
   });
 
-  it("shows admins every trip with the totals of all its expenses", async () => {
+  it("shows admins every trip with the totals of all its approved expenses", async () => {
     signIn(ADMIN, "admin");
     const query = chain([goaTrip, puneTrip]);
     vi.mocked(Trip.find).mockReturnValue(query as never);
@@ -121,6 +125,8 @@ describe("GET /api/trips", () => {
         startDate: "2026-10-12T00:00:00.000Z",
         expenseCount: 3,
         totalAmount: 9950.5,
+        pendingCount: 2,
+        pendingAmount: 940.25,
         canManage: true,
         department: { _id: "66c1884c0853f8a76a4da401", name: "Sales" },
         createdBy: { _id: RAVI, name: "Ravi", email: "ravi@example.com" },
@@ -129,7 +135,15 @@ describe("GET /api/trips", () => {
     expect(trips[0].travelers.map((traveler: { _id: string }) => traveler._id)).toEqual([ASHA, RAVI]);
     expect(["upcoming", "ongoing", "completed"]).toContain(trips[0].status);
     expect(trips[1]).toEqual(
-      expect.objectContaining({ _id: PUNE, expenseCount: 0, totalAmount: 0, status: "completed", department: null })
+      expect.objectContaining({
+        _id: PUNE,
+        expenseCount: 0,
+        totalAmount: 0,
+        pendingCount: 0,
+        pendingAmount: 0,
+        status: "completed",
+        department: null,
+      })
     );
   });
 
@@ -141,7 +155,7 @@ describe("GET /api/trips", () => {
 
     expect(Trip.find).toHaveBeenCalledWith({ $or: [{ travelers: oid(ASHA) }, { createdBy: oid(ASHA) }] });
     expect(trips[0]).toEqual(
-      expect.objectContaining({ expenseCount: 2, totalAmount: 8750.5, canManage: false })
+      expect.objectContaining({ expenseCount: 2, totalAmount: 8750.5, pendingCount: 1, pendingAmount: 640.25, canManage: false })
     );
   });
 
@@ -284,7 +298,7 @@ describe("POST /api/trips", () => {
       })
     );
     const { trip } = await response.json();
-    expect(trip).toEqual(expect.objectContaining({ _id: GOA, canManage: true, expenseCount: 2 }));
+    expect(trip).toEqual(expect.objectContaining({ _id: GOA, canManage: true, expenseCount: 2, pendingCount: 1 }));
   });
 
   it("keeps the travelers the creator chose", async () => {

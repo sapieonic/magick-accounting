@@ -79,7 +79,18 @@ export function SectionRow({ min = 320, children }: { min?: number; children: Re
  * as `--form-footer-h` on <html>, so fixed layers such as toasts clear it;
  * `data-form-footer` tells the dashboard layout to drop its page-end toast room.
  */
-export function FormFooter({ children, className }: { children: ReactNode; className?: string }) {
+export function FormFooter({
+  children,
+  className,
+  role,
+  "aria-label": ariaLabel,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** E.g. "region" with an `aria-label`, for a strip that isn't a form's (a selection's actions). */
+  role?: string;
+  "aria-label"?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -99,6 +110,8 @@ export function FormFooter({ children, className }: { children: ReactNode; class
   return (
     <div
       ref={ref}
+      role={role}
+      aria-label={ariaLabel}
       data-form-footer=""
       className={cn(
         "sticky bottom-[var(--tabbar-h)] z-10 mt-auto flex flex-wrap items-center gap-3 rounded-b-panel border-t border-rule bg-surface py-3",

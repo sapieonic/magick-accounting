@@ -8,6 +8,7 @@ import {
 import Asset from "@/models/Asset";
 import AssetAssignment from "@/models/AssetAssignment";
 import AssetEvent from "@/models/AssetEvent";
+import { revisionMatch } from "@/lib/expense-server";
 import Expense from "@/models/Expense";
 import User from "@/models/User";
 
@@ -119,13 +120,8 @@ export async function createAssetsForExpense({
   const reservationGstAmount = roundMoney(
     assets.reduce((total, asset) => total + asset.allocatedGstAmount, 0)
   );
-  const revision = currentRevision;
-  const revisionFilter =
-    revision === 0
-      ? { $or: [{ assetAllocationRevision: 0 }, { assetAllocationRevision: { $exists: false } }] }
-      : { assetAllocationRevision: revision };
   const reserveQuery = Expense.findOneAndUpdate(
-    { _id: expense._id, ...revisionFilter },
+    { _id: expense._id, ...revisionMatch(currentRevision) },
     {
       $set: {
         assetAllocatedAmount: roundMoney(alreadyAllocated + reservationAmount),

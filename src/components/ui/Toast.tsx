@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, useRef, ReactNode } from "react";
 import { X, CheckCircle2, AlertCircle, Info } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import { linkClass } from "@/components/ui/styles";
@@ -26,7 +26,10 @@ interface Toast {
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType, options?: ToastOptions) => void;
+  /** Shows a toast; returns its id, for `dismiss`. */
+  toast: (message: string, type?: ToastType, options?: ToastOptions) => string;
+  /** Closes a toast early, e.g. an Undo that no longer applies. */
+  dismiss: (id: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -46,9 +49,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = `${Date.now()}-${counter.current++}`;
       setToasts((prev) => [...prev, { id, message, type, action: options?.action }]);
       setTimeout(() => removeToast(id), options?.durationMs ?? DEFAULT_DURATION_MS);
+      return id;
     },
     [removeToast]
   );
+
+  const value = useMemo(() => ({ toast, dismiss: removeToast }), [toast, removeToast]);
 
   const icons = {
     success: <CheckCircle2 aria-hidden="true" size={18} strokeWidth={1.75} className="shrink-0 text-success" />,
@@ -57,7 +63,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={value}>
       {children}
       {/* Bottom-right, 12px above the mobile tab bar (--tabbar-h) and a mounted
           FormFooter (its measured --form-footer-h, which grows when it wraps),

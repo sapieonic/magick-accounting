@@ -168,12 +168,35 @@ describe("renderDraftCard", () => {
     const texts = card.keyboard.flat().map((b) => b.text);
     expect(texts).toContain("✅ Save expense");
     expect(texts).toContain("💳 Company paid instead");
+    expect(card.html).toContain("Save this expense?");
     expect(card.html).toContain("Reply to this message with the right one");
+  });
+
+  it("offers to submit for approval when the person's expenses need an admin", () => {
+    const card = renderDraftCard(snapshot(), { ...options, submitForApproval: true });
+    expect(card.keyboard[0]).toEqual([
+      { text: "📨 Submit for approval", callback_data: encodeDraftAction({ type: "save", draftId: DRAFT }) },
+    ]);
+    expect(card.html).toContain("Submit this expense for approval?");
+    expect(card.keyboard.flat().map((b) => b.text)).not.toContain("✅ Save expense");
   });
 
   it("links the saved expense", () => {
     const card = renderSavedCard(snapshot(), "https://app.example.com/dashboard/expenses/1/edit");
     expect(card.html).toContain("Expense saved");
+    expect(card.keyboard[0][0].url).toBe("https://app.example.com/dashboard/expenses/1/edit");
+  });
+
+  it("says a user's expense was submitted for approval and won't count until approved", () => {
+    const card = renderSavedCard(snapshot(), "https://app.example.com/dashboard/expenses/1/edit", {
+      pendingApproval: true,
+    });
+    expect(card.html.split("\n").slice(0, 2)).toEqual([
+      "📨 <b>Expense submitted for approval</b>",
+      "An admin will review it. It counts as spend once approved.",
+    ]);
+    expect(card.html).not.toContain("Expense saved");
+    expect(card.html).toContain("Uber &lt;airport&gt;");
     expect(card.keyboard[0][0].url).toBe("https://app.example.com/dashboard/expenses/1/edit");
   });
 });

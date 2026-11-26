@@ -1,9 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import DashboardPage from "./page";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { formatBaseCurrency } from "@/lib/currency";
+
+/**
+ * The innermost Notice whose text includes `text`. Notices are found by their
+ * `data-notice` marker, or by the live role they had before it, so the test
+ * doesn't depend on which one the primitive uses.
+ */
+function queryNotice(text: string): HTMLElement | null {
+  const notices = [...document.querySelectorAll<HTMLElement>("[data-notice], [role=status]")].filter((el) =>
+    el.textContent?.includes(text)
+  );
+  // The innermost match: a notice, not a region that happens to contain one.
+  return notices.find((el) => !notices.some((other) => other !== el && el.contains(other))) ?? null;
+}
+
+async function findNotice(text: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const notice = queryNotice(text);
+    if (!notice) throw new Error(`No notice containing "${text}"`);
+    return notice;
+  });
+}
 
 vi.mock("next/navigation", () => ({
   useRouter: vi.fn(() => ({ push: vi.fn() })),
@@ -287,5 +308,94 @@ describe("DashboardPage", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
     expect(screen.getByText("No expenses yet")).toBeInTheDocument();
+  });
+  describe("approval", () => {
+    const charts = { monthlyTrend, topCategories: [], departmentSpend: [] };
+    const base = {
+      totalExpenses: 3,
+      totalAmount: 900,
+      companyAmount: 900,
+      pocketAmount: 0,
+      departmentCount: 1,
+      categoryCount: 2,
+    };
+    const lunch = {
+      _id: "exp-p",
+      title: "Client lunch",
+      amount: 450,
+      amountInBaseCurrency: 450,
+      currency: { code: "INR", symbol: "₹", isBase: true },
+      date: "2026-11-10T00:00:00.000Z",
+      approvalStatus: "pending",
+    };
+    const taxi = { ...lunch, _id: "exp-r", title: "Taxi", amount: 120, amountInBaseCurrency: 120, approvalStatus: "rejected" };
+    const seat = { ...lunch, _id: "exp-a", title: "Figma seat", amount: 300, amountInBaseCurrency: 300, approvalStatus: undefined };
+
+    it("keeps the total to approved spend and says what's awaiting approval", async () => {
+      mockApi(
+        { ...base, pendingCount: 2, pendingAmount: 650, rejectedCount: 0, recentExpenses: [] },
+        charts
+      );
+      render(<DashboardPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).getByText(formatBaseCurrency(900))).toBeInTheDocument();
+      expect(
+        within(totals).getByText(`3 approved expenses · 1 department · 2 categories · ${formatBaseCurrency(650)} awaiting approval`)
+      ).toBeInTheDocument();
+      // Admins get the queue's size and a way in.
+      const notice = await findNotice(`Awaiting approval: 2 expenses · ${formatBaseCurrency(650)}`);
+      expect(notice).toHaveTextContent("They aren't in these totals until an admin approves them.");
+      const review = within(notice).getByRole("link", { name: "Review" });
+      expect(review).toHaveAttribute("href", "/dashboard/approvals");
+      // A full-size target (40px), not an inline text link.
+      expect(review).toHaveClass("min-h-10");
+      expect(screen.getByRole("link", { name: "All expenses" })).toHaveAttribute("href", "/dashboard/expenses");
+    });
+
+    it("says nothing about approvals when everything is approved", async () => {
+      mockApi({ ...base, pendingCount: 0, pendingAmount: 0, rejectedCount: 0, recentExpenses: [] }, charts);
+      render(<DashboardPage />);
+
+      const totals = await screen.findByRole("region", { name: "Totals" });
+      expect(within(totals).getByText("3 expenses · 1 department · 2 categories")).toBeInTheDocument();
+      expect(screen.queryByText(/awaiting approval/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("tells a user about rejected expenses and links to them", async () => {
+      vi.mocked(useAuth).mockReturnValue({ user: { name: "Asha" }, isAdmin: false } as any);
+      mockApi({ ...base, pendingCount: 1, pendingAmount: 450, rejectedCount: 2, recentExpenses: [] }, charts);
+      render(<DashboardPage />);
+
+      const notice = await findNotice("2 of your expenses were rejected");
+      expect(notice).toHaveTextContent("2 of your expenses were rejected");
+      expect(notice).toHaveTextContent("Open them to see why, then fix and resubmit them.");
+      const see = within(notice).getByRole("link", { name: "See rejected expenses" });
+      expect(see).toHaveAttribute("href", "/dashboard/expenses?approval=rejected");
+      expect(see).toHaveClass("min-h-10");
+      // The admin queue line isn't for users.
+      expect(screen.queryByRole("link", { name: "Review" })).not.toBeInTheDocument();
+      expect(screen.getByText(/· ₹450\.00 awaiting approval$/)).toBeInTheDocument();
+    });
+
+    it("badges latest entries that aren't approved and marks their amounts as outside the totals", async () => {
+      mockApi({ ...base, pendingCount: 1, pendingAmount: 450, rejectedCount: 1, recentExpenses: [lunch, taxi, seat] }, charts);
+      render(<DashboardPage />);
+
+      const latest = await screen.findByRole("region", { name: "Your latest entries" });
+      const pendingRow = within(latest).getByRole("link", { name: /Client lunch/ });
+      expect(within(pendingRow).getByText("Awaiting approval")).toBeInTheDocument();
+      expect(pendingRow).toHaveTextContent("₹450.00 (awaiting approval, not in totals)");
+
+      const rejectedRow = within(latest).getByRole("link", { name: /Taxi/ });
+      expect(within(rejectedRow).getByText("Rejected")).toBeInTheDocument();
+      expect(within(rejectedRow).getByText("₹120.00")).toHaveClass("line-through");
+      expect(rejectedRow).toHaveTextContent("(rejected, not in totals)");
+
+      const approvedRow = within(latest).getByRole("link", { name: /Figma seat/ });
+      expect(within(approvedRow).queryByText(/approv|reject/i)).not.toBeInTheDocument();
+      expect(within(approvedRow).getByText("₹300.00")).toHaveClass("text-ink");
+    });
   });
 });

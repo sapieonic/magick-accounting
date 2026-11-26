@@ -167,6 +167,29 @@ describe("TripsPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("names what a trip's total leaves out while expenses await approval", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { ...person, role: "admin" }, isAdmin: true } as any);
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.startsWith("/api/lookups")) return Promise.resolve({ members: [person], departments: [] });
+      return Promise.resolve({
+        trips: trips.map((trip) => (trip.status === "ongoing" ? { ...trip, pendingCount: 1, pendingAmount: 500 } : trip)),
+      });
+    });
+    render(<TripsPage />);
+
+    const ongoing = await screen.findByRole("region", { name: "Ongoing" });
+    const card = within(ongoing).getByTestId("trip-card");
+    expect(card).toHaveTextContent("3 approved expenses");
+    expect(card).toHaveTextContent("+ ₹500.00 awaiting approval");
+    expect(within(card).getByRole("progressbar", { name: "Budget used" })).toHaveAttribute(
+      "aria-valuetext",
+      "90%, plus ₹500.00 awaiting approval"
+    );
+    // The other trips have nothing waiting.
+    const past = screen.getByRole("region", { name: "Past" });
+    expect(past).not.toHaveTextContent(/approv/);
+  });
+
   it("shows the first-trip empty state", async () => {
     vi.mocked(api.get).mockImplementation((url: string) =>
       url.startsWith("/api/lookups") ? Promise.resolve({ members: [person] }) : Promise.resolve({ trips: [] })

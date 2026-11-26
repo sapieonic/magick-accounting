@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import Expense from "@/models/Expense";
 import { spendByPayerPipeline } from "@/lib/expense";
+import { APPROVED_MATCH } from "@/lib/approval";
 
 interface SpendBreakdown {
   totalSpend: number;
@@ -25,7 +26,8 @@ export async function GET(req: NextRequest) {
     .sort({ role: 1, name: 1 })
     .lean();
 
-  const userSpends = await Expense.aggregate(spendByPayerPipeline);
+  // Spend is approved expenses only (legacy ones without a status included).
+  const userSpends = await Expense.aggregate([{ $match: APPROVED_MATCH }, ...spendByPayerPipeline]);
 
   const spendMap = new Map<string, SpendBreakdown>(
     userSpends.map((row) => [

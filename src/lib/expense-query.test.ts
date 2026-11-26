@@ -21,6 +21,7 @@ import {
   parsePaidByParam,
 } from "@/lib/expense-query";
 import { MAX_EXPENSE_PAGE, paidByFilter, payerSpendPipeline, visibleToUserFilter } from "@/lib/expense";
+import { APPROVED_MATCH, withApproved } from "@/lib/approval";
 import Expense from "@/models/Expense";
 
 const USER_ID = "507f1f77bcf86cd799439011";
@@ -263,10 +264,27 @@ describe("getExpenseSummary", () => {
 
   it("returns totals from the aggregate result", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([
-      { _id: null, totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 },
+      {
+        _id: null,
+        totalExpenses: 7,
+        totalAmount: 1234.5,
+        companyAmount: 1000,
+        pocketAmount: 234.5,
+        pendingCount: 2,
+        pendingAmount: 300,
+        rejectedCount: 1,
+      },
     ] as never);
     const result = await getExpenseSummary({ foo: "bar" }, ADMIN);
-    expect(result).toEqual({ totalExpenses: 7, totalAmount: 1234.5, companyAmount: 1000, pocketAmount: 234.5 });
+    expect(result).toEqual({
+      totalExpenses: 7,
+      totalAmount: 1234.5,
+      companyAmount: 1000,
+      pocketAmount: 234.5,
+      pendingCount: 2,
+      pendingAmount: 300,
+      rejectedCount: 1,
+    });
   });
 
   it("passes the filter into the $match stage", async () => {
@@ -279,27 +297,48 @@ describe("getExpenseSummary", () => {
     expect(pipeline[0]).toEqual({ $match: filter });
   });
 
+  const ZERO_SUMMARY = {
+    totalExpenses: 0,
+    totalAmount: 0,
+    companyAmount: 0,
+    pocketAmount: 0,
+    pendingCount: 0,
+    pendingAmount: 0,
+    rejectedCount: 0,
+  };
+
   it("falls back to zeros when aggregate returns []", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([] as never);
     const result = await getExpenseSummary({}, ADMIN);
-    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
+    expect(result).toEqual(ZERO_SUMMARY);
   });
 
   it("falls back to 0 for missing fields in the summary doc", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([{ _id: null }] as never);
     const result = await getExpenseSummary({}, ADMIN);
-    expect(result).toEqual({ totalExpenses: 0, totalAmount: 0, companyAmount: 0, pocketAmount: 0 });
+    expect(result).toEqual(ZERO_SUMMARY);
   });
 
   it("rounds the sums to the paisa (no floating-point residue)", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValue([
-      { totalExpenses: 3, totalAmount: 0.1 + 0.2, companyAmount: 0.30000000000000004, pocketAmount: 1e-17 },
+      {
+        totalExpenses: 3,
+        totalAmount: 0.1 + 0.2,
+        companyAmount: 0.30000000000000004,
+        pocketAmount: 1e-17,
+        pendingCount: 1,
+        pendingAmount: 0.7 + 0.1,
+        rejectedCount: 0,
+      },
     ] as never);
     expect(await getExpenseSummary({}, ADMIN)).toEqual({
       totalExpenses: 3,
       totalAmount: 0.3,
       companyAmount: 0.3,
       pocketAmount: 0,
+      pendingCount: 1,
+      pendingAmount: 0.8,
+      rejectedCount: 0,
     });
   });
 
@@ -319,7 +358,56 @@ describe("getExpenseSummary", () => {
 
     const result = await getExpenseSummary({}, ADMIN);
 
-    expect(result).toEqual({ totalExpenses: 4, totalAmount: 2400, companyAmount: 1800, pocketAmount: 600 });
+    expect(result).toEqual({ ...ZERO_SUMMARY, totalExpenses: 4, totalAmount: 2400, companyAmount: 1800, pocketAmount: 600 });
+  });
+
+  it("counts approved spend only and reports pending and rejected separately", async () => {
+    const docs = [
+      // Legacy (no status) and explicitly approved expenses are spend.
+      { amount: 1000, amountInBaseCurrency: 1000, paymentSource: "pocket", pocketAmountInBaseCurrency: 1000 },
+      { amount: 500, amountInBaseCurrency: 500, paymentSource: "company", pocketAmountInBaseCurrency: 0, approvalStatus: "approved" },
+      { amount: 70, approvalStatus: null },
+      // Awaiting an admin: reported apart, never in the totals.
+      { amount: 200, amountInBaseCurrency: 200, paymentSource: "pocket", pocketAmountInBaseCurrency: 200, approvalStatus: "pending" },
+      { amount: 1, amountInBaseCurrency: 90.5, paymentSource: "company", pocketAmountInBaseCurrency: 0, approvalStatus: "pending" },
+      // Rejected: only counted.
+      { amount: 4000, amountInBaseCurrency: 4000, paymentSource: "company", approvalStatus: "rejected" },
+    ];
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
+    );
+
+    const result = await getExpenseSummary({}, ADMIN);
+
+    expect(result).toEqual({
+      totalExpenses: 3,
+      totalAmount: 1570,
+      companyAmount: 500,
+      pocketAmount: 1070,
+      pendingCount: 2,
+      pendingAmount: 290.5,
+      rejectedCount: 1,
+    });
+  });
+
+  it("reports only what the approval filter keeps", async () => {
+    const createdBy = new mongoose.Types.ObjectId(USER_ID);
+    const docs = [
+      { createdBy, amount: 100, amountInBaseCurrency: 100 },
+      { createdBy, amount: 40, amountInBaseCurrency: 40, approvalStatus: "pending" },
+      { createdBy, amount: 25, amountInBaseCurrency: 25, approvalStatus: "rejected" },
+    ];
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
+    );
+
+    const pending = await getExpenseSummary(buildExpenseFilter(params("approval=pending"), makeUser("user")), makeUser("user"));
+    expect(pending).toEqual({ ...ZERO_SUMMARY, pendingCount: 1, pendingAmount: 40 });
+
+    const rejected = await getExpenseSummary(buildExpenseFilter(params("approval=rejected"), makeUser("user")), makeUser("user"));
+    expect(rejected).toEqual({ ...ZERO_SUMMARY, rejectedCount: 1 });
   });
 });
 
@@ -360,20 +448,98 @@ describe("getExpenseSummary — payer share", () => {
     const filter = { $and: [paidByFilter(payer)] };
     const result = await getExpenseSummary(filter, ADMIN, payer);
 
-    expect(vi.mocked(Expense.aggregate).mock.calls[1][0]).toEqual(payerSpendPipeline(filter, payer));
+    // The share is approved spend only, like the totals.
+    expect(vi.mocked(Expense.aggregate).mock.calls[1][0]).toEqual(payerSpendPipeline(withApproved(filter), payer));
     expect(result).toEqual({
       totalExpenses: 3,
       totalAmount: 900,
       companyAmount: 0,
       pocketAmount: 0,
+      pendingCount: 0,
+      pendingAmount: 0,
+      rejectedCount: 0,
       payerSpend: { totalSpend: 250, pocketSpend: 200, companySpend: 50 },
     });
+  });
+
+  it("leaves expenses awaiting approval or rejected out of the payer's share", async () => {
+    const payer = new mongoose.Types.ObjectId(OTHER_ID);
+    const submitter = new mongoose.Types.ObjectId(USER_ID);
+    const shared = (approvalStatus?: string) => ({
+      createdBy: submitter,
+      amount: 300,
+      amountInBaseCurrency: 300,
+      paymentSource: "multiple",
+      pocketAmountInBaseCurrency: 100,
+      payments: [
+        { paidBy: payer, amount: 100, amountInBaseCurrency: 100, source: "pocket" },
+        { paidBy: submitter, amount: 200, amountInBaseCurrency: 200, source: "company" },
+      ],
+      ...(approvalStatus ? { approvalStatus } : {}),
+    });
+    const docs = [
+      shared(), // legacy: counts
+      { ...shared("approved") },
+      { createdBy: payer, amount: 50, amountInBaseCurrency: 50, paymentSource: "company", pocketAmountInBaseCurrency: 0, approvalStatus: "approved" },
+      shared("pending"),
+      shared("rejected"),
+      { createdBy: payer, amount: 999, amountInBaseCurrency: 999, approvalStatus: "pending" },
+    ];
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(docs))) as never
+    );
+
+    const result = await getExpenseSummary(buildExpenseFilter(params(`paidBy=${OTHER_ID}`), makeUser("admin")), ADMIN, payer);
+
+    expect(result.payerSpend).toEqual({ totalSpend: 250, pocketSpend: 200, companySpend: 50 });
+    expect(result).toEqual(
+      expect.objectContaining({ totalExpenses: 3, totalAmount: 650, pendingCount: 2, pendingAmount: 1299, rejectedCount: 1 })
+    );
   });
 
   it("reports a zero share when nothing is credited to the payer", async () => {
     vi.mocked(Expense.aggregate).mockResolvedValueOnce([] as never).mockResolvedValueOnce([] as never);
     const result = await getExpenseSummary({}, ADMIN, new mongoose.Types.ObjectId(OTHER_ID));
     expect(result.payerSpend).toEqual({ totalSpend: 0, pocketSpend: 0, companySpend: 0 });
+  });
+});
+
+describe("buildExpenseFilter — approval", () => {
+  const legacy = { _id: "legacy", createdBy: new mongoose.Types.ObjectId(USER_ID) };
+  const docs = [
+    legacy,
+    { _id: "approved", createdBy: new mongoose.Types.ObjectId(USER_ID), approvalStatus: "approved" },
+    { _id: "pending", createdBy: new mongoose.Types.ObjectId(USER_ID), approvalStatus: "pending" },
+    { _id: "rejected", createdBy: new mongoose.Types.ObjectId(USER_ID), approvalStatus: "rejected" },
+    { _id: "others-pending", createdBy: new mongoose.Types.ObjectId(OTHER_ID), approvalStatus: "pending" },
+  ];
+  const listed = (qs: string, user: AuthUser) =>
+    new Query(buildExpenseFilter(params(qs), user)).find(docs).all().map((doc) => doc._id);
+
+  it("lists every status without the param, or with approval=all or an unknown value", () => {
+    for (const qs of ["", "approval=all", "approval=bogus"]) {
+      expect(buildExpenseFilter(params(qs), makeUser("admin"))).not.toHaveProperty("approvalStatus");
+    }
+    expect(listed("", makeUser("admin"))).toEqual(["legacy", "approved", "pending", "rejected", "others-pending"]);
+  });
+
+  it("approval=approved includes legacy expenses without a status", () => {
+    const filter = buildExpenseFilter(params("approval=approved"), makeUser("admin"));
+    expect(filter.approvalStatus).toEqual(APPROVED_MATCH.approvalStatus);
+    expect(listed("approval=approved", makeUser("admin"))).toEqual(["legacy", "approved"]);
+  });
+
+  it("approval=pending and approval=rejected match that status only", () => {
+    expect(buildExpenseFilter(params("approval=pending"), makeUser("admin")).approvalStatus).toBe("pending");
+    expect(listed("approval=pending", makeUser("admin"))).toEqual(["pending", "others-pending"]);
+    expect(listed("approval=rejected", makeUser("master_admin"))).toEqual(["rejected"]);
+  });
+
+  it("keeps a user to their own expenses whatever the status asked for", () => {
+    expect(listed("approval=pending", makeUser("user"))).toEqual(["pending"]);
+    expect(listed("", makeUser("user", OTHER_ID))).toEqual(["others-pending"]);
+    expect(listed("approval=approved", makeUser("user", OTHER_ID))).toEqual([]);
   });
 });
 

@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { approvalCountLabel, useApprovalCount } from "@/contexts/ApprovalCountContext";
 import BrandLogo from "@/components/layout/BrandLogo";
 import Avatar from "@/components/ui/Avatar";
-import { ADMIN_ITEMS, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
+import { ADMIN_ITEMS, APPROVALS_HREF, NAV_ITEMS, PROFILE_ITEM, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
 import { useDialogLayer } from "@/hooks/useDialogLayer";
 import pkg from "../../../package.json";
@@ -31,24 +32,36 @@ const railIconButton = cn(
   railFocus
 );
 
+/** Over 99 the pill reads "99+" (the accessible name keeps the real number). */
+const pillCount = (count: number) => (count > 99 ? "99+" : String(count));
+
 function RailLink({
   item,
   active,
   iconOnly,
   onNavigate,
+  count = 0,
+  countLabel,
 }: {
   item: NavItem;
   active: boolean;
   iconOnly: boolean;
   onNavigate?: () => void;
+  /** Items waiting on this page (e.g. approvals): a pill, or a dot on the icon-only rail. */
+  count?: number;
+  /** The count in words, e.g. "4 awaiting approval"; joins the link's accessible name. */
+  countLabel?: (count: number) => string;
 }) {
   const Icon = item.icon;
+  const counted = count > 0;
+  const name = counted ? `${item.label}, ${countLabel ? countLabel(count) : count}` : undefined;
   return (
     <Link
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      title={iconOnly ? item.label : undefined}
+      aria-label={name}
+      title={iconOnly ? (counted ? `${item.label} (${countLabel ? countLabel(count) : count})` : item.label) : undefined}
       className={cn(
         "relative flex min-h-11 items-center gap-2.5 rounded-control text-sm transition-colors duration-140",
         railFocus,
@@ -58,13 +71,30 @@ function RailLink({
           : "text-rail-ink hover:bg-rail-hover"
       )}
     >
-      <Icon
-        aria-hidden="true"
-        size={18}
-        strokeWidth={1.5}
-        className={cn("shrink-0", active ? "text-rail-icon" : "text-rail-muted")}
-      />
+      <span className="relative flex shrink-0">
+        <Icon
+          aria-hidden="true"
+          size={18}
+          strokeWidth={1.5}
+          className={active ? "text-rail-icon" : "text-rail-muted"}
+        />
+        {iconOnly && counted && (
+          <span
+            aria-hidden="true"
+            data-testid="rail-count-dot"
+            className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-rail-mark ring-2 ring-rail"
+          />
+        )}
+      </span>
       {iconOnly ? <span className="sr-only">{item.label}</span> : <span className="ell flex-1">{item.label}</span>}
+      {!iconOnly && counted && (
+        <span
+          aria-hidden="true"
+          className="num min-w-6 shrink-0 rounded-full bg-rail-mark px-1.5 text-center text-[11px] font-semibold leading-5 text-rail"
+        >
+          {pillCount(count)}
+        </span>
+      )}
     </Link>
   );
 }
@@ -94,9 +124,16 @@ function RailContent({
 }) {
   const pathname = usePathname();
   const { isAdmin, user, logout } = useAuth();
+  const { count: approvalCount } = useApprovalCount();
   const link = (item: NavItem) => (
     <li key={item.href}>
-      <RailLink item={item} active={isNavActive(pathname, item.href)} iconOnly={iconOnly} onNavigate={onNavigate} />
+      <RailLink
+        item={item}
+        active={isNavActive(pathname, item.href)}
+        iconOnly={iconOnly}
+        onNavigate={onNavigate}
+        {...(item.href === APPROVALS_HREF ? { count: approvalCount, countLabel: approvalCountLabel } : {})}
+      />
     </li>
   );
   const profileActive = isNavActive(pathname, PROFILE_ITEM.href);

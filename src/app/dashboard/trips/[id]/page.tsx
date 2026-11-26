@@ -6,6 +6,7 @@ import {
   Briefcase,
   Building2,
   CalendarDays,
+  Clock3,
   Info,
   ListPlus,
   Luggage,
@@ -20,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { APPROVED_DELETE_MESSAGE, canDeleteExpense, effectiveApprovalStatus } from "@/lib/approval";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { canModifyExpense, payerShare, viewerAmounts, type SpendViewer } from "@/lib/expense";
@@ -27,6 +29,7 @@ import { dayKey, formatTripDates, isWithinTrip, travelTypeLabel, tripDayCount, w
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
+import { useApprovalActions } from "@/hooks/useApprovalActions";
 import { useToast } from "@/components/ui/Toast";
 import Avatar from "@/components/ui/Avatar";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -44,6 +47,14 @@ import TripFormModal from "@/components/trips/TripFormModal";
 import AddExistingExpensesModal from "@/components/trips/AddExistingExpensesModal";
 import { BudgetMeter, TripStatusBadge } from "@/components/trips/TripMeta";
 import { TravelGlyph } from "@/components/trips/TravelTypeIcon";
+import ApprovalBadge from "@/components/expenses/ApprovalBadge";
+import {
+  DELETE_FAILED,
+  DELETE_WHILE_REVIEWING,
+  asReviewed,
+  deleteRefusal,
+  useFocusAfterReview,
+} from "@/components/expenses/review-status";
 import { baseAmount, expenseDate } from "@/components/expenses/ledger/format";
 import type { ExpenseListItem } from "@/types/expense";
 import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/types/trip";
@@ -51,39 +62,63 @@ import type { TripDetailResponse, TripDetailSummary, TripListItem } from "@/type
 /** Suggestions shown in the "Might belong here" panel. */
 const SUGGESTIONS = 3;
 
+/** An expense's amounts added to (1) or taken out of (-1) the trip summary. */
+interface SummaryChange {
+  expense: ExpenseListItem;
+  sign: 1 | -1;
+}
+
 /**
- * The server summary minus expenses still inside their undo window, so the
- * stats move the moment an expense is deleted.
+ * The server summary moved by expenses the page changed since it loaded:
+ * deletes in their undo window (-1), and approvals in theirs (out as pending,
+ * back in as approved). As on the server, only an approved expense is in the
+ * totals; a pending one moves the pending figures and a rejected one is in
+ * neither. Amounts are what the server counts for `viewer` (`viewerAmounts`):
+ * whole expenses for an admin, their own share for anyone else. A payer the
+ * summary doesn't list yet isn't added (the page reloads the summary once a
+ * review is saved).
  */
-function withoutExpenses(
+function shiftTripSummary(
   summary: TripDetailSummary,
-  removed: ExpenseListItem[],
+  changes: SummaryChange[],
   viewer: SpendViewer
 ): TripDetailSummary {
-  if (removed.length === 0) return summary;
+  if (changes.length === 0) return summary;
   const next: TripDetailSummary = {
     ...summary,
     byType: summary.byType.map((row) => ({ ...row })),
     byPayer: summary.byPayer.map((row) => ({ ...row })),
   };
-  for (const expense of removed) {
+  for (const { expense, sign } of changes) {
     // As the server counts it: the whole expense for an admin, else the viewer's own share.
     const { total: base, pocket, company } = viewerAmounts(expense, viewer);
-    next.totalAmount = roundMoney(next.totalAmount - base);
-    next.pocketAmount = roundMoney(next.pocketAmount - pocket);
-    next.companyAmount = roundMoney(next.companyAmount - company);
-    next.expenseCount = Math.max(0, next.expenseCount - 1);
-    const typeRow = next.byType.find((row) => row.travelType === (expense.travelType ?? null));
+    const status = effectiveApprovalStatus(expense);
+    if (status === "pending") {
+      if (next.pendingAmount != null || sign > 0) next.pendingAmount = roundMoney((next.pendingAmount ?? 0) + sign * base);
+      if (next.pendingCount != null || sign > 0) next.pendingCount = Math.max(0, (next.pendingCount ?? 0) + sign);
+      continue;
+    }
+    if (status === "rejected") continue;
+    next.totalAmount = roundMoney(next.totalAmount + sign * base);
+    next.pocketAmount = roundMoney(next.pocketAmount + sign * pocket);
+    next.companyAmount = roundMoney(next.companyAmount + sign * company);
+    next.expenseCount = Math.max(0, next.expenseCount + sign);
+    const travelType = expense.travelType ?? null;
+    let typeRow = next.byType.find((row) => row.travelType === travelType);
+    if (!typeRow && sign > 0) {
+      typeRow = { travelType, total: 0, count: 0 };
+      next.byType.push(typeRow);
+    }
     if (typeRow) {
-      typeRow.total = roundMoney(typeRow.total - base);
-      typeRow.count -= 1;
+      typeRow.total = roundMoney(typeRow.total + sign * base);
+      typeRow.count += sign;
     }
     // Each payer's own part, as the server credits it (several payers for a shared bill).
     for (const payer of next.byPayer) {
       const share = payerShare(expense, payer.user._id);
-      payer.pocketSpend = roundMoney(payer.pocketSpend - share.pocket);
-      payer.companySpend = roundMoney(payer.companySpend - share.company);
-      payer.totalSpend = roundMoney(payer.totalSpend - share.pocket - share.company);
+      payer.pocketSpend = roundMoney(payer.pocketSpend + sign * share.pocket);
+      payer.companySpend = roundMoney(payer.companySpend + sign * share.company);
+      payer.totalSpend = roundMoney(payer.totalSpend + sign * (share.pocket + share.company));
     }
   }
   // Keep the server's order (largest first, untyped last) now the totals moved.
@@ -96,6 +131,19 @@ function withoutExpenses(
     });
   next.byPayer = next.byPayer.filter((row) => row.totalSpend > 0.004);
   return next;
+}
+
+/** The server summary minus expenses still inside their delete undo window. */
+function withoutExpenses(
+  summary: TripDetailSummary,
+  removed: ExpenseListItem[],
+  viewer: SpendViewer
+): TripDetailSummary {
+  return shiftTripSummary(
+    summary,
+    removed.map((expense) => ({ expense, sign: -1 as const })),
+    viewer
+  );
 }
 
 function DetailSkeleton() {
@@ -205,20 +253,85 @@ export default function TripDetailPage() {
     };
   }, [loadCount, tripId]);
 
+  // Approve / reject (admins) and resubmit (submitters) from an expense's detail.
+  // Once saved, the expense is replaced and the summary reloaded, so "Who paid"
+  // is the server's own figure rather than a guess.
+  // Approve/Reject turn off during the undo window: keep focus on the expense's row.
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const focusAfterReview = useFocusAfterReview(timelineRef);
+  const review = useApprovalActions({
+    onScheduled: (reviewed) => focusAfterReview(reviewed),
+    onMovedToReview: (expense) => focusAfterReview([expense]),
+    onUpdated: (updated) => {
+      setData((prev) => {
+        const old = prev?.expenses.find((e) => e._id === updated._id);
+        if (!prev || !old) return prev;
+        return {
+          ...prev,
+          expenses: prev.expenses.map((e) => (e._id === updated._id ? updated : e)),
+          summary: shiftTripSummary(prev.summary, [
+            { expense: old, sign: -1 },
+            { expense: updated, sign: 1 },
+          ], viewer),
+        };
+      });
+      void load(true);
+    },
+    onRemoved: (id) => {
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              expenses: prev.expenses.filter((e) => e._id !== id),
+              summary: withoutExpenses(prev.summary, prev.expenses.filter((e) => e._id === id), viewer),
+            }
+          : prev
+      );
+      void load(true);
+    },
+  });
+  const { inFlight } = review;
+
   const pendingSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  // During a review's undo window the expense shows the status it's heading for,
+  // and the totals move with it; Undo drops it from `inFlight`.
   const expenses = useMemo(
-    () => (data ? data.expenses.filter((e) => !pendingSet.has(e._id)) : []),
-    [data, pendingSet]
+    () =>
+      data
+        ? data.expenses
+            .filter((e) => !pendingSet.has(e._id))
+            .map((e) => (inFlight[e._id] ? asReviewed(e, inFlight[e._id]) : e))
+        : [],
+    [data, pendingSet, inFlight]
   );
-  const summary = useMemo(
-    () => (data ? withoutExpenses(data.summary, data.expenses.filter((e) => pendingSet.has(e._id)), viewer) : null),
-    [data, pendingSet, viewer]
-  );
+  const summary = useMemo(() => {
+    if (!data) return null;
+    const changes: SummaryChange[] = [];
+    for (const e of data.expenses) {
+      if (pendingSet.has(e._id)) changes.push({ expense: e, sign: -1 });
+      else if (inFlight[e._id]) {
+        changes.push({ expense: e, sign: -1 });
+        changes.push({ expense: asReviewed(e, inFlight[e._id]), sign: 1 });
+      }
+    }
+    return shiftTripSummary(data.summary, changes, viewer);
+  }, [data, pendingSet, inFlight, viewer]);
 
   const handleDelete = useCallback(
     (expense: ExpenseListItem) => {
       if ((expense.linkedAssetCount || 0) > 0) {
         toast("Linked asset purchases cannot be deleted from Expenses", "error");
+        return;
+      }
+      // The timeline withdraws Delete while a review can be undone; this guards a stale click.
+      if (inFlight[expense._id]) {
+        toast(DELETE_WHILE_REVIEWING, "info");
+        return;
+      }
+      // Decided on the stored row (not one re-labelled by a review), like the timeline.
+      const stored = data?.expenses.find((e) => e._id === expense._id) ?? expense;
+      if (user && !canDeleteExpense(user, stored)) {
+        toast(APPROVED_DELETE_MESSAGE, "info");
         return;
       }
       // Hidden (via `hiddenIds`) until it is undone, deleted or fails.
@@ -236,7 +349,13 @@ export default function TripDetailPage() {
           );
           void load(true);
         },
-        onFailed: () => toast("Failed to delete expense", "error"),
+        // It is listed again (and back in the totals) as it stops being hidden.
+        onFailed: (error) => {
+          const refusal = deleteRefusal(error);
+          toast(refusal ?? DELETE_FAILED, "error");
+          // E.g. approved meanwhile: show what the server has now.
+          if (refusal) void load(true);
+        },
       });
       if (!scheduled) return;
 
@@ -245,7 +364,7 @@ export default function TripDetailPage() {
         action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
       });
     },
-    [load, scheduleDelete, undoDelete, toast, viewer]
+    [data, inFlight, load, scheduleDelete, undoDelete, toast, user, viewer]
   );
 
   const handleRemoveFromTrip = useCallback(
@@ -331,6 +450,9 @@ export default function TripDetailPage() {
   // Only an admin's totals cover the whole trip, so only they split it per traveller.
   const perTraveller = isAdmin && trip.travelers.length > 1 ? summary.totalAmount / trip.travelers.length : null;
   const countLabel = `${summary.expenseCount} expense${summary.expenseCount !== 1 ? "s" : ""}`;
+  const pendingAmount = summary.pendingAmount ?? 0;
+  const pendingCount = summary.pendingCount ?? 0;
+  const hasPending = pendingCount > 0 || pendingAmount > 0;
 
   const addButtons = (
     <>
@@ -410,9 +532,20 @@ export default function TripDetailPage() {
           label={isAdmin ? "Trip total" : "Your spend"}
           value={formatBaseCurrency(summary.totalAmount)}
           sub={
-            summary.expenseCount > 0
-              ? `${countLabel} · ≈ ${formatBaseCurrency(perDay)} per day`
-              : `No expenses yet · ${days} day${days !== 1 ? "s" : ""}`
+            <>
+              {summary.expenseCount > 0
+                ? `${hasPending ? `${summary.expenseCount} approved expense${summary.expenseCount !== 1 ? "s" : ""}` : countLabel} · ≈ ${formatBaseCurrency(perDay)} per day`
+                : `${hasPending ? "Nothing approved yet" : "No expenses yet"} · ${days} day${days !== 1 ? "s" : ""}`}
+              {hasPending && (
+                <span className="mt-0.5 flex items-center gap-1.5">
+                  <Clock3 aria-hidden="true" size={13} strokeWidth={1.75} className="shrink-0" />
+                  <span>
+                    Excludes <span className="num">{formatBaseCurrency(pendingAmount)}</span> awaiting approval
+                    {pendingCount > 0 && ` (${pendingCount} expense${pendingCount !== 1 ? "s" : ""})`}
+                  </span>
+                </span>
+              )}
+            </>
           }
         />
         <Stat
@@ -439,7 +572,7 @@ export default function TripDetailPage() {
         {/* A user's totals are only their own share, so they can't be read against the trip budget. */}
         {isAdmin && trip.budget != null && (
           <BandCell label="Budget">
-            <BudgetMeter spent={summary.totalAmount} budget={trip.budget} />
+            <BudgetMeter spent={summary.totalAmount} budget={trip.budget} pending={pendingAmount} />
           </BandCell>
         )}
       </StatBand>
@@ -462,15 +595,18 @@ export default function TripDetailPage() {
               />
             </div>
           ) : (
-            <TripTimeline
-              trip={trip}
-              expenses={expenses}
-              onDelete={handleDelete}
-              onRemoveFromTrip={handleRemoveFromTrip}
-              canModify={canModify}
-              initialExpandedId={expandId}
-              returnTo={`/dashboard/trips/${trip._id}`}
-            />
+            <div ref={timelineRef} tabIndex={-1}>
+              <TripTimeline
+                trip={trip}
+                expenses={expenses}
+                onDelete={handleDelete}
+                onRemoveFromTrip={handleRemoveFromTrip}
+                review={review.handlers}
+                canModify={canModify}
+                initialExpandedId={expandId}
+                returnTo={`/dashboard/trips/${trip._id}`}
+              />
+            </div>
           )}
         </Panel>
 
@@ -573,6 +709,7 @@ export default function TripDetailPage() {
                       <span className="line-clamp-2 text-xs text-ink-3">
                         {expenseDate(expense)} · {expense.createdBy?.name}
                       </span>
+                      <ApprovalBadge status={expense.approvalStatus} className="self-start" />
                       <span className="flex items-center justify-between gap-2">
                         <span className="num whitespace-nowrap text-[13px] text-ink">
                           {formatBaseCurrency(baseAmount(expense))}
@@ -601,6 +738,7 @@ export default function TripDetailPage() {
         </PanelGrid>
       </div>
 
+      {review.dialogs}
       <TripFormModal isOpen={editOpen} onClose={() => setEditOpen(false)} trip={trip} onSaved={handleTripSaved} />
       <AddExistingExpensesModal
         tripId={trip._id}

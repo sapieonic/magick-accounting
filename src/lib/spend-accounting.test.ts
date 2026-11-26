@@ -236,6 +236,9 @@ describe("spend accounting — worked examples", () => {
       totalAmount: 3923.32,
       pocketAmount: 3239.06,
       companyAmount: 684.26,
+      pendingCount: 0,
+      pendingAmount: 0,
+      rejectedCount: 0,
     });
   });
 });

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Plus } from "lucide-react";
+import { approvalCountLabel, useApprovalCount } from "@/contexts/ApprovalCountContext";
 import { NAV_ITEMS, NEW_EXPENSE_HREF, isNavActive, type NavItem } from "@/components/layout/nav";
 import { cn } from "@/components/ui/cn";
 
@@ -46,6 +47,8 @@ export default function MobileTabBar({ onMore, moreOpen }: MobileTabBarProps) {
   const onNew = pathname === NEW_EXPENSE_HREF;
   // Pages reached through the drawer (Assets, Settings, Profile...) light up More.
   const moreActive = !onNew && !TABS.some((item) => isNavActive(pathname, item.href));
+  // Admins: approvals waiting (the drawer's Approvals link shows the number).
+  const { count: approvals } = useApprovalCount();
 
   return (
     <nav
@@ -68,9 +71,19 @@ export default function MobileTabBar({ onMore, moreOpen }: MobileTabBarProps) {
         onClick={onMore}
         aria-haspopup="dialog"
         aria-expanded={moreOpen}
+        aria-label={approvals > 0 ? `More, ${approvalCountLabel(approvals)}` : undefined}
         className={cn(tab, "cursor-pointer", moreActive ? tabActive : tabIdle)}
       >
-        <Menu aria-hidden="true" size={20} strokeWidth={1.5} />
+        <span className="relative flex">
+          <Menu aria-hidden="true" size={20} strokeWidth={1.5} />
+          {approvals > 0 && (
+            <span
+              aria-hidden="true"
+              data-testid="more-count-dot"
+              className="absolute -right-1 -top-0.5 h-2 w-2 rounded-full bg-accent ring-2 ring-surface"
+            />
+          )}
+        </span>
         More
       </button>
     </nav>

@@ -1,6 +1,13 @@
 import mongoose, { type PipelineStage } from "mongoose";
 import type { AuthUser } from "@/lib/auth";
 import { roundMoney } from "@/lib/asset";
+import {
+  APPROVED_MATCH,
+  isApprovedExpr,
+  isPendingExpr,
+  PENDING_MATCH,
+  type ApprovalStatus,
+} from "@/lib/approval";
 import { isAdminViewer, payerShareStages, viewerAmounts, type SpendViewer } from "@/lib/expense";
 import {
   buildExpenseFilter,
@@ -8,6 +15,7 @@ import {
   expensePagination,
   groupedExpensePagePipeline,
   spendExprs,
+  sumWhere,
   type ExpensePageParams,
 } from "@/lib/expense-query";
 import { getTripStatus, OBJECT_ID_PATTERN, totalsByTravelType, type TravelType } from "@/lib/trip";
@@ -51,7 +59,8 @@ export function populateExpenseRefs<Q extends { populate: (...args: any[]) => an
     .populate("currency", "code name symbol rateToBase isBase")
     .populate("createdBy", "name email photoURL")
     .populate("payments.paidBy", "name email")
-    .populate("trip", "name");
+    .populate("trip", "name")
+    .populate("reviewedBy", "name email");
 }
 
 /** Adds `linkedAssetCount` (assets bought through each expense) to listed expenses. */
@@ -136,9 +145,12 @@ function serializeTripSummary(trip: LeanDoc, now: Date = new Date()): TripSummar
   };
 }
 
+/** Approved expenses' count and total; those awaiting approval separately. */
 interface TripTotals {
   expenseCount: number;
   totalAmount: number;
+  pendingCount?: number;
+  pendingAmount?: number;
 }
 
 const NO_TOTALS: TripTotals = { expenseCount: 0, totalAmount: 0 };
@@ -162,6 +174,8 @@ export function serializeTripListItem(
     createdBy: tripPerson(trip.createdBy),
     expenseCount: totals?.expenseCount ?? 0,
     totalAmount: roundMoney(totals?.totalAmount ?? 0),
+    pendingCount: totals?.pendingCount ?? 0,
+    pendingAmount: roundMoney(totals?.pendingAmount ?? 0),
     canManage: canManageTrip(trip, user),
   };
 }
@@ -179,21 +193,25 @@ export function tripSearchFilter(
 }
 
 /**
- * Per-trip count and base-currency total of the expenses matching
- * `visibility`, summed as `viewer` counts them (`spendExprs`).
+ * Per-trip count and base-currency total of the approved expenses matching
+ * `visibility`, plus the count and total of those awaiting approval, all
+ * summed as `viewer` counts them (`spendExprs`).
  */
 export function tripTotalsPipeline(
   visibility: Record<string, unknown>,
   tripIds: mongoose.Types.ObjectId[],
   viewer: Pick<AuthUser, "_id" | "role">
 ): PipelineStage[] {
+  const amounts = spendExprs(viewer);
   return [
     { $match: { ...visibility, trip: { $in: tripIds } } },
     {
       $group: {
         _id: "$trip",
-        expenseCount: { $sum: 1 },
-        totalAmount: { $sum: spendExprs(viewer).total },
+        expenseCount: sumWhere(isApprovedExpr, 1),
+        totalAmount: sumWhere(isApprovedExpr, amounts.total),
+        pendingCount: sumWhere(isPendingExpr, 1),
+        pendingAmount: sumWhere(isPendingExpr, amounts.total),
       },
     },
   ];
@@ -216,7 +234,12 @@ export async function visibleTripTotals(
   return new Map(
     rows.map((row) => [
       String(row._id),
-      { expenseCount: row.expenseCount, totalAmount: roundMoney(row.totalAmount ?? 0) },
+      {
+        expenseCount: row.expenseCount,
+        totalAmount: roundMoney(row.totalAmount ?? 0),
+        pendingCount: row.pendingCount ?? 0,
+        pendingAmount: roundMoney(row.pendingAmount ?? 0),
+      },
     ])
   );
 }
@@ -230,10 +253,11 @@ export async function loadTripListItem(tripId: string, user: AuthUser): Promise<
 }
 
 /**
- * Totals of the expenses matching `filter` (one trip, as the caller sees it),
- * summed as `viewer` counts them (`spendExprs`), plus each person's share the
- * way Spend by User credits it. A `user` only gets their own payer row, so
- * the rows add up to their totals.
+ * Totals of the approved expenses matching `filter` (one trip, as the caller
+ * sees it), summed as `viewer` counts them (`spendExprs`), plus each person's
+ * approved share the way Spend by User credits it, and the count and total of
+ * those awaiting approval (by the same rule). A `user` only gets their own
+ * payer row, so the rows add up to their totals.
  */
 export function tripDetailSummaryPipeline(
   filter: Record<string, unknown>,
@@ -248,6 +272,7 @@ export function tripDetailSummaryPipeline(
     {
       $facet: {
         totals: [
+          { $match: APPROVED_MATCH },
           {
             $group: {
               _id: null,
@@ -258,7 +283,12 @@ export function tripDetailSummaryPipeline(
             },
           },
         ],
+        pending: [
+          { $match: PENDING_MATCH },
+          { $group: { _id: null, pendingCount: { $sum: 1 }, pendingAmount: { $sum: amounts.total } } },
+        ],
         byPayer: [
+          { $match: APPROVED_MATCH },
           ...payerShareStages,
           ...ownRowOnly,
           {
@@ -285,14 +315,22 @@ interface PayerRow {
   companySpend: number;
 }
 
-/** Runs `tripDetailSummaryPipeline` and joins the payers' names. */
+/**
+ * Runs `tripDetailSummaryPipeline` and joins the payers' names. `byType` is
+ * totalled from `expenses` (the same visible expenses), approved ones only.
+ */
 export async function getTripDetailSummary(
   filter: Record<string, unknown>,
-  expenses: (Parameters<typeof viewerAmounts>[0] & { date: string | Date; travelType?: TravelType | null })[],
+  expenses: (Parameters<typeof viewerAmounts>[0] & {
+    date: string | Date;
+    travelType?: TravelType | null;
+    approvalStatus?: ApprovalStatus | null;
+  })[],
   viewer: SpendViewer
 ): Promise<TripDetailSummary> {
   const [result] = await Expense.aggregate(tripDetailSummaryPipeline(filter, viewer));
   const totals = result?.totals?.[0];
+  const pending = result?.pending?.[0];
   const payerRows: PayerRow[] = result?.byPayer ?? [];
 
   const payerIds = payerRows.map((row) => row._id).filter(Boolean);
@@ -321,9 +359,12 @@ export async function getTripDetailSummary(
         amount: expense.amount,
         amountInBaseCurrency: viewerAmounts(expense, viewer).total,
         travelType: expense.travelType ?? null,
+        approvalStatus: expense.approvalStatus ?? null,
       }))
     ),
     byPayer,
+    pendingCount: pending?.pendingCount ?? 0,
+    pendingAmount: roundMoney(pending?.pendingAmount ?? 0),
   };
 }
 

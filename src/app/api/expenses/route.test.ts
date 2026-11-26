@@ -12,6 +12,7 @@ import Asset from "@/models/Asset";
 import User from "@/models/User";
 import Trip from "@/models/Trip";
 import { encodeExpenseCursor } from "@/lib/expense-query";
+import { createAssetsForExpense } from "@/lib/asset-server";
 
 vi.mock("@/lib/auth", () => ({ verifyAuth: vi.fn() }));
 vi.mock("@/lib/mongodb", () => ({ connectDB: vi.fn() }));
@@ -214,6 +215,122 @@ describe("POST /api/expenses payment split", () => {
       expect(createdExpense()).toEqual(expect.objectContaining({ paymentSource: "pocket", payments: [] }));
       expect(User.countDocuments).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("POST /api/expenses approval", () => {
+  const expenseId = "66c1884c0853f8a76a4da111";
+  const userId = "66c1884c0853f8a76a4da201";
+  const adminId = "66c1884c0853f8a76a4da202";
+
+  function chain(result: unknown) {
+    const query = {
+      populate: vi.fn(() => query),
+      sort: vi.fn(() => query),
+      lean: vi.fn().mockResolvedValue(result),
+    };
+    return query;
+  }
+
+  function post(body: Record<string, unknown> = {}) {
+    return POST({
+      json: async () => ({
+        title: "Office chair",
+        amount: 100,
+        currency: "inr-id",
+        category: "category-id",
+        department: "department-id",
+        date: "2026-11-01",
+        ...body,
+      }),
+    } as unknown as NextRequest);
+  }
+
+  function createdExpense() {
+    return (vi.mocked(Expense.create).mock.calls[0][0] as unknown as Record<string, unknown>[])[0];
+  }
+
+  function signInAs(role: "user" | "admin" | "master_admin") {
+    vi.mocked(verifyAuth).mockResolvedValue({
+      _id: role === "user" ? userId : adminId,
+      email: `${role}@example.com`,
+      name: role,
+      role,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connectDB).mockResolvedValue(undefined);
+    vi.mocked(Currency.findById).mockReturnValue(chain({ _id: "inr-id", rateToBase: 1 }) as never);
+    vi.mocked(Expense.create).mockResolvedValue([{ _id: expenseId }] as never);
+    vi.mocked(Asset.find).mockReturnValue(chain([]) as never);
+    vi.mocked(Expense.findById).mockReturnValue(chain({ _id: expenseId }) as never);
+  });
+
+  it("submits a user's expense for approval", async () => {
+    signInAs("user");
+
+    const response = await post();
+
+    expect(response.status).toBe(201);
+    expect(createdExpense()).toEqual(
+      expect.objectContaining({
+        createdBy: userId,
+        approvalStatus: "pending",
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+        approvalHistory: [{ action: "submitted", by: userId, at: expect.any(Date), note: null }],
+      })
+    );
+  });
+
+  it("approves an admin's own expense on creation", async () => {
+    for (const role of ["admin", "master_admin"] as const) {
+      vi.mocked(Expense.create).mockClear();
+      signInAs(role);
+
+      expect((await post()).status).toBe(201);
+      const created = createdExpense();
+      expect(created).toEqual(
+        expect.objectContaining({
+          approvalStatus: "approved",
+          reviewedBy: adminId,
+          reviewedAt: expect.any(Date),
+          approvalHistory: [{ action: "auto_approved", by: adminId, at: created.reviewedAt, note: null }],
+        })
+      );
+    }
+  });
+
+  it("refuses assets on a user's expense before writing anything", async () => {
+    signInAs("user");
+
+    const response = await post({ assets: [{ name: "Chair", allocatedAmount: 100 }] });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Assets can be registered once an admin approves this expense.",
+    });
+    expect(Expense.exists).not.toHaveBeenCalled();
+    expect(Expense.create).not.toHaveBeenCalled();
+    expect(createAssetsForExpense).not.toHaveBeenCalled();
+  });
+
+  it("lets a user send an empty asset list, and never creates assets for them", async () => {
+    signInAs("user");
+
+    expect((await post({ assets: [] })).status).toBe(201);
+    expect(createAssetsForExpense).toHaveBeenCalledWith(expect.objectContaining({ rawAssets: [] }));
+  });
+
+  it("still creates an admin's assets with the expense", async () => {
+    signInAs("admin");
+    const assets = [{ name: "Chair", allocatedAmount: 100 }];
+
+    expect((await post({ assets })).status).toBe(201);
+    expect(createAssetsForExpense).toHaveBeenCalledWith(expect.objectContaining({ rawAssets: assets }));
   });
 });
 
@@ -579,7 +696,16 @@ describe("GET /api/expenses", () => {
 
     try {
       const flat = await (await get("?limit=20&includeSummary=true")).json();
-      expect(flat.summary).toEqual({ totalExpenses: 6, totalAmount: 600, companyAmount: 170, pocketAmount: 430 });
+      // Every document here predates approvals, so all of it is approved spend.
+      expect(flat.summary).toEqual({
+        totalExpenses: 6,
+        totalAmount: 600,
+        companyAmount: 170,
+        pocketAmount: 430,
+        pendingCount: 0,
+        pendingAmount: 0,
+        rejectedCount: 0,
+      });
 
       const grouped = await (await get("?groupTrips=true&limit=3&includeSummary=true")).json();
       expect(grouped.summary).toEqual(flat.summary);
@@ -733,12 +859,16 @@ describe("GET /api/expenses with shared expenses", () => {
     );
   });
 
+  // All approved (legacy, no status): nothing awaits approval or was rejected.
+  const NOTHING_PENDING = { pendingCount: 0, pendingAmount: 0, rejectedCount: 0 };
+
   // Ravi: ₹8,000 of Asha's bill + his ₹500 licence + ₹1,999.50 of the dinner + his ₹300.30 cab.
   const ravisSummary = {
     totalExpenses: 4,
     totalAmount: 10799.8,
     pocketAmount: 10299.8,
     companyAmount: 500,
+    ...NOTHING_PENDING,
   };
 
   it("lists a payer the shared bills others submitted, and sums only their share", async () => {
@@ -760,7 +890,13 @@ describe("GET /api/expenses with shared expenses", () => {
   it("gives the submitter of a shared bill only the part they paid", async () => {
     signIn(ASHA, "user");
     // ₹2,000 of her bill + her ₹250.25 books (₹100.10 pocket) + her ₹1,000.50 (company) of the dinner.
-    const summary = { totalExpenses: 3, totalAmount: 3250.75, pocketAmount: 2100.1, companyAmount: 1150.65 };
+    const summary = {
+      totalExpenses: 3,
+      totalAmount: 3250.75,
+      pocketAmount: 2100.1,
+      companyAmount: 1150.65,
+      ...NOTHING_PENDING,
+    };
 
     const flat = await get("?limit=20&includeSummary=true");
     expect(titles(flat)).toEqual(["Offsite venue", "Books", "Goa dinner"]);
@@ -790,6 +926,7 @@ describe("GET /api/expenses with shared expenses", () => {
       totalAmount: 14050.55,
       pocketAmount: 12399.9,
       companyAmount: 1650.65,
+      ...NOTHING_PENDING,
     });
 
     // Ravi's credited expenses, whole, with his share as Spend by User counts it.
@@ -798,6 +935,7 @@ describe("GET /api/expenses with shared expenses", () => {
       totalAmount: 13800.3,
       pocketAmount: 12299.8,
       companyAmount: 1500.5,
+      ...NOTHING_PENDING,
       payerSpend: { totalSpend: 10799.8, pocketSpend: 10299.8, companySpend: 500 },
     };
     const flat = await get(`?limit=20&includeSummary=true&paidBy=${RAVI}`);
@@ -807,5 +945,47 @@ describe("GET /api/expenses with shared expenses", () => {
     const grouped = await get(`?groupTrips=true&limit=20&includeSummary=true&paidBy=${RAVI}`);
     expect(titles(grouped)).toEqual(["Licence", "Offsite venue", "Goa dinner", "Goa cab"]);
     expect(grouped.summary).toEqual(payerSummary);
+  });
+
+  it("leaves a user's share of a shared bill awaiting approval out of their total, and reports it as pending", async () => {
+    // Asha's ₹1,200.40 taxi, submitted for approval: Ravi paid ₹700.25 of it from pocket.
+    const pendingTaxi = {
+      ...stored("Airport taxi", "2026-10-12", ASHA, 1200.4, "multiple", 1200.4, [
+        { paidBy: ASHA, amountInBaseCurrency: 500.15, source: "pocket" },
+        { paidBy: RAVI, amountInBaseCurrency: 700.25, source: "pocket" },
+      ]),
+      approvalStatus: "pending",
+    };
+    // A rejected shared bill: counted, never summed.
+    const rejectedLunch = {
+      ...stored("Team lunch", "2026-10-13", ASHA, 900, "multiple", 900, [
+        { paidBy: ASHA, amountInBaseCurrency: 450, source: "pocket" },
+        { paidBy: RAVI, amountInBaseCurrency: 450, source: "pocket" },
+      ]),
+      approvalStatus: "rejected",
+    };
+    const withPending = [...docs, pendingTaxi, rejectedLunch];
+    vi.mocked(Expense.aggregate).mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((pipeline: any[]) => Promise.resolve(new Aggregator(pipeline).run(withPending))) as never
+    );
+
+    signIn(RAVI, "user");
+    const ravi = await get("?groupTrips=true&limit=20&includeSummary=true");
+    // His approved total is unchanged; his ₹700.25 share waits apart.
+    expect(ravi.summary).toEqual({ ...ravisSummary, pendingCount: 1, pendingAmount: 700.25, rejectedCount: 1 });
+
+    signIn(ASHA, "user");
+    const asha = await get("?groupTrips=true&limit=20&includeSummary=true");
+    expect(asha.summary).toEqual(
+      expect.objectContaining({ totalAmount: 3250.75, pendingCount: 1, pendingAmount: 500.15, rejectedCount: 1 })
+    );
+
+    // An admin sees the whole bill awaiting approval.
+    signIn(ADMIN, "admin");
+    const admin = await get("?groupTrips=true&limit=20&includeSummary=true");
+    expect(admin.summary).toEqual(
+      expect.objectContaining({ totalAmount: 14050.55, pendingCount: 1, pendingAmount: 1200.4, rejectedCount: 1 })
+    );
   });
 });

@@ -81,7 +81,12 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
   const response: TripDetailResponse = {
     trip: serializeTripListItem(
       trip,
-      { expenseCount: summary.expenseCount, totalAmount: summary.totalAmount },
+      {
+        expenseCount: summary.expenseCount,
+        totalAmount: summary.totalAmount,
+        pendingCount: summary.pendingCount,
+        pendingAmount: summary.pendingAmount,
+      },
       authResult
     ),
     summary,

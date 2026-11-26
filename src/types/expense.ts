@@ -1,3 +1,4 @@
+import type { ApprovalHistoryAction, ApprovalStatus } from "@/lib/approval";
 import type { PaymentSource } from "@/lib/expense";
 import type { ExpensePaymentEntry } from "@/lib/expense-csv";
 import type { TravelType } from "@/lib/trip";
@@ -27,4 +28,22 @@ export interface ExpenseListItem {
   trip?: { _id: string; name: string } | null;
   travelType?: TravelType | null;
   linkedAssetCount?: number;
+  /** Missing on expenses created before approvals existed; treat as approved. */
+  approvalStatus?: ApprovalStatus | null;
+  /** Populated as `{ _id, name, email }` where the endpoint populates it; otherwise an id. */
+  reviewedBy?: { _id: string; name: string; email?: string } | string | null;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+  approvalHistory?: ApprovalHistoryItem[];
+  /** The document's edit revision; sent back with approve/reject/resubmit. */
+  assetAllocationRevision?: number;
+  createdAt?: string;
+}
+
+/** One approval audit entry; `by` is populated on the single-expense GET. */
+export interface ApprovalHistoryItem {
+  action: ApprovalHistoryAction;
+  by: { _id: string; name: string; email?: string } | string;
+  at: string;
+  note: string | null;
 }

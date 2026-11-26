@@ -39,6 +39,7 @@ export default function TripTimeline({
   expenses,
   onDelete,
   onRemoveFromTrip,
+  review,
   canModify,
   initialExpandedId = null,
   returnTo,
@@ -101,8 +102,18 @@ export default function TripTimeline({
                   </span>
                 </span>
               </h3>
-              <span className="num shrink-0 text-[13px] text-ink-2" title="Section total">
-                {formatBaseCurrency(section.total)}
+              <span data-testid="day-total" className="flex shrink-0 flex-col items-end text-[13px] text-ink-2 sm:flex-row sm:gap-1">
+                <span className="num whitespace-nowrap" title="Day total: approved expenses only">
+                  {formatBaseCurrency(section.total)}
+                </span>
+                {(section.pendingTotal ?? 0) > 0 && (
+                  <span className="whitespace-nowrap text-xs text-ink-3 sm:text-[13px]">
+                    <span aria-hidden="true" className="hidden sm:inline">· </span>
+                    <span className="sr-only">, plus </span>
+                    <span className="num">{formatBaseCurrency(section.pendingTotal!)}</span> awaiting approval
+                    <span className="sr-only">, not in the total</span>
+                  </span>
+                )}
               </span>
             </div>
             <div>
@@ -118,8 +129,10 @@ export default function TripTimeline({
                   inlineDetail={inlineDetail}
                   detailId={detailId}
                   editHref={expenseEditHref(expense._id, returnTo)}
-                  onDelete={onDelete}
+                  // No Delete while its approve/reject can still be undone.
+                  onDelete={review?.inFlight?.[expense._id] ? undefined : onDelete}
                   onRemoveFromTrip={onRemoveFromTrip}
+                  review={review}
                   canModify={canModify}
                 />
               ))}

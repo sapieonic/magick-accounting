@@ -85,6 +85,37 @@ describe("ExpenseRow", () => {
     expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ _id: "exp-1" }));
   });
 
+  it("offers the Delete quick action only where the viewer may delete the expense", () => {
+    const submitter = { viewerId: "u1", viewerRole: "user" as const };
+    const { rerender } = render(
+      <ExpenseRow
+        expense={makeExpense({ approvalStatus: "pending" })}
+        selected={false}
+        onSelect={vi.fn()}
+        editHref="/edit"
+        onDelete={vi.fn()}
+        review={submitter}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Delete Team dinner" })).toBeInTheDocument();
+
+    // Approved: only the master admin deletes it; opening the row says why.
+    rerender(
+      <ExpenseRow
+        expense={makeExpense({ approvalStatus: "approved" })}
+        selected
+        onSelect={vi.fn()}
+        editHref="/edit"
+        onDelete={vi.fn()}
+        review={submitter}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Approved expenses are part of the books, so only the master admin can delete them.")
+    ).toBeInTheDocument();
+  });
+
   it("opens the detail under the row with every payer of a shared bill", () => {
     renderRow({
       selected: true,
@@ -285,5 +316,72 @@ describe("ExpenseRow", () => {
     renderRow({ selected: true, inlineDetail: false, detailId: "side-panel" });
     expect(screen.getByRole("button", { name: "Team dinner" })).toHaveAttribute("aria-controls", "side-panel");
     expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  describe("approval", () => {
+    it("badges a pending row and keeps its amount out of the totals for screen readers too", () => {
+      renderRow({ expense: makeExpense({ approvalStatus: "pending" }) });
+      expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
+      const amount = screen.getByText("$100.00", { exact: false });
+      expect(amount).toHaveClass("text-ink-3");
+      expect(amount).not.toHaveClass("line-through");
+      expect(amount).toHaveTextContent("$100.00 (awaiting approval, not in totals)");
+    });
+
+    it("strikes through a rejected amount and says why", () => {
+      renderRow({ expense: makeExpense({ approvalStatus: "rejected" }) });
+      expect(screen.getByText("Rejected")).toBeInTheDocument();
+      const amount = screen.getByText("$100.00", { exact: false });
+      expect(amount).toHaveClass("text-ink-3", "line-through");
+      expect(amount).toHaveTextContent("(rejected, not in totals)");
+    });
+
+    it("leaves approved and legacy rows unbadged", () => {
+      renderRow({ expense: makeExpense({ approvalStatus: "approved" }) });
+      expect(screen.queryByText("Approved")).not.toBeInTheDocument();
+      expect(screen.getByText("$100.00")).toHaveClass("text-ink");
+    });
+
+    it("review rows: a labelled checkbox that toggles without opening the row", () => {
+      const onToggle = vi.fn();
+      const { onSelect } = renderRow({
+        variant: "review",
+        expense: makeExpense({ approvalStatus: "pending", createdAt: new Date(Date.now() - 2 * 86_400_000).toISOString() }),
+        selection: { checked: false, onToggle, label: "Select Team dinner, $100.00", keyShortcut: "X" },
+      });
+      const box = screen.getByRole("checkbox", { name: "Select Team dinner, $100.00" });
+      expect(box).toHaveAttribute("aria-keyshortcuts", "X");
+      // Above the row's click target.
+      expect(box.closest("label")).toHaveClass("relative", "z-10", "min-h-11", "min-w-11");
+      fireEvent.click(box);
+      expect(onToggle).toHaveBeenCalledTimes(1);
+      expect(onSelect).not.toHaveBeenCalled();
+      // The queue is all pending: no badge on each row, but when it was sent.
+      expect(screen.queryByText("Awaiting approval")).not.toBeInTheDocument();
+      expect(screen.getByText("Asha Rao · submitted 2 days ago")).toBeInTheDocument();
+    });
+
+    it("review rows without a selection have no checkbox column", () => {
+      renderRow({ variant: "review", expense: makeExpense({ approvalStatus: "pending" }) });
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("LedgerHead", () => {
+  it("keeps the column heads decorative, and offers a labelled select-all when given one", async () => {
+    const { LedgerHead, SelectAllCheckbox } = await import("./ExpenseRow");
+    const onToggle = vi.fn();
+    const { container, rerender } = render(<LedgerHead />);
+    expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
+
+    rerender(<LedgerHead select={<SelectAllCheckbox selected={1} total={3} onToggle={onToggle} />} />);
+    const all = screen.getByRole("checkbox", { name: "Select all 3" });
+    expect((all as HTMLInputElement).indeterminate).toBe(true);
+    fireEvent.click(all);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+
+    rerender(<LedgerHead select={<SelectAllCheckbox selected={3} total={3} onToggle={onToggle} />} />);
+    expect(screen.getByRole("checkbox", { name: "Deselect all" })).toBeChecked();
   });
 });

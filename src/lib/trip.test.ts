@@ -207,6 +207,39 @@ describe("groupByTripDay", () => {
   it("returns no sections for no expenses", () => {
     expect(groupByTripDay([], trip)).toEqual([]);
   });
+
+  it("lists every expense but totals approved ones, with those awaiting approval apart", () => {
+    const sections = groupByTripDay(
+      [
+        { ...item("hotel", "2026-10-13", 5000), approvalStatus: "approved" as const },
+        { ...item("legacy-cab", "2026-10-13", 300) },
+        { ...item("dinner", "2026-10-13", 1200.105), approvalStatus: "pending" as const },
+        { ...item("snacks", "2026-10-13", 99.995), approvalStatus: "pending" as const },
+        { ...item("spa", "2026-10-13", 4000), approvalStatus: "rejected" as const },
+        { ...item("visa", "2026-08-20", 2000), approvalStatus: "pending" as const },
+      ],
+      trip
+    );
+
+    expect(sections).toEqual([
+      expect.objectContaining({ key: "pre", total: 0, pendingTotal: 2000 }),
+      expect.objectContaining({ key: "2026-10-13", total: 5300, pendingTotal: 1300.11 }),
+    ]);
+    expect(sections[1].items.map((entry) => entry.id)).toEqual(["hotel", "legacy-cab", "dinner", "snacks", "spa"]);
+  });
+
+  it("reports a zero pending total when everything is approved", () => {
+    const [section] = groupByTripDay([item("hotel", "2026-10-13", 5000)], trip);
+    expect(section).toEqual({
+      key: "2026-10-13",
+      label: "Day 2 · Tue, 13 Oct",
+      kind: "day",
+      dayNumber: 2,
+      items: [item("hotel", "2026-10-13", 5000)],
+      total: 5000,
+      pendingTotal: 0,
+    });
+  });
 });
 
 describe("totalsByTravelType", () => {
@@ -223,6 +256,23 @@ describe("totalsByTravelType", () => {
       { travelType: "flight", total: 8300, count: 1 },
       { travelType: "cab", total: 750.26, count: 2 },
       { travelType: null, total: 9050, count: 2 },
+    ]);
+  });
+
+  it("counts approved expenses only, legacy ones included", () => {
+    const rows = totalsByTravelType([
+      { date: "2026-10-12", amount: 6000, travelType: "stay", approvalStatus: "approved" },
+      { date: "2026-10-12", amount: 300, travelType: "cab" },
+      { date: "2026-10-13", amount: 200, travelType: "cab", approvalStatus: null },
+      { date: "2026-10-13", amount: 9000, travelType: "stay", approvalStatus: "pending" },
+      { date: "2026-10-14", amount: 8300, travelType: "flight", approvalStatus: "pending" },
+      { date: "2026-10-14", amount: 450, travelType: "cab", approvalStatus: "rejected" },
+    ]);
+
+    // A type with nothing approved yet has no row.
+    expect(rows).toEqual([
+      { travelType: "stay", total: 6000, count: 1 },
+      { travelType: "cab", total: 500, count: 2 },
     ]);
   });
 });

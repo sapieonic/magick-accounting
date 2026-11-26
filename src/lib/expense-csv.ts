@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { approvalStatusCsvLabel, effectiveApprovalStatus, type ApprovalStatus } from "@/lib/approval";
 import { getPaymentBreakdown, PaymentSplitFields } from "@/lib/expense";
 import { travelTypeLabel, type TravelType } from "@/lib/trip";
 
@@ -22,6 +23,8 @@ export interface ExpenseCsvSource extends PaymentSplitFields {
   payments?: ExpensePaymentEntry[];
   trip?: { name: string } | null;
   travelType?: TravelType | null;
+  approvalStatus?: ApprovalStatus | null;
+  rejectionReason?: string | null;
 }
 
 export const EXPENSE_CSV_HEADERS = [
@@ -30,6 +33,7 @@ export const EXPENSE_CSV_HEADERS = [
   // Appended so existing columns keep their positions for anyone reading by index.
   "Pocket (Base)", "Company (Base)", "Payments",
   "Trip", "Travel Type",
+  "Approval status", "Rejection reason",
 ];
 
 export function paymentSourceLabel(source?: string | null): string {
@@ -72,5 +76,7 @@ export function expenseCsvRow(e: ExpenseCsvSource): unknown[] {
     describePayments(e.payments),
     e.trip?.name ?? "",
     e.travelType ? travelTypeLabel(e.travelType) : "",
+    approvalStatusCsvLabel(e),
+    effectiveApprovalStatus(e) === "rejected" ? e.rejectionReason ?? "" : "",
   ];
 }

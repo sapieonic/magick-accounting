@@ -22,7 +22,7 @@ export interface TripSummary {
   status: TripStatus;
 }
 
-/** A trip as `GET /api/trips` and `GET /api/trips/[id]` return it. */
+/** A trip as `GET /api/trips` and `GET /api/trips/[id]` return it. Totals count approved expenses only. */
 export interface TripListItem extends TripSummary {
   purpose: string;
   department: { _id: string; name: string } | null;
@@ -31,8 +31,11 @@ export interface TripListItem extends TripSummary {
   createdBy: TripPerson;
   /** Expenses the caller can see (their own for `user` role). */
   expenseCount: number;
-  /** Base-currency total of those expenses. */
+  /** Base-currency total of those expenses; approved ones only. */
   totalAmount: number;
+  /** Visible expenses awaiting approval, left out of the two figures above. */
+  pendingCount?: number;
+  pendingAmount?: number;
   /** Whether the caller may edit or delete the trip. */
   canManage: boolean;
 }
@@ -52,6 +55,9 @@ export interface TripDetailSummary {
   companyAmount: number;
   byType: { travelType: TravelType | null; total: number; count: number }[];
   byPayer: TripPayerTotal[];
+  /** Expenses awaiting approval; every other figure here is approved-only. */
+  pendingCount?: number;
+  pendingAmount?: number;
 }
 
 /** `GET /api/trips/[id]`. */

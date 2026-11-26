@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import ExpenseDetail from "./ExpenseDetail";
 import { api } from "@/lib/api";
 import type { ExpenseListItem } from "@/types/expense";
@@ -76,6 +76,306 @@ describe("ExpenseDetail receipt preview", () => {
   });
 });
 
+describe("ExpenseDetail approval", () => {
+  const pending: ExpenseListItem = {
+    ...expense,
+    receiptKey: undefined,
+    receiptFilename: undefined,
+    approvalStatus: "pending",
+    createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+  };
+
+  it("gives admins Approve and Reject… on a pending expense, with who sent it and when", () => {
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    render(<ExpenseDetail expense={pending} editHref="/edit" review={{ onApprove, onReject, viewerId: "admin" }} />);
+
+    const notice = screen.getByRole("group", { name: "Awaiting approval" });
+    expect(notice).toHaveAttribute("data-notice");
+    // A notice describes the state the detail opened in; it isn't a live region.
+    expect(notice).not.toHaveAttribute("aria-live");
+    expect(within(notice).getByText("Awaiting approval")).toBeInTheDocument();
+    expect(within(notice).getByText("Submitted by Manas Nilorout 3 days ago. Not in totals yet.")).toBeInTheDocument();
+    fireEvent.click(within(notice).getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalledWith(pending);
+    fireEvent.click(within(notice).getByRole("button", { name: "Reject…" }));
+    expect(onReject).toHaveBeenCalledWith(pending);
+  });
+
+  it("tells the submitter what happens next, without review buttons", () => {
+    render(<ExpenseDetail expense={pending} editHref="/edit" review={{ viewerId: "u1", onResubmit: vi.fn() }} />);
+    expect(screen.getByText(/An admin will review this. It isn.t included in company totals until it.s approved./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject…" })).not.toBeInTheDocument();
+  });
+
+  it("shows no review buttons on an approved expense, just an Approved badge and who approved it", () => {
+    render(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalStatus: "approved",
+          reviewedBy: { _id: "p", name: "Priya" },
+          reviewedAt: "2026-11-12T09:00:00.000Z",
+        }}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn() }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByText("by Priya on 12 Nov 2026")).toBeInTheDocument();
+  });
+
+  it("calls a legacy expense simply approved, and an admin's own entry approved automatically", () => {
+    const { rerender } = render(<ExpenseDetail expense={{ ...pending, approvalStatus: undefined }} editHref="/edit" />);
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    rerender(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalStatus: "approved",
+          approvalHistory: [{ action: "auto_approved", by: "u1", at: "2026-11-12T09:00:00.000Z", note: null }],
+        }}
+        editHref="/edit"
+      />
+    );
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByText("automatically, added by an admin")).toBeInTheDocument();
+  });
+
+  it("shows a rejection's reason and, to its submitter, Edit & resubmit and Resubmit as is…", () => {
+    const onResubmit = vi.fn();
+    const rejected: ExpenseListItem = {
+      ...pending,
+      approvalStatus: "rejected",
+      reviewedBy: { _id: "p", name: "Priya" },
+      reviewedAt: "2026-11-12T09:00:00.000Z",
+      rejectionReason: "Receipt missing or unreadable",
+    };
+    render(<ExpenseDetail expense={rejected} editHref="/edit" review={{ viewerId: "u1", onResubmit }} />);
+
+    const notice = screen.getByRole("group", { name: "Rejected" });
+    expect(within(notice).getByText("Priya rejected this on 12 Nov 2026.")).toBeInTheDocument();
+    expect(within(notice).getByText("Receipt missing or unreadable")).toBeInTheDocument();
+    expect(within(notice).getByText(/What next: fix the details and resubmit/)).toBeInTheDocument();
+    expect(within(notice).getByRole("link", { name: "Edit & resubmit" })).toHaveAttribute("href", "/edit");
+    fireEvent.click(within(notice).getByRole("button", { name: "Resubmit as is…" }));
+    expect(onResubmit).toHaveBeenCalledWith(rejected);
+    // The plain Edit button would only repeat "Edit & resubmit".
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("doesn't offer an admin the submitter's resubmit actions", () => {
+    render(
+      <ExpenseDetail
+        expense={{ ...pending, approvalStatus: "rejected", rejectionReason: "Duplicate" }}
+        editHref="/edit"
+        review={{ viewerId: "admin", onApprove: vi.fn(), onReject: vi.fn(), onResubmit: vi.fn() }}
+      />
+    );
+    expect(screen.getByText("Duplicate")).toBeInTheDocument();
+    expect(screen.getByText(/Manas Nilorout can fix it and resubmit/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Edit & resubmit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("shows reviewers the submitter's note on a resubmission, and the approval history", () => {
+    render(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalHistory: [
+            { action: "submitted", by: "u1", at: "2026-11-10T09:00:00.000Z", note: null },
+            { action: "rejected", by: { _id: "p", name: "Priya" }, at: "2026-11-12T09:00:00.000Z", note: "Not a business expense" },
+            { action: "resubmitted", by: "u1", at: "2026-11-13T09:00:00.000Z", note: "Client was at the dinner" },
+          ],
+        }}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn() }}
+      />
+    );
+    expect(screen.getByText(/Note from Manas Nilorout:/)).toHaveTextContent("Note from Manas Nilorout: Client was at the dinner");
+    expect(screen.getByText("Approval history (3)")).toBeInTheDocument();
+    expect(screen.getByText("Rejected · Priya · 12 Nov 2026")).toBeInTheDocument();
+    expect(screen.getByText("Submitted · Manas Nilorout · 10 Nov 2026")).toBeInTheDocument();
+  });
+
+  it("turns off the buttons while a review of this expense is pending", () => {
+    render(
+      <ExpenseDetail
+        expense={pending}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn(), inFlight: { "exp-1": "approve" }, shortcuts: true }}
+      />
+    );
+    const approve = screen.getByRole("button", { name: "Approve" });
+    expect(approve).toBeDisabled();
+    expect(approve).toHaveAttribute("aria-keyshortcuts", "A");
+  });
+
+  it("tells an admin their own pending expense needs another admin, without review buttons", () => {
+    render(
+      <ExpenseDetail
+        expense={pending}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn(), onReopen: vi.fn(), viewerId: "u1", viewerRole: "admin" }}
+      />
+    );
+    const notice = screen.getByRole("group", { name: "Awaiting approval" });
+    expect(notice).toHaveTextContent("Another admin needs to review this — you can't approve your own expense.");
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject…" })).not.toBeInTheDocument();
+  });
+
+  it("shows the server's edit marker as an event, not as the person's words, and lists a reopen", () => {
+    render(
+      <ExpenseDetail
+        expense={{
+          ...pending,
+          approvalHistory: [
+            { action: "submitted", by: "u1", at: "2026-11-10T09:00:00.000Z", note: null },
+            { action: "approved", by: { _id: "p", name: "Priya" }, at: "2026-11-11T09:00:00.000Z", note: null },
+            { action: "resubmitted", by: "u1", at: "2026-11-12T09:00:00.000Z", note: "Edited after approval" },
+            { action: "approved", by: { _id: "p", name: "Priya" }, at: "2026-11-13T09:00:00.000Z", note: null },
+            { action: "reopened", by: { _id: "p", name: "Priya" }, at: "2026-11-14T09:00:00.000Z", note: "Wrong department" },
+          ],
+        }}
+        editHref="/edit"
+        review={{ onApprove: vi.fn(), onReject: vi.fn(), viewerId: "admin" }}
+      />
+    );
+    expect(screen.getByText("Manas Nilorout edited it after it was approved.")).toBeInTheDocument();
+    expect(screen.queryByText(/“Edited after approval”/)).not.toBeInTheDocument();
+    expect(screen.getByText("Moved back to review · Priya · 14 Nov 2026")).toBeInTheDocument();
+    expect(screen.getByText("“Wrong department”")).toBeInTheDocument();
+    // The notice says who moved it back and why, instead of "submitted just now".
+    const notice = screen.getByRole("group", { name: "Awaiting approval" });
+    expect(notice).toHaveTextContent("Priya moved it back to review: Wrong department");
+    expect(notice).toHaveTextContent("Submitted by Manas Nilorout. Not in totals yet.");
+  });
+});
+
+describe("ExpenseDetail move back to review", () => {
+  const approved: ExpenseListItem = {
+    ...expense,
+    receiptKey: undefined,
+    receiptFilename: undefined,
+    approvalStatus: "approved",
+    reviewedBy: { _id: "p", name: "Priya" },
+    reviewedAt: "2026-11-12T09:00:00.000Z",
+  };
+  const admin = (overrides = {}) => ({
+    onApprove: vi.fn(),
+    onReject: vi.fn(),
+    onReopen: vi.fn(),
+    viewerId: "admin",
+    viewerRole: "admin" as const,
+    ...overrides,
+  });
+
+  it.each([
+    ["an approved", approved],
+    ["a legacy (no status)", { ...approved, approvalStatus: undefined }],
+    ["a rejected", { ...approved, approvalStatus: "rejected" as const, rejectionReason: "Duplicate" }],
+  ])("offers admins Move back to review… on %s expense", (_label, target) => {
+    const review = admin();
+    render(<ExpenseDetail expense={target} editHref="/edit" review={review} />);
+    fireEvent.click(screen.getByRole("button", { name: "Move back to review…" }));
+    expect(review.onReopen).toHaveBeenCalledWith(target);
+  });
+
+  it.each([
+    ["a pending expense", { ...approved, approvalStatus: "pending" as const }, admin()],
+    ["one with linked assets", { ...approved, linkedAssetCount: 2 }, admin()],
+    ["the admin's own expense", approved, admin({ viewerId: "u1" })],
+    ["a submitter", approved, { viewerId: "u1", onResubmit: vi.fn() }],
+    ["an expense whose review is being sent", approved, admin({ inFlight: { "exp-1": "approve" } })],
+  ])("doesn't offer it on %s", (_label, target, review) => {
+    render(<ExpenseDetail expense={target} editHref="/edit" review={review} />);
+    expect(screen.queryByRole("button", { name: "Move back to review…" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ExpenseDetail delete", () => {
+  const LOCKED = "Approved expenses are part of the books, so only the master admin can delete them.";
+  const base: ExpenseListItem = { ...expense, receiptKey: undefined, receiptFilename: undefined };
+  const pending = { ...base, approvalStatus: "pending" as const };
+  const rejected = { ...base, approvalStatus: "rejected" as const, rejectionReason: "Duplicate" };
+  const approved = { ...base, approvalStatus: "approved" as const };
+  const legacy = { ...base, approvalStatus: undefined };
+  // u1 submitted every one of them.
+  const submitter = { viewerId: "u1", viewerRole: "user" as const, onResubmit: vi.fn() };
+  const admin = { viewerId: "admin", viewerRole: "admin" as const, onApprove: vi.fn(), onReject: vi.fn(), onReopen: vi.fn() };
+  const master = { ...admin, viewerId: "master", viewerRole: "master_admin" as const };
+
+  it.each([
+    ["their own pending expense", pending],
+    ["their own rejected expense", rejected],
+  ])("lets a user delete %s", (_label, target) => {
+    const onDelete = vi.fn();
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={onDelete} review={submitter} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/ }));
+    expect(onDelete).toHaveBeenCalledWith(target);
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a user, on their own approved expense", approved, submitter],
+    ["a user, on their own legacy expense", legacy, submitter],
+    ["an admin, on an approved expense", approved, admin],
+    ["an admin, on a legacy expense", legacy, admin],
+  ])("explains instead of offering Delete to %s", (_label, target, review) => {
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={vi.fn()} review={review} />);
+
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.getByText(LOCKED)).toBeInTheDocument();
+    // Editing is still offered.
+    expect(screen.getByRole("link", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a pending", pending],
+    ["a rejected", rejected],
+  ])("lets an admin delete %s expense", (_label, target) => {
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={vi.fn()} review={admin} />);
+    expect(screen.getByRole("button", { name: /^Delete$/ })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["an approved", approved],
+    ["a legacy", legacy],
+  ])("lets the master admin delete %s expense", (_label, target) => {
+    const onDelete = vi.fn();
+    render(<ExpenseDetail expense={target} editHref="/edit" onDelete={onDelete} review={master} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/ }));
+    expect(onDelete).toHaveBeenCalledWith(target);
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+
+  it("says nothing about deleting while a review is in its undo window, whatever status it shows", () => {
+    // Shown as approved (the approve in its window), stored as pending: neither Delete nor the lock line.
+    render(
+      <ExpenseDetail
+        expense={approved}
+        editHref="/edit"
+        onDelete={vi.fn()}
+        review={{ ...admin, inFlight: { "exp-1": "approve" } }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+
+  it("shows neither where the page offers no Delete", () => {
+    render(<ExpenseDetail expense={approved} editHref="/edit" review={submitter} />);
+    expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
+  });
+});
+
 describe("ExpenseDetail actions", () => {
   it("offers Edit, Remove from trip and Delete to someone who may change the expense", () => {
     render(
@@ -97,5 +397,62 @@ describe("ExpenseDetail actions", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
     // The details themselves still show.
     expect(screen.getByText("Submitted by")).toBeInTheDocument();
+  });
+
+  describe("a payer of someone else's shared expense, with the approval actions", () => {
+    const ravi = { _id: "u2", name: "Ravi", email: "ravi@example.com" };
+    const shared: ExpenseListItem = {
+      ...expense,
+      paymentSource: "multiple",
+      payments: [
+        { paidBy: expense.createdBy!, amount: 400, amountInBaseCurrency: 400, source: "company" },
+        { paidBy: ravi, amount: 465.19, amountInBaseCurrency: 465.19, source: "pocket" },
+      ],
+    };
+    // Ravi (a user) is signed in; Manas submitted it.
+    const review = { onResubmit: vi.fn(), viewerId: ravi._id, viewerRole: "user" as const };
+    const canModify = () => false;
+
+    it("shows a pending one as awaiting approval, with nothing to change", () => {
+      render(
+        <ExpenseDetail
+          expense={{ ...shared, approvalStatus: "pending" }}
+          editHref="/edit"
+          onDelete={vi.fn()}
+          onRemoveFromTrip={vi.fn()}
+          review={review}
+          canModify={canModify}
+        />
+      );
+      expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /Edit/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Remove from trip" })).not.toBeInTheDocument();
+    });
+
+    it("shows a rejected one with its reason, but no resubmit, edit or delete", () => {
+      render(
+        <ExpenseDetail
+          expense={{ ...shared, approvalStatus: "rejected", rejectionReason: "Over the limit" }}
+          editHref="/edit"
+          onDelete={vi.fn()}
+          review={review}
+          canModify={canModify}
+        />
+      );
+      expect(screen.getByText("Over the limit")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Resubmit as is…" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /Edit/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Delete$/ })).not.toBeInTheDocument();
+      expect(screen.getByText("What next: Manas Nilorout can fix it and resubmit. It isn't in totals.")).toBeInTheDocument();
+    });
+
+    it("never offers an approved one's delete lock note either", () => {
+      render(
+        <ExpenseDetail expense={{ ...shared, approvalStatus: "approved" }} editHref="/edit" onDelete={vi.fn()} review={review} canModify={canModify} />
+      );
+      expect(screen.queryByText(/only the master admin can delete/)).not.toBeInTheDocument();
+    });
   });
 });

@@ -49,7 +49,8 @@ async function findSourceButton(name: string) {
 }
 
 function submit() {
-  fireEvent.submit(screen.getByRole("button", { name: "Save expense" }).closest("form")!);
+  // The submit label depends on the role ("Submit for approval" for users), so find the form itself.
+  fireEvent.submit(screen.getByRole("form", { name: "Expense details" }));
 }
 
 describe("NewExpensePage split payment", () => {
@@ -579,5 +580,71 @@ describe("NewExpensePage without form options", () => {
     expect(screen.queryByText(/base currency/i)).not.toBeInTheDocument();
     expect(screen.getByText("100.00")).toBeInTheDocument();
     expect(screen.queryByText("₹100.00")).not.toBeInTheDocument();
+  });
+});
+
+describe("NewExpensePage approval", () => {
+  const asha = { _id: "66c1884c0853f8a76a4da201", name: "Asha", email: "asha@example.com" };
+  const lookups = {
+    departments: [{ _id: "department-1", name: "Engineering", isDefault: true }],
+    categories: [{ _id: "category-1", name: "Meals & Entertainment" }],
+    currencies: [{ _id: "currency-1", code: "INR", name: "Indian Rupee", symbol: "₹", isBase: true }],
+    members: [asha],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem("expense-upload-modal-skip", "true");
+    vi.mocked(api.post).mockResolvedValue({ expense: { _id: "expense-9" }, assets: [] });
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      Promise.resolve(url === "/api/users" ? { users: [asha] } : url === "/api/trips" ? { trips: [] } : lookups)
+    );
+  });
+
+  it("asks a user to submit for approval and explains what happens next", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: false } as any);
+    render(<NewExpensePage />);
+
+    expect(await screen.findByRole("button", { name: "Submit for approval" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save expense" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("An admin reviews new expenses before they count in company totals.")
+    ).toBeInTheDocument();
+    // No asset registration until it's approved, and the form says so.
+    expect(screen.getByText(/You can register assets for this purchase once it's approved\./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add company asset" })).not.toBeInTheDocument();
+  });
+
+  it("submits a user's expense, says it's awaiting approval and opens it in the list", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: false } as any);
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+
+    await user.click(screen.getByRole("button", { name: "Submit for approval" }));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/dashboard/expenses?expand=expense-9"));
+    expect(api.post).toHaveBeenCalledWith("/api/expenses", expect.not.objectContaining({ assets: expect.anything() }));
+    expect(toastMock).toHaveBeenCalledWith(
+      "Submitted for approval. You'll see it marked 'Awaiting approval' until an admin reviews it.",
+      "success"
+    );
+  });
+
+  it("keeps the admin flow as it was: save, company assets and the plain toast", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: asha, isAdmin: true } as any);
+    const user = userEvent.setup();
+    render(<NewExpensePage />);
+    await fillRequiredFields(user, "500");
+
+    expect(screen.getByRole("button", { name: "Add company asset" })).toBeInTheDocument();
+    expect(screen.queryByText(/An admin reviews new expenses/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/once it's approved/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save expense" }));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/dashboard/expenses"));
+    expect(api.post).toHaveBeenCalledWith("/api/expenses", expect.objectContaining({ assets: [] }));
+    expect(toastMock).toHaveBeenCalledWith("Expense created");
   });
 });

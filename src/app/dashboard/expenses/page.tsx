@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { APPROVALS_HREF } from "@/components/layout/nav";
 import {
   Building2,
   Calendar,
   ChevronDown,
+  CircleX,
+  ClipboardCheck,
+  Clock3,
   Download,
   Luggage,
   MousePointerClick,
@@ -15,10 +19,20 @@ import {
   Wallet,
 } from "lucide-react";
 import { format, endOfMonth } from "date-fns";
+import Link from "next/link";
 import { api } from "@/lib/api";
+import {
+  APPROVAL_LABEL,
+  APPROVED_DELETE_MESSAGE,
+  canDeleteExpense,
+  effectiveApprovalStatus,
+  parseApprovalFilter,
+  type ApprovalStatus,
+} from "@/lib/approval";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTitle } from "@/hooks/useTitle";
 import { UNDO_WINDOW_MS, usePendingDeletes } from "@/hooks/usePendingDeletes";
+import { useApprovalActions } from "@/hooks/useApprovalActions";
 import { roundMoney } from "@/lib/asset";
 import { formatBaseCurrency } from "@/lib/currency";
 import { buildCsv, downloadCsv } from "@/lib/csv";
@@ -37,10 +51,17 @@ import { RemovableChip } from "@/components/ui/Badge";
 import StatBand, { BandCell, Stat } from "@/components/ui/StatBand";
 import SplitBar from "@/components/ui/SplitBar";
 import { cn } from "@/components/ui/cn";
-import { focusRing, panelClass, panelPadX, transition } from "@/components/ui/styles";
+import { focusRing, panelClass, panelPadX, textButtonClass, transition } from "@/components/ui/styles";
 import ExpenseDetail from "@/components/expenses/ledger/ExpenseDetail";
 import ExpenseDetailPanel from "@/components/expenses/ledger/ExpenseDetailPanel";
 import ExpenseRow, { LEDGER_CONTAINER, LedgerHead } from "@/components/expenses/ledger/ExpenseRow";
+import {
+  DELETE_FAILED,
+  DELETE_WHILE_REVIEWING,
+  asReviewed,
+  deleteRefusal,
+  useFocusAfterReview,
+} from "@/components/expenses/review-status";
 import { expenseEditHref } from "@/components/expenses/ledger/format";
 import { MONTH_KEY, monthFromKey, monthKey } from "@/lib/month";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -61,6 +82,74 @@ interface ExpenseSummary {
   pocketAmount?: number;
   /** The "Paid by" person's own share of the listed expenses. */
   payerSpend?: { totalSpend: number; pocketSpend: number; companySpend: number };
+  /** The figures above count approved expenses only; these describe the rest. */
+  pendingCount?: number;
+  pendingAmount?: number;
+  rejectedCount?: number;
+}
+
+/** The Status filter: "" is every status. */
+type ApprovalFilter = ApprovalStatus | "";
+
+const APPROVAL_FILTER_OPTIONS: { value: ApprovalFilter; label: string }[] = [
+  { value: "", label: "All statuses" },
+  { value: "approved", label: APPROVAL_LABEL.approved },
+  { value: "pending", label: APPROVAL_LABEL.pending },
+  { value: "rejected", label: APPROVAL_LABEL.rejected },
+];
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count !== 1 ? "s" : ""}`;
+
+/**
+ * `summary` with one expense's amounts added (1) or taken out (-1), including
+ * the "Paid by" person's share when that filter is on (`payerId`). Only an
+ * approved expense is in the totals; the others move their own counts. The
+ * amounts are what the server counts for `viewer` (`viewerAmounts`): whole
+ * expenses for an admin, their own share for anyone else, the pending figure
+ * included.
+ */
+function shiftSummary(
+  prev: ExpenseSummary,
+  expense: Expense,
+  sign: 1 | -1,
+  payerId: string,
+  viewer: SpendViewer
+): ExpenseSummary {
+  const status = effectiveApprovalStatus(expense);
+  const own = viewerAmounts(expense, viewer);
+  if (status === "pending") {
+    return prev.pendingCount == null && prev.pendingAmount == null
+      ? prev
+      : {
+          ...prev,
+          pendingAmount: roundMoney((prev.pendingAmount ?? 0) + sign * own.total),
+          pendingCount: Math.max(0, (prev.pendingCount ?? 0) + sign),
+        };
+  }
+  if (status === "rejected") {
+    return prev.rejectedCount == null ? prev : { ...prev, rejectedCount: Math.max(0, prev.rejectedCount + sign) };
+  }
+  const share = payerId ? payerShare(expense, payerId) : null;
+  return {
+    ...prev,
+    totalAmount: roundMoney(prev.totalAmount + sign * own.total),
+    totalExpenses: Math.max(0, prev.totalExpenses + sign),
+    ...(prev.companyAmount != null && prev.pocketAmount != null
+      ? {
+          companyAmount: roundMoney(prev.companyAmount + sign * own.company),
+          pocketAmount: roundMoney(prev.pocketAmount + sign * own.pocket),
+        }
+      : {}),
+    ...(prev.payerSpend && share
+      ? {
+          payerSpend: {
+            totalSpend: roundMoney(prev.payerSpend.totalSpend + sign * (share.pocket + share.company)),
+            pocketSpend: roundMoney(prev.payerSpend.pocketSpend + sign * share.pocket),
+            companySpend: roundMoney(prev.payerSpend.companySpend + sign * share.company),
+          },
+        }
+      : {}),
+  };
 }
 
 const CUSTOM_DATE_PRESET = "custom";
@@ -111,6 +200,16 @@ function resolveDateRange(
 }
 
 const deleteExpense = (id: string) => api.delete(`/api/expenses/${id}`);
+
+/** List params that aren't filters: with only these, the list (and its summary) is every visible expense. */
+const NON_FILTER_PARAMS = ["cursor", "limit", "includeSummary", "groupTrips"];
+
+/** An expense opened with `?expand=` that isn't on the loaded pages, shown above the list. */
+interface PinnedExpense {
+  expense: Expense;
+  /** No filters were on, so the list's summary includes it (its review or delete moves the band). */
+  counted: boolean;
+}
 
 /** On/off switch for the "Group trips" view. */
 function GroupTripsSwitch({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
@@ -181,6 +280,7 @@ export default function ExpensesPage() {
   const [customTo, setCustomTo] = useState("");
   const [filterUser, setFilterUser] = useState("");
   const [filterPayer, setFilterPayer] = useState("");
+  const [filterApproval, setFilterApproval] = useState<ApprovalFilter>("");
   const [urlSynced, setUrlSynced] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -196,7 +296,69 @@ export default function ExpensesPage() {
   const [refreshingExpenses, setRefreshingExpenses] = useState(false);
   const hasLoadedExpenses = useRef(false);
   const pendingExpandId = useRef<string | null>(null);
+  const [pinned, setPinned] = useState<PinnedExpense | null>(null);
+  const pinnedRef = useRef<PinnedExpense | null>(null);
+  pinnedRef.current = pinned;
+  /** Where focus goes after a review when its row has left the list. */
+  const ledgerRef = useRef<HTMLElement | null>(null);
+  const focusAfterReview = useFocusAfterReview(ledgerRef);
   const { schedule: scheduleDelete, undo: undoDelete, flush: flushPendingDeletes } = usePendingDeletes(deleteExpense);
+  /** Takes an expense out of the list (and the item count, once its item is empty). */
+  const dropExpense = (expense: Expense) => {
+    const key = pageItemKey(expense, groupTrips);
+    const itemStays = expensesRef.current.some((e) => e._id !== expense._id && pageItemKey(e, groupTrips) === key);
+    setExpenses((prev) => prev.filter((e) => e._id !== expense._id));
+    if (!itemStays) setTotalCount((prev) => Math.max(0, prev - 1));
+    setSelectedId((prev) => (prev === expense._id ? null : prev));
+  };
+  // Approve / reject (admins) and resubmit (submitters) from the detail. The
+  // band follows each status change; a row that no longer matches the Status
+  // filter leaves the list.
+  const review = useApprovalActions({
+    onScheduled: (reviewed) => focusAfterReview(reviewed),
+    onMovedToReview: (expense) => focusAfterReview([expense]),
+    onUpdated: (updated) => {
+      const old = expensesRef.current.find((e) => e._id === updated._id);
+      const pin = pinnedRef.current;
+      if (!old && pin?.expense._id === updated._id) {
+        // Opened from a link, beyond the loaded pages: still part of the summary when unfiltered.
+        if (pin.counted) {
+          setSummary((prev) => shiftSummary(shiftSummary(prev, pin.expense, -1, filterPayer, viewer), updated, 1, filterPayer, viewer));
+        }
+        setPinned({ ...pin, expense: updated });
+        return;
+      }
+      if (!old) return;
+      const drop = Boolean(filterApproval) && effectiveApprovalStatus(updated) !== filterApproval;
+      setSummary((prev) => {
+        const without = shiftSummary(prev, old, -1, filterPayer, viewer);
+        return drop ? without : shiftSummary(without, updated, 1, filterPayer, viewer);
+      });
+      if (drop) dropExpense(old);
+      else setExpenses((prev) => prev.map((e) => (e._id === updated._id ? updated : e)));
+    },
+    onRemoved: (id) => {
+      const old = expensesRef.current.find((e) => e._id === id);
+      const pin = pinnedRef.current;
+      if (!old && pin?.expense._id === id) {
+        if (pin.counted) setSummary((prev) => shiftSummary(prev, pin.expense, -1, filterPayer, viewer));
+        setPinned(null);
+        setSelectedId((prev) => (prev === id ? null : prev));
+        return;
+      }
+      if (!old) return;
+      setSummary((prev) => shiftSummary(prev, old, -1, filterPayer, viewer));
+      dropExpense(old);
+    },
+  });
+  const { flush: flushReviews, inFlight, refresh: refreshExpense } = review;
+  /** Expenses whose delete the server refused, to re-read once they are back in the list. */
+  const [toReread, setToReread] = useState<Expense[]>([]);
+  useEffect(() => {
+    if (toReread.length === 0) return;
+    setToReread([]);
+    for (const expense of toReread) void refreshExpense(expense);
+  }, [toReread, refreshExpense]);
   /** The server's cursor for the page after the loaded ones. */
   const nextCursor = useRef<string | null>(null);
   /**
@@ -216,7 +378,8 @@ export default function ExpensesPage() {
     filterCats.length > 0 ||
     hasDateFilter ||
     Boolean(filterUser) ||
-    Boolean(filterPayer);
+    Boolean(filterPayer) ||
+    Boolean(filterApproval);
 
   // Restore filter state from the URL on first mount so filtered views are
   // shareable and survive refresh / back navigation.
@@ -232,6 +395,7 @@ export default function ExpensesPage() {
     setFilterCats(cats);
     setFilterUser(params.get("createdBy") ?? "");
     setFilterPayer(params.get("paidBy") ?? "");
+    setFilterApproval(parseApprovalFilter(params.get("approval")) ?? "");
 
     const month = params.get("month") ?? "";
     const from = params.get("from") ?? "";
@@ -266,6 +430,7 @@ export default function ExpensesPage() {
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
     if (filterPayer) params.set("paidBy", filterPayer);
+    if (filterApproval) params.set("approval", filterApproval);
     if (datePreset === CUSTOM_DATE_PRESET) {
       params.set("month", CUSTOM_DATE_PRESET);
       if (customFrom) params.set("from", customFrom);
@@ -279,7 +444,19 @@ export default function ExpensesPage() {
     const query = params.toString();
     const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(null, "", url);
-  }, [urlSynced, filterDepts, filterCats, filterUser, filterPayer, datePreset, customFrom, customTo, search, groupTrips]);
+  }, [
+    urlSynced,
+    filterDepts,
+    filterCats,
+    filterUser,
+    filterPayer,
+    filterApproval,
+    datePreset,
+    customFrom,
+    customTo,
+    search,
+    groupTrips,
+  ]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -343,6 +520,7 @@ export default function ExpensesPage() {
     filterCats.forEach((id) => params.append("category", id));
     if (filterUser) params.set("createdBy", filterUser);
     if (filterPayer) params.set("paidBy", filterPayer);
+    if (filterApproval) params.set("approval", filterApproval);
     if (search) params.set("search", search);
 
     const { from, to } = resolveDateRange(datePreset, customFrom, customTo);
@@ -350,7 +528,7 @@ export default function ExpensesPage() {
     if (to) params.set("to", to);
 
     return params;
-  }, [filterDepts, filterCats, filterUser, filterPayer, search, datePreset, customFrom, customTo]);
+  }, [filterDepts, filterCats, filterUser, filterPayer, filterApproval, search, datePreset, customFrom, customTo]);
 
   const buildQueryParams = useCallback(
     (cursor: string | null, limit: number, includeSummary: boolean) => {
@@ -380,7 +558,7 @@ export default function ExpensesPage() {
 
       try {
         // Commit deletes still in their undo window first, so the server result matches the UI.
-        await flushPendingDeletes();
+        await Promise.all([flushPendingDeletes(), flushReviews()]);
         const params = buildQueryParams(null, PAGE_SIZE, true);
         if (groupTrips) params.set("groupTrips", "true");
         const data = await api.get(`/api/expenses?${params.toString()}`);
@@ -395,15 +573,35 @@ export default function ExpensesPage() {
         nextCursor.current = data.pagination?.nextCursor ?? null;
         setSummary(data.summary || { totalAmount: 0, totalExpenses: 0 });
 
-        if (pendingExpandId.current) {
-          const target = loaded.find((e) => e._id === pendingExpandId.current);
+        // A reload is a new list: an expense pinned from a link goes with the old one.
+        setPinned(null);
+        const expandId = pendingExpandId.current;
+        pendingExpandId.current = null;
+        if (expandId) {
+          const target = loaded.find((e) => e._id === expandId);
           const tripId = target?.trip?._id;
           if (target) {
             // An expense inside a trip cluster opens with its cluster.
             if (tripId && loadedTrips[tripId]) setOpenTripKey(tripItemKey(tripId));
             setSelectedId(target._id);
+          } else {
+            // Not on the first page (e.g. just created, dated earlier): fetch it and
+            // show it above the list, so the link opens what it promised.
+            const filterKeys = [...params.keys()].filter((key) => !NON_FILTER_PARAMS.includes(key));
+            try {
+              const one: { expense?: Expense; assets?: unknown[] } = await api.get(`/api/expenses/${expandId}`);
+              if (!active) return;
+              if (one?.expense) {
+                setPinned({
+                  expense: { ...one.expense, linkedAssetCount: one.assets?.length ?? one.expense.linkedAssetCount ?? 0 },
+                  counted: filterKeys.length === 0,
+                });
+                setSelectedId(expandId);
+              }
+            } catch {
+              if (active) toast("That expense couldn't be opened. It may have been deleted.", "info");
+            }
           }
-          pendingExpandId.current = null;
         }
       } catch {
         if (active) {
@@ -428,7 +626,7 @@ export default function ExpensesPage() {
     return () => {
       active = false;
     };
-  }, [buildQueryParams, flushPendingDeletes, toast, urlSynced, groupTrips]);
+  }, [buildQueryParams, flushPendingDeletes, flushReviews, toast, urlSynced, groupTrips]);
 
   // The item an expense counts towards, as the server pages them.
   const itemKey = useCallback((expense: Expense) => pageItemKey(expense, groupTrips), [groupTrips]);
@@ -470,6 +668,8 @@ export default function ExpensesPage() {
       for (let page = 0; ; page++) {
         if (page === MAX_EXPORT_PAGES) throw new Error("Export has too many pages");
         const params = buildQueryParams(cursor, MAX_EXPENSE_PAGE, false);
+        // "All statuses" exports approved expenses (real spend); a picked Status exports that one.
+        if (!filterApproval) params.set("approval", "approved");
         const data = await api.get(`/api/expenses?${params.toString()}`);
         exported.push(...(data.expenses as Expense[]));
         const next: string | null = data.pagination?.nextCursor ?? null;
@@ -478,10 +678,15 @@ export default function ExpensesPage() {
         if (!next || next === cursor) throw new Error("Export cursor did not advance");
         cursor = next;
       }
+      if (exported.length === 0 && !filterApproval) {
+        toast("No approved expenses to export. Pick a Status to export the others.", "info");
+        return;
+      }
       const rows = exported.map(expenseCsvRow);
       const csv = buildCsv(EXPENSE_CSV_HEADERS, rows);
-      downloadCsv(`expenses-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
-      toast(`Exported ${rows.length} expense${rows.length !== 1 ? "s" : ""}`);
+      const statusPart = filterApproval ? `-${filterApproval}` : "-approved";
+      downloadCsv(`expenses${statusPart}-${format(new Date(), "yyyy-MM-dd")}.csv`, csv);
+      toast(`Exported ${plural(rows.length, filterApproval ? "expense" : "approved expense")}`);
     } catch {
       toast("Failed to export expenses", "error");
     } finally {
@@ -489,51 +694,83 @@ export default function ExpensesPage() {
     }
   };
 
+  // An expense being approved or rejected shows the status it's heading for during
+  // the undo window, and the band moves with it; one that will leave the Status
+  // filter is hidden meanwhile. Undo simply drops it from `inFlight`.
+  const leavesFilter = useCallback(
+    (expense: Expense) => Boolean(filterApproval) && effectiveApprovalStatus(expense) !== filterApproval,
+    [filterApproval]
+  );
+  const displayExpenses = useMemo(
+    () =>
+      expenses.flatMap((e) => {
+        const action = inFlight[e._id];
+        if (!action) return [e];
+        const reviewed = asReviewed(e, action);
+        return leavesFilter(reviewed) ? [] : [reviewed];
+      }),
+    [expenses, inFlight, leavesFilter]
+  );
+  /** The pinned expense while it isn't on the loaded pages (once Load more brings it, the list has it). */
+  const pinnedShown = useMemo(() => {
+    if (!pinned || expenses.some((e) => e._id === pinned.expense._id)) return null;
+    const action = inFlight[pinned.expense._id];
+    return action ? asReviewed(pinned.expense, action) : pinned.expense;
+  }, [pinned, expenses, inFlight]);
+  const shownSummary = useMemo(() => {
+    const listed = expenses.reduce((acc, e) => {
+      const action = inFlight[e._id];
+      if (!action) return acc;
+      const reviewed = asReviewed(e, action);
+      const without = shiftSummary(acc, e, -1, filterPayer, viewer);
+      return leavesFilter(reviewed) ? without : shiftSummary(without, reviewed, 1, filterPayer, viewer);
+    }, summary);
+    // The pinned expense is in the summary only when no filter is on (so none to leave).
+    if (pinned?.counted && pinnedShown && inFlight[pinned.expense._id]) {
+      return shiftSummary(shiftSummary(listed, pinned.expense, -1, filterPayer, viewer), pinnedShown, 1, filterPayer, viewer);
+    }
+    return listed;
+  }, [expenses, inFlight, leavesFilter, summary, filterPayer, viewer, pinned, pinnedShown]);
+
   const listItems = useMemo(
-    () => buildExpenseListItems(expenses, groupTrips ? trips : null),
-    [expenses, groupTrips, trips]
+    () => buildExpenseListItems(displayExpenses, groupTrips ? trips : null),
+    [displayExpenses, groupTrips, trips]
   );
   // Loaded items as the server counts them (an unopenable trip's rows are one).
-  const loadedItemCount = useMemo(() => new Set(expenses.map(itemKey)).size, [expenses, itemKey]);
+  const allItemCount = useMemo(() => new Set(expenses.map(itemKey)).size, [expenses, itemKey]);
+  const loadedItemCount = useMemo(() => new Set(displayExpenses.map(itemKey)).size, [displayExpenses, itemKey]);
+  // Less the items hidden while a review that takes them out of the filter can be undone.
+  const shownTotalCount = Math.max(0, totalCount - (allItemCount - loadedItemCount));
 
-  // Moves an expense's amounts in or out of the totals band (delete / undo),
-  // including the "Paid by" person's share when that filter is on.
+  // Moves an expense's amounts in or out of the totals band (delete / undo).
   const adjustTotals = (expense: Expense, sign: 1 | -1) => {
-    // The summary counts what the server does: whole expenses for an admin,
-    // the person's own share otherwise.
-    const own = viewerAmounts(expense, viewer);
-    const share = filterPayer ? payerShare(expense, filterPayer) : null;
-    setSummary((prev) => ({
-      ...prev,
-      totalAmount: roundMoney(prev.totalAmount + sign * own.total),
-      totalExpenses: Math.max(0, prev.totalExpenses + sign),
-      ...(prev.companyAmount != null && prev.pocketAmount != null
-        ? {
-            companyAmount: roundMoney(prev.companyAmount + sign * own.company),
-            pocketAmount: roundMoney(prev.pocketAmount + sign * own.pocket),
-          }
-        : {}),
-      ...(prev.payerSpend && share
-        ? {
-            payerSpend: {
-              totalSpend: roundMoney(prev.payerSpend.totalSpend + sign * (share.pocket + share.company)),
-              pocketSpend: roundMoney(prev.payerSpend.pocketSpend + sign * share.pocket),
-              companySpend: roundMoney(prev.payerSpend.companySpend + sign * share.company),
-            },
-          }
-        : {}),
-    }));
+    setSummary((prev) => shiftSummary(prev, expense, sign, filterPayer, viewer));
   };
 
   // Optimistically remove the expense and give the user a short undo window
   // before the delete is committed to the server.
-  const handleDelete = (expense: Expense) => {
-    if ((expense.linkedAssetCount || 0) > 0) {
+  const handleDelete = (shown: Expense) => {
+    if ((shown.linkedAssetCount || 0) > 0) {
       toast("Linked asset purchases cannot be deleted from Expenses", "error");
       return;
     }
-    const index = expenses.findIndex((e) => e._id === expense._id);
-    if (index === -1) return;
+    // Delete is withdrawn while a review can be undone; this guards a stale click.
+    if (inFlight[shown._id]) {
+      toast(DELETE_WHILE_REVIEWING, "info");
+      return;
+    }
+    const index = expenses.findIndex((e) => e._id === shown._id);
+    if (index === -1) {
+      if (pinned && pinned.expense._id === shown._id) deletePinned(pinned);
+      return;
+    }
+    // The loaded version: a row in a review's undo window shows the status it's heading for.
+    const expense = expenses[index];
+    // The detail offers Delete only where it is allowed; this guards a stale click.
+    if (user && !canDeleteExpense(user, expense)) {
+      toast(APPROVED_DELETE_MESSAGE, "info");
+      return;
+    }
 
     // The item leaves the list (and the count) with its last listed expense:
     // deleting one expense of a trip cluster keeps the cluster.
@@ -559,9 +796,9 @@ export default function ExpensesPage() {
 
     scheduleDelete(expense._id, {
       onUndo: restore,
-      onFailed: () => {
+      onFailed: (error) => {
         restore();
-        toast("Failed to delete expense", "error");
+        deleteFailed(expense, error);
       },
     });
 
@@ -570,6 +807,49 @@ export default function ExpensesPage() {
       action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
     });
   };
+
+  /**
+   * After a delete the server refused (the expense is back in the list and the
+   * totals): its reason in words and, when it gave one (e.g. an admin approved
+   * the expense meanwhile, so only the master admin may delete it now), the
+   * expense re-read, so the row shows what the server has.
+   */
+  const deleteFailed = (expense: Expense, error: unknown) => {
+    const refusal = deleteRefusal(error);
+    toast(refusal ?? DELETE_FAILED, "error");
+    // Once the restore has rendered: the re-read replaces the restored row.
+    if (refusal) setToReread((prev) => [...prev, expense]);
+  };
+
+  /** Deletes the expense opened from a link (not on the loaded pages), with the same undo. */
+  const deletePinned = (pin: PinnedExpense) => {
+    const { expense } = pin;
+    if (user && !canDeleteExpense(user, expense)) {
+      toast(APPROVED_DELETE_MESSAGE, "info");
+      return;
+    }
+    setPinned(null);
+    if (pin.counted) adjustTotals(expense, -1);
+    setSelectedId((prev) => (prev === expense._id ? null : prev));
+    const restore = () => {
+      setPinned(pin);
+      if (pin.counted) adjustTotals(expense, 1);
+    };
+    scheduleDelete(expense._id, {
+      onUndo: restore,
+      onFailed: (error) => {
+        restore();
+        deleteFailed(expense, error);
+      },
+    });
+    toast(`Deleted "${expense.title}"`, "info", {
+      durationMs: UNDO_WINDOW_MS,
+      action: { label: "Undo", onClick: () => void undoDelete(expense._id) },
+    });
+  };
+
+  /** Delete for one expense: withdrawn while its approve/reject can still be undone. */
+  const deleteFor = (expense: Expense) => (inFlight[expense._id] ? undefined : handleDelete);
 
   const toggleSelected = (expense: Expense | null) => {
     setSelectedId((prev) => (expense && prev !== expense._id ? expense._id : null));
@@ -594,7 +874,9 @@ export default function ExpensesPage() {
   };
 
   const isFiltered = Boolean(search) || hasAnyFilter;
-  const selectedExpense = selectedId ? expenses.find((e) => e._id === selectedId) ?? null : null;
+  const selectedExpense = selectedId
+    ? displayExpenses.find((e) => e._id === selectedId) ?? (pinnedShown?._id === selectedId ? pinnedShown : null)
+    : null;
 
   if (loadingLookups || loadingExpenses) return <ExpenseListSkeleton />;
 
@@ -603,7 +885,30 @@ export default function ExpensesPage() {
       ? `${customFrom || "…"} → ${customTo || "…"}`
       : datePresetOptions.find((o) => o.value === datePreset)?.label ?? "All time";
   const userName = (id: string) => users.find((u) => u._id === id)?.name;
+  const pendingCount = shownSummary.pendingCount ?? 0;
+  const rejectedCount = shownSummary.rejectedCount ?? 0;
   const payerLabel = userName(filterPayer) ?? "this person";
+
+  // The expense a link opened, when it isn't on the loaded pages: above the list, open.
+  const pinnedBlock = pinnedShown && (
+    <div className="border-b border-rule" data-testid="pinned-expense">
+      <p className={cn("cap border-b border-rule-2 bg-sunk py-1.5 text-ink-3", panelPadX)}>
+        {pinned?.counted ? "The expense you opened · further down the list" : "The expense you opened"}
+      </p>
+      <ExpenseRow
+        expense={pinnedShown}
+        selected={selectedId === pinnedShown._id}
+        onSelect={() => toggleSelected(pinnedShown)}
+        inlineDetail={!sidePanel}
+        detailId={DETAIL_PANEL_ID}
+        editHref={expenseEditHref(pinnedShown._id)}
+        onDelete={deleteFor(pinnedShown)}
+        review={review.handlers}
+        canModify={canModify}
+        showTripLink
+      />
+    </div>
+  );
 
   return (
     <div className="animate-fade-in flex flex-col gap-6">
@@ -623,9 +928,13 @@ export default function ExpensesPage() {
               loading={exporting}
               onClick={handleExport}
               disabled={expenses.length === 0}
-              title="Download the currently filtered expenses as CSV"
+              title={
+                filterApproval
+                  ? `Download the filtered ${APPROVAL_LABEL[filterApproval].toLowerCase()} expenses as CSV`
+                  : "Download the filtered approved expenses as CSV. Pick a Status to export the others."
+              }
             >
-              Export CSV
+              {filterApproval ? "Export CSV" : "Export approved (CSV)"}
             </Button>
             <Button icon={Plus} href="/dashboard/expenses/new">
               New expense
@@ -700,6 +1009,18 @@ export default function ExpensesPage() {
               </select>
             </Field>
           )}
+          <Field label="Status" icon={ClipboardCheck} className="flex-[1_1_150px]">
+            <select
+              value={filterApproval}
+              onChange={(e) => setFilterApproval(parseApprovalFilter(e.target.value) ?? "")}
+              className={selectClass}
+              title="Approval status. Only approved expenses count in the totals."
+            >
+              {APPROVAL_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
           {isAdmin && (
             <Field label="Paid by" icon={Wallet} className="flex-[1_1_150px]">
               <select
@@ -734,6 +1055,9 @@ export default function ExpensesPage() {
             ))}
             {filterUser && <RemovableChip onRemove={() => setFilterUser("")}>Submitted by {userName(filterUser)}</RemovableChip>}
             {filterPayer && <RemovableChip onRemove={() => setFilterPayer("")}>Paid by {userName(filterPayer)}</RemovableChip>}
+            {filterApproval && (
+              <RemovableChip onRemove={() => setFilterApproval("")}>Status: {APPROVAL_LABEL[filterApproval]}</RemovableChip>
+            )}
           </div>
         )}
       </div>
@@ -742,12 +1066,58 @@ export default function ExpensesPage() {
         <Stat
           headline
           label={`${periodLabel} total`}
-          value={formatBaseCurrency(summary.totalAmount)}
-          sub={`${summary.totalExpenses} expense${summary.totalExpenses !== 1 ? "s" : ""}${isAdmin ? "" : " · your share"}`}
+          value={formatBaseCurrency(shownSummary.totalAmount)}
+          sub={
+            filterApproval === "pending" || filterApproval === "rejected"
+              ? `${plural(shownSummary.totalExpenses, "approved expense")} · ${
+                  filterApproval === "pending" ? "expenses awaiting approval" : "rejected expenses"
+                } aren't in totals`
+              : `${plural(shownSummary.totalExpenses, "approved expense")}${isAdmin ? "" : " · your share"}`
+          }
+          action={
+            !isAdmin && rejectedCount > 0 && filterApproval !== "rejected" ? (
+              <button
+                type="button"
+                onClick={() => setFilterApproval("rejected")}
+                className={cn(
+                  "inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-control text-[13px] font-medium text-danger hover:text-ink",
+                  transition,
+                  focusRing
+                )}
+              >
+                <CircleX aria-hidden="true" size={14} strokeWidth={1.75} />
+                {rejectedCount} rejected — see why
+              </button>
+            ) : undefined
+          }
         />
+        {pendingCount > 0 && (
+          <Stat
+            label={APPROVAL_LABEL.pending}
+            icon={Clock3}
+            value={formatBaseCurrency(shownSummary.pendingAmount ?? 0)}
+            sub={`${plural(pendingCount, "expense")} · not in total`}
+            action={
+              isAdmin ? (
+                <Link href={APPROVALS_HREF} aria-label="Review expenses awaiting approval" className={textButtonClass}>
+                  Review
+                </Link>
+              ) : filterApproval !== "pending" ? (
+                <button
+                  type="button"
+                  onClick={() => setFilterApproval("pending")}
+                  aria-label="Show them: expenses awaiting approval"
+                  className={cn(textButtonClass, "cursor-pointer")}
+                >
+                  Show them
+                </button>
+              ) : undefined
+            }
+          />
+        )}
         <BandCell label="Company · pocket">
-          {summary.companyAmount != null && summary.pocketAmount != null ? (
-            <SplitBar company={summary.companyAmount} pocket={summary.pocketAmount} />
+          {shownSummary.companyAmount != null && shownSummary.pocketAmount != null ? (
+            <SplitBar company={shownSummary.companyAmount} pocket={shownSummary.pocketAmount} />
           ) : (
             // The list failed to load: nothing to split.
             <span className="text-sm text-ink-3">
@@ -756,18 +1126,20 @@ export default function ExpensesPage() {
             </span>
           )}
         </BandCell>
-        {filterPayer && summary.payerSpend && (
+        {filterPayer && shownSummary.payerSpend && (
           <Stat
             label={`Paid by ${payerLabel}`}
             icon={UserIcon}
-            value={formatBaseCurrency(summary.payerSpend.totalSpend)}
-            sub={`${formatBaseCurrency(summary.payerSpend.pocketSpend)} pocket · ${formatBaseCurrency(summary.payerSpend.companySpend)} company`}
+            value={formatBaseCurrency(shownSummary.payerSpend.totalSpend)}
+            sub={`${formatBaseCurrency(shownSummary.payerSpend.pocketSpend)} pocket · ${formatBaseCurrency(shownSummary.payerSpend.companySpend)} company`}
           />
         )}
       </StatBand>
 
       <div className={cn("flex items-start gap-5", sidePanel ? "flex-nowrap" : "flex-wrap")}>
         <section
+          ref={ledgerRef}
+          tabIndex={-1}
           aria-label="Expense ledger"
           className={cn(
             panelClass,
@@ -779,21 +1151,33 @@ export default function ExpensesPage() {
           )}
         >
           {listItems.length === 0 ? (
-            <EmptyState
-              icon={<Receipt />}
-              title={refreshingExpenses ? "Updating expenses..." : "No expenses found"}
-              description={isFiltered ? "Try adjusting your filters." : "Create your first expense to get started."}
-              action={
-                !isFiltered ? (
-                  <Button icon={Plus} href="/dashboard/expenses/new">
-                    Add expense
-                  </Button>
-                ) : undefined
-              }
-            />
+            <>
+              {pinnedBlock}
+              <EmptyState
+                icon={<Receipt />}
+                title={
+                  refreshingExpenses
+                    ? "Updating expenses..."
+                    : filterApproval === "pending"
+                      ? "Nothing awaiting approval"
+                      : filterApproval === "rejected"
+                        ? "No rejected expenses"
+                        : "No expenses found"
+                }
+                description={isFiltered ? "Try adjusting your filters." : "Create your first expense to get started."}
+                action={
+                  !isFiltered ? (
+                    <Button icon={Plus} href="/dashboard/expenses/new">
+                      Add expense
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </>
           ) : (
             <>
               <LedgerHead />
+              {pinnedBlock}
               <ul>
                 {listItems.map((item) => (
                   <li key={item.key}>
@@ -808,6 +1192,7 @@ export default function ExpensesPage() {
                         inlineDetail={!sidePanel}
                         detailId={DETAIL_PANEL_ID}
                         onDelete={handleDelete}
+                        review={review.handlers}
                         canModify={canModify}
                         filtered={isFiltered}
                       />
@@ -819,7 +1204,8 @@ export default function ExpensesPage() {
                         inlineDetail={!sidePanel}
                         detailId={DETAIL_PANEL_ID}
                         editHref={expenseEditHref(item.expense._id)}
-                        onDelete={handleDelete}
+                        onDelete={deleteFor(item.expense)}
+                        review={review.handlers}
                         canModify={canModify}
                         showTripLink={!groupTrips}
                       />
@@ -829,7 +1215,7 @@ export default function ExpensesPage() {
               </ul>
               <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-rule py-2.5 text-[13px] text-ink-3", panelPadX)}>
                 <span>
-                  {`Showing ${loadedItemCount} of ${totalCount} ${groupTrips ? "item" : "expense"}${totalCount !== 1 ? "s" : ""}${groupTrips ? " · each trip counts as one" : ""}`}
+                  {`Showing ${loadedItemCount} of ${shownTotalCount} ${groupTrips ? "item" : "expense"}${shownTotalCount !== 1 ? "s" : ""}${groupTrips ? " · each trip counts as one" : ""}`}
                 </span>
                 {hasMore && (
                   <Button variant="secondary" icon={ChevronDown} loading={loadingMore} onClick={loadMore}>
@@ -848,7 +1234,8 @@ export default function ExpensesPage() {
                 key={selectedExpense._id}
                 expense={selectedExpense}
                 editHref={expenseEditHref(selectedExpense._id)}
-                onDelete={handleDelete}
+                onDelete={deleteFor(selectedExpense)}
+                review={review.handlers}
                 canModify={canModify}
                 onClose={() => setSelectedId(null)}
                 showHeader
@@ -864,6 +1251,7 @@ export default function ExpensesPage() {
           </ExpenseDetailPanel>
         )}
       </div>
+      {review.dialogs}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   createAssetsForExpense,
   ensureAssetIndexes,
 } from "@/lib/asset-server";
+import { countsAsSpend } from "@/lib/approval";
 import { connectDB } from "@/lib/mongodb";
 import { runInTransaction } from "@/lib/mongodb-transaction";
 import Asset from "@/models/Asset";
@@ -30,6 +31,24 @@ export async function POST(
   if (!expense) return NextResponse.json({ error: "Expense not found" }, { status: 404 });
   if (authResult.role === "user" && expense.createdBy.toString() !== authResult._id) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+  // Assets are only bought with approved spend. Asset creation is a CAS on
+  // the revision read here, and every approval change increments it, so the
+  // status can't change underneath this check.
+  if (!countsAsSpend(expense)) {
+    return NextResponse.json(
+      {
+        error:
+          authResult.role === "user"
+            ? "Assets can be registered once an admin approves this expense."
+            : expense.approvalStatus === "rejected"
+              ? "This expense was rejected. Assets can only be added to approved expenses."
+              : "This expense is awaiting approval. Approve it first, then add its assets.",
+        code: "not_approved",
+        approvalStatus: expense.approvalStatus,
+      },
+      { status: 409 }
+    );
   }
 
   const existingAssets = await Asset.find({ purchaseExpense: expense._id }).select("_id").lean();

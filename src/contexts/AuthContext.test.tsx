@@ -81,3 +81,39 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("error")).toBeEmptyDOMElement();
   });
 });
+
+describe("AuthProvider — first sign-in seeding", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function signInAs(role: "master_admin" | "admin" | "user", isNew: boolean) {
+    const fetchMock = vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () =>
+        url === "/api/auth/verify"
+          ? { user: { _id: "u1", name: "Asha", email: "a@x.com", role }, isNew }
+          : { message: "Seed completed" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await act(async () => {
+      await onAuthChange(fbUser);
+    });
+    return fetchMock.mock.calls.map(([url]) => url);
+  }
+
+  it("seeds the defaults on the master admin's first sign-in", async () => {
+    expect(await signInAs("master_admin", true)).toContain("/api/seed");
+  });
+
+  it("doesn't ask to seed for anyone else, or on later sign-ins", async () => {
+    expect(await signInAs("user", true)).not.toContain("/api/seed");
+    expect(await signInAs("admin", true)).not.toContain("/api/seed");
+    expect(await signInAs("master_admin", false)).not.toContain("/api/seed");
+  });
+});

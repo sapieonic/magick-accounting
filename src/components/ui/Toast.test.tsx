@@ -81,6 +81,33 @@ describe("Toast", () => {
       expect(screen.queryByText("Deleted")).not.toBeInTheDocument();
     });
 
+    it("closes a toast early by the id toast() returned", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      function Early() {
+        const { toast, dismiss } = useToast();
+        return (
+          <button
+            onClick={() => {
+              const id = toast("Approved", "success", { action: { label: "Undo", onClick: () => {} } });
+              toast("Kept");
+              dismiss(id);
+            }}
+          >
+            fire and close
+          </button>
+        );
+      }
+      render(
+        <ToastProvider>
+          <Early />
+        </ToastProvider>
+      );
+      await user.click(screen.getByRole("button", { name: "fire and close" }));
+      expect(screen.queryByText("Approved")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+      expect(screen.getByText("Kept")).toBeInTheDocument();
+    });
+
     it("can be dismissed manually via the dismiss button", async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(
