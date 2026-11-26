@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/sapieonic/magick-accounting/compare/v1.15.1...v1.16.0) (2026-11-26)
+
+
+### Features
+
+* require admin approval for expenses submitted by users ([#34](https://github.com/sapieonic/magick-accounting/issues/34)) ([06a16a0](https://github.com/sapieonic/magick-accounting/commit/06a16a0c493025a9b3261755762bd14b458d22ba))
+
 ## [1.15.1](https://github.com/sapieonic/magick-accounting/compare/v1.15.0...v1.15.1) (2026-11-25)
 
 
